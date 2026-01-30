@@ -38,7 +38,7 @@ pub use core::DefaultAiService;
 /// ```ignore
 /// let ai_service = swebash_ai::create_ai_service().ok();
 /// ```
-pub fn create_ai_service() -> AiResult<DefaultAiService> {
+pub async fn create_ai_service() -> AiResult<DefaultAiService> {
     let config = AiConfig::from_env();
 
     if !config.enabled {
@@ -54,6 +54,6 @@ pub fn create_ai_service() -> AiResult<DefaultAiService> {
         )));
     }
 
-    let client = spi::llm_provider::LlmProviderClient::new(&config)?;
+    let client = spi::llm_provider::LlmProviderClient::new(&config).await?;
     Ok(DefaultAiService::new(Box::new(client), config))
 }

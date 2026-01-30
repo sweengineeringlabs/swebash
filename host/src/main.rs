@@ -9,7 +9,7 @@ use std::io::{self, Write};
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize AI service (None if unconfigured — shell continues without AI)
-    let ai_service = swebash_ai::create_ai_service().ok();
+    let ai_service = swebash_ai::create_ai_service().await.ok();
 
     let (mut store, instance) = runtime::setup()?;
 
