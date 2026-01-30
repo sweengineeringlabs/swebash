@@ -1,3 +1,4 @@
+mod ai;
 mod imports;
 mod runtime;
 mod state;
@@ -5,7 +6,11 @@ mod state;
 use anyhow::{Context, Result};
 use std::io::{self, Write};
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Initialize AI service (None if unconfigured — shell continues without AI)
+    let ai_service = swebash_ai::create_ai_service().ok();
+
     let (mut store, instance) = runtime::setup()?;
 
     // Grab exported functions
@@ -38,6 +43,8 @@ fn main() -> Result<()> {
 
     let stdin = io::stdin();
     let mut line = String::new();
+    let mut recent_commands: Vec<String> = Vec::new();
+    let max_recent: usize = 10;
 
     let home_dir = dirs::home_dir();
 
@@ -79,6 +86,18 @@ fn main() -> Result<()> {
         }
         if cmd == "exit" {
             break;
+        }
+
+        // Intercept AI commands before WASM dispatch
+        if let Some(ai_cmd) = ai::commands::parse_ai_command(cmd) {
+            ai::handle_ai_command(&ai_service, ai_cmd, &recent_commands).await;
+            continue;
+        }
+
+        // Track recent commands for AI context
+        recent_commands.push(cmd.to_string());
+        if recent_commands.len() > max_recent {
+            recent_commands.remove(0);
         }
 
         let cmd_bytes = cmd.as_bytes();

@@ -1,5 +1,5 @@
 [workspace]
-members = ["engine", "host"]
+members = ["engine", "host", "ai"]
 default-members = ["host"]
 resolver = "2"
 
