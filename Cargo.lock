@@ -531,15 +531,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
-name = "host"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "dirs",
- "wasmtime",
-]
-
-[[package]]
 name = "id-arena"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -979,6 +970,15 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
+
+[[package]]
+name = "swebash"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dirs",
+ "wasmtime",
+]
 
 [[package]]
 name = "syn"
