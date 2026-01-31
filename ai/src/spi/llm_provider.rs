@@ -42,7 +42,7 @@ impl LlmProviderClient {
 }
 
 /// Convert `LlmError` to `AiError`.
-fn map_llm_error(err: LlmError) -> AiError {
+pub fn map_llm_error(err: LlmError) -> AiError {
     match err {
         LlmError::Configuration(msg) => AiError::NotConfigured(msg),
         LlmError::RateLimited { .. } => AiError::RateLimited,
