@@ -12,6 +12,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "agent-cache"
+version = "0.1.0"
+dependencies = [
+ "dev-engineeringlabs-rustboot-cache",
+ "dev-engineeringlabs-rustboot-crypto",
+ "llm-provider",
+ "serde",
+ "serde_json",
+ "tool",
+ "tracing",
+]
+
+[[package]]
+name = "agent-controller"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -21,6 +41,15 @@ dependencies = [
  "once_cell",
  "version_check",
  "zerocopy",
+]
+
+[[package]]
+name = "aho-corasick"
+version = "1.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ddd31a130427c27518df266943a5308ed92d4b226cc639f5a8f1002816174301"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]
@@ -102,6 +131,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "bcrypt"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e65938ed058ef47d92cf8b346cc76ef48984572ade631927e9937b5ffc7662c7"
+dependencies = [
+ "base64 0.22.1",
+ "blowfish",
+ "getrandom 0.2.17",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -114,6 +156,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
 dependencies = [
  "generic-array",
+]
+
+[[package]]
+name = "blowfish"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e412e2cd0f2b2d93e02543ceae7917b3c70331573df19ee046bcbc35e45e87d7"
+dependencies = [
+ "byteorder",
+ "cipher",
 ]
 
 [[package]]
@@ -154,6 +206,35 @@ name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+
+[[package]]
+name = "chat"
+version = "0.1.0"
+dependencies = [
+ "agent-controller",
+ "async-trait",
+ "llm-provider",
+ "llm-summarizer",
+ "parking_lot",
+ "react",
+ "rustboot-error",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "cipher"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad"
+dependencies = [
+ "crypto-common",
+ "inout",
+]
 
 [[package]]
 name = "cobs"
@@ -350,6 +431,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "csv"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52cd9d68cf7efc6ddfaaee42e7288d3a99d613d4b50f76ce9827ae0c6e14f938"
+dependencies = [
+ "csv-core",
+ "itoa",
+ "ryu",
+ "serde_core",
+]
+
+[[package]]
+name = "csv-core"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "704a3c26996a80471189265814dbc2c257598b96b8a7feae2d31ace646bb9782"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "darling"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -394,14 +496,95 @@ dependencies = [
 ]
 
 [[package]]
-name = "dev-engineeringlabs-rustboot-resilience"
+name = "dev-engineeringlabs-rustboot-cache"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
-checksum = "35ae3bb91fc70d11451c5ade4ce900e5ae4d6edfbfbb84e5e1132dc6fb557206"
 dependencies = [
- "rustboot-macros",
+ "parking_lot",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "dev-engineeringlabs-rustboot-config"
+version = "0.1.0"
+dependencies = [
+ "dotenvy",
+ "rustboot-macros 0.1.0",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 1.0.69",
+ "toml",
+]
+
+[[package]]
+name = "dev-engineeringlabs-rustboot-config"
+version = "0.1.0"
+source = "registry+file:///home/adentic/.cargo/registry.local/index"
+checksum = "eab4b966268313b956d240ab9f317ba284e264d7ac21a110b1ad65a9453bf637"
+dependencies = [
+ "dotenvy",
+ "rustboot-macros 0.1.0 (registry+file:///home/adentic/.cargo/registry.local/index)",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 1.0.69",
+ "toml",
+]
+
+[[package]]
+name = "dev-engineeringlabs-rustboot-crypto"
+version = "0.1.0"
+dependencies = [
+ "bcrypt",
+ "hmac",
+ "sha2",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "dev-engineeringlabs-rustboot-observability"
+version = "0.1.0"
+dependencies = [
+ "rustboot-macros 0.1.0",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "dev-engineeringlabs-rustboot-ratelimit"
+version = "0.1.0"
+dependencies = [
  "thiserror 1.0.69",
  "tokio",
+]
+
+[[package]]
+name = "dev-engineeringlabs-rustboot-resilience"
+version = "0.1.0"
+dependencies = [
+ "rustboot-macros 0.1.0",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
+name = "dev-engineeringlabs-rustboot-streams"
+version = "0.1.0"
+source = "registry+file:///home/adentic/.cargo/registry.local/index"
+checksum = "ed75e42e3ee25ca22929b67ff2444012374faa001c3b42d394b63217da07b62e"
+dependencies = [
+ "futures-core",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
+name = "dev-engineeringlabs-rustboot-validation"
+version = "0.1.0"
+source = "registry+file:///home/adentic/.cargo/registry.local/index"
+checksum = "0252c4581d3a6c0848e00673f3a7f06d1f2d5a61e6e54c293931e33ce42b4fb9"
+dependencies = [
+ "rustboot-macros 0.1.0 (registry+file:///home/adentic/.cargo/registry.local/index)",
 ]
 
 [[package]]
@@ -412,6 +595,7 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer",
  "crypto-common",
+ "subtle",
 ]
 
 [[package]]
@@ -477,6 +661,12 @@ dependencies = [
  "libc",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "dotenvy"
+version = "0.15.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "either"
@@ -788,6 +978,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
+name = "hmac"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
+dependencies = [
+ "digest",
+]
+
+[[package]]
 name = "http"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1033,6 +1232,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "inout"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "879f10e63c20629ecabbb64a8010319738c66a5cd0c29b02d63d272b03751d01"
+dependencies = [
+ "generic-array",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1161,11 +1369,12 @@ version = "0.1.0"
 dependencies = [
  "async-stream",
  "async-trait",
+ "dev-engineeringlabs-rustboot-config 0.1.0",
+ "dev-engineeringlabs-rustboot-observability",
+ "dev-engineeringlabs-rustboot-ratelimit",
  "dev-engineeringlabs-rustboot-resilience",
  "futures",
  "reqwest",
- "rustboot-error",
- "rustboot-macros",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1173,6 +1382,14 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+]
+
+[[package]]
+name = "llm-summarizer"
+version = "0.1.0"
+dependencies = [
+ "llm-provider",
+ "serde",
 ]
 
 [[package]]
@@ -1466,6 +1683,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "react"
+version = "0.1.0"
+dependencies = [
+ "agent-cache",
+ "agent-controller",
+ "async-trait",
+ "futures",
+ "llm-provider",
+ "parking_lot",
+ "regex",
+ "rustboot-error",
+ "rustratify",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-stream",
+ "tool",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1498,6 +1738,35 @@ dependencies = [
  "rustc-hash",
  "smallvec",
 ]
+
+[[package]]
+name = "regex"
+version = "1.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "843bc0191f75f3e22651ae5f1e72939ab2f72a4bc30fa80a066bd66edefc24d4"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
+name = "regex-automata"
+version = "0.4.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5276caf25ac86c8d810222b3dbb938e512c55c6831a10f3e6ed1c93b84041f1c"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-syntax",
+]
+
+[[package]]
+name = "regex-syntax"
+version = "0.8.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "reqwest"
@@ -1559,8 +1828,6 @@ dependencies = [
 [[package]]
 name = "rustboot-error"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
-checksum = "77023ca7241865e326dabbfdc3f7889390ad764ed7a50e03184b587baaedacc5"
 dependencies = [
  "thiserror 1.0.69",
 ]
@@ -1568,12 +1835,23 @@ dependencies = [
 [[package]]
 name = "rustboot-macros"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
-checksum = "a5f455aa495b50843d11425c95a163bc7ae1ebb7a1cee75bebd528d4c637eea9"
 dependencies = [
  "darling",
  "proc-macro2",
  "quote",
+ "syn",
+]
+
+[[package]]
+name = "rustboot-macros"
+version = "0.1.0"
+source = "registry+file:///home/adentic/.cargo/registry.local/index"
+checksum = "0e9415eaa4d627e1d9066494808154dc0aaec277b542b0e75a5c464852fc2fdd"
+dependencies = [
+ "darling",
+ "proc-macro2",
+ "quote",
+ "serde",
  "syn",
 ]
 
@@ -1646,6 +1924,32 @@ dependencies = [
  "ring",
  "rustls-pki-types",
  "untrusted",
+]
+
+[[package]]
+name = "rustratify"
+version = "2.0.0"
+dependencies = [
+ "async-trait",
+ "csv",
+ "dev-engineeringlabs-rustboot-config 0.1.0 (registry+file:///home/adentic/.cargo/registry.local/index)",
+ "dev-engineeringlabs-rustboot-streams",
+ "dev-engineeringlabs-rustboot-validation",
+ "rustratify-macros",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
+name = "rustratify-macros"
+version = "2.0.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -1844,6 +2148,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "signal-hook-registry"
+version = "1.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
+dependencies = [
+ "errno",
+ "libc",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1908,7 +2222,9 @@ name = "swebash-ai"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chat",
  "llm-provider",
+ "react",
  "serde",
  "serde_json",
  "serial_test",
@@ -2057,6 +2373,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",
@@ -2102,6 +2419,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -2157,6 +2475,16 @@ name = "toml_write"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
+
+[[package]]
+name = "tool"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "tower"
@@ -2311,7 +2639,9 @@ version = "1.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee48d38b119b0cd71fe4141b30f5ba9c7c5d9f4e7a3a8b4a674e4b6ef789976f"
 dependencies = [
+ "getrandom 0.3.4",
  "js-sys",
+ "serde_core",
  "wasm-bindgen",
 ]
 

@@ -574,7 +574,7 @@ async fn autocomplete_max_five() {
 #[tokio::test]
 async fn service_is_available() {
     match try_create_service().await {
-        Ok(service) => assert!(service.is_available()),
+        Ok(service) => assert!(service.is_available().await),
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -582,7 +582,7 @@ async fn service_is_available() {
 #[tokio::test]
 async fn service_status_provider_is_anthropic() {
     match try_create_service().await {
-        Ok(service) => assert_eq!(service.status().provider, "anthropic"),
+        Ok(service) => assert_eq!(service.status().await.provider, "anthropic"),
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -592,7 +592,7 @@ async fn service_status_model_matches_config() {
     let config = anthropic_config();
     let expected_model = config.model.clone();
     match try_create_service_with_config(config).await {
-        Ok(service) => assert_eq!(service.status().model, expected_model),
+        Ok(service) => assert_eq!(service.status().await.model, expected_model),
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -608,7 +608,7 @@ async fn service_disabled_rejects_requests() {
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
-            assert!(!service.is_available());
+            assert!(!service.is_available().await);
             let result = service
                 .translate(TranslateRequest {
                     natural_language: "test".to_string(),

@@ -26,8 +26,8 @@ pub trait AiService: Send + Sync {
     async fn autocomplete(&self, request: AutocompleteRequest) -> AiResult<AutocompleteResponse>;
 
     /// Check if the AI service is available and ready.
-    fn is_available(&self) -> bool;
+    async fn is_available(&self) -> bool;
 
     /// Get the current status of the AI service.
-    fn status(&self) -> AiStatus;
+    async fn status(&self) -> AiStatus;
 }

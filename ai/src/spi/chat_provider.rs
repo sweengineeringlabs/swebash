@@ -99,8 +99,8 @@ impl AiClient for ChatProviderClient {
         })
     }
 
-    fn is_ready(&self) -> bool {
-        !self.service.providers().is_empty()
+    async fn is_ready(&self) -> bool {
+        !self.service.providers().await.is_empty()
     }
 
     fn description(&self) -> String {

@@ -50,46 +50,46 @@ impl DefaultAiService {
 #[async_trait]
 impl AiService for DefaultAiService {
     async fn translate(&self, request: TranslateRequest) -> AiResult<TranslateResponse> {
-        self.ensure_ready()?;
+        self.ensure_ready().await?;
         translate::translate(self.client.as_ref(), request).await
     }
 
     async fn explain(&self, request: ExplainRequest) -> AiResult<ExplainResponse> {
-        self.ensure_ready()?;
+        self.ensure_ready().await?;
         explain::explain(self.client.as_ref(), request).await
     }
 
     async fn chat(&self, request: ChatRequest) -> AiResult<ChatResponse> {
-        self.ensure_ready()?;
+        self.ensure_ready().await?;
         chat::chat(&self.chat_engine, request).await
     }
 
     async fn autocomplete(&self, request: AutocompleteRequest) -> AiResult<AutocompleteResponse> {
-        self.ensure_ready()?;
+        self.ensure_ready().await?;
         complete::autocomplete(self.client.as_ref(), request).await
     }
 
-    fn is_available(&self) -> bool {
-        self.config.enabled && self.client.is_ready()
+    async fn is_available(&self) -> bool {
+        self.config.enabled && self.client.is_ready().await
     }
 
-    fn status(&self) -> AiStatus {
+    async fn status(&self) -> AiStatus {
         AiStatus {
             enabled: self.config.enabled,
             provider: self.client.provider_name(),
             model: self.client.model_name(),
-            ready: self.client.is_ready(),
+            ready: self.client.is_ready().await,
             description: self.client.description(),
         }
     }
 }
 
 impl DefaultAiService {
-    fn ensure_ready(&self) -> AiResult<()> {
+    async fn ensure_ready(&self) -> AiResult<()> {
         if !self.config.enabled {
             return Err(AiError::NotConfigured("AI features are disabled. Set SWEBASH_AI_ENABLED=true to enable.".into()));
         }
-        if !self.client.is_ready() {
+        if !self.client.is_ready().await {
             return Err(AiError::NotConfigured(
                 "AI provider is not ready. Check your API key and provider configuration.".into(),
             ));

@@ -25,7 +25,7 @@ pub trait AiClient: Send + Sync {
     ) -> AiResult<AiResponse>;
 
     /// Check if the client is configured and ready.
-    fn is_ready(&self) -> bool;
+    async fn is_ready(&self) -> bool;
 
     /// Human-readable description of the provider and model.
     fn description(&self) -> String;

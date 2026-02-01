@@ -21,7 +21,7 @@ pub async fn handle_ai_command(
     recent_commands: &[String],
 ) {
     match command {
-        AiCommand::Status => handle_status(service),
+        AiCommand::Status => handle_status(service).await,
         AiCommand::History => handle_history(service).await,
         AiCommand::Clear => handle_clear(service).await,
         _ => {
@@ -194,10 +194,10 @@ async fn handle_suggest(service: &DefaultAiService, recent_commands: &[String]) 
 }
 
 /// Handle `ai status` — show configuration.
-fn handle_status(service: &Option<DefaultAiService>) {
+async fn handle_status(service: &Option<DefaultAiService>) {
     match service {
         Some(svc) => {
-            let status = svc.status();
+            let status = svc.status().await;
             output::ai_status(status.enabled, &status.provider, &status.model, status.ready);
         }
         None => {
