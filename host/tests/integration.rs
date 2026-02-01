@@ -7,7 +7,7 @@ use std::process::{Command, Stdio};
 // ---------------------------------------------------------------------------
 
 fn host_exe() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_host"))
+    PathBuf::from(env!("CARGO_BIN_EXE_swebash"))
 }
 
 fn engine_wasm_path() -> PathBuf {
