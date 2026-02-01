@@ -1,2 +1,3 @@
+# Local registry index is set via CARGO_REGISTRIES_LOCAL_INDEX env var
+# Toggle with: SWEBASH_PLATFORM=wsl|windows (see ~/.bashrc)
 [registries.local]
-index = "file:///C:/Users/elvis/.cargo/registry.local/index"

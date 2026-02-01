@@ -5,8 +5,14 @@ edition = "2021"
 description = "AI/LLM integration for swebash shell (SEA pattern)"
 
 [dependencies]
-# LLM provider (shared crate from rustratify)
-llm-provider = { path = "../../langboot/rustratify/crates/swe-llm/llm-provider" }
+# Chat engine (from rustratify) — provides SimpleChatEngine with memory management
+chat-engine = { package = "chat", path = "../../rustratify/ai/llm/agent/chat" }
+
+# LLM provider (from rustratify) — used for CompletionBuilder and service creation
+llm-provider = { path = "../../rustratify/ai/llm/provider" }
+
+# React (from rustratify) — provides AgentEventSender for chat engine
+react = { path = "../../rustratify/ai/llm/agent/react" }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -24,5 +30,5 @@ tracing = "0.1"
 [dev-dependencies]
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
 async-trait = "0.1"
-llm-provider = { path = "../../langboot/rustratify/crates/swe-llm/llm-provider" }
+llm-provider = { path = "../../rustratify/ai/llm/provider" }
 serial_test = "3"

@@ -1,7 +1,9 @@
-/// L2 SPI implementation: delegates to the `llm-provider` crate.
+/// L2 SPI implementation: delegates to the `chat` and `llm-provider` crates from rustratify.
 ///
-/// This is the ONLY file in swebash-ai that depends on `llm-provider`.
-/// All other modules program against the `AiClient` trait.
+/// This is the ONLY file in swebash-ai that depends on `chat-engine`, `llm-provider`,
+/// and `react`. All other modules program against the `AiClient` trait.
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use crate::api::error::{AiError, AiResult};
@@ -11,14 +13,18 @@ use crate::spi::AiClient;
 
 use llm_provider::{CompletionBuilder, DefaultLlmService, LlmError, LlmService};
 
-/// Thin wrapper around `llm_provider::DefaultLlmService`.
-pub struct LlmProviderClient {
-    service: DefaultLlmService,
+/// Wrapper around `llm_provider::DefaultLlmService` with `chat` crate integration.
+///
+/// Holds a shared `Arc<DefaultLlmService>` so the same service instance can be
+/// used by both the `AiClient` (for stateless completions) and the
+/// `chat::SimpleChatEngine` (for conversational chat with memory).
+pub struct ChatProviderClient {
+    service: Arc<DefaultLlmService>,
     provider: String,
     model: String,
 }
 
-impl LlmProviderClient {
+impl ChatProviderClient {
     /// Create a new client from configuration.
     ///
     /// Async because `llm_provider::create_service()` initializes providers asynchronously.
@@ -30,14 +36,19 @@ impl LlmProviderClient {
         tracing::info!(
             provider = %config.provider,
             model = %config.model,
-            "LLM provider client initialized via llm-provider crate"
+            "Chat provider client initialized via chat/llm-provider crates"
         );
 
         Ok(Self {
-            service,
+            service: Arc::new(service),
             provider: config.provider.clone(),
             model: config.model.clone(),
         })
+    }
+
+    /// Get the LLM service as an `Arc<dyn LlmService>` for constructing a `SimpleChatEngine`.
+    pub fn llm_service(&self) -> Arc<dyn LlmService> {
+        self.service.clone()
     }
 }
 
@@ -54,7 +65,7 @@ pub fn map_llm_error(err: LlmError) -> AiError {
 }
 
 #[async_trait]
-impl AiClient for LlmProviderClient {
+impl AiClient for ChatProviderClient {
     async fn complete(
         &self,
         messages: Vec<AiMessage>,
@@ -78,7 +89,7 @@ impl AiClient for LlmProviderClient {
         }
 
         let response = builder
-            .execute(&self.service)
+            .execute(&*self.service)
             .await
             .map_err(map_llm_error)?;
 

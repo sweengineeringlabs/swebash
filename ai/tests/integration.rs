@@ -17,7 +17,7 @@ use swebash_ai::api::types::{AutocompleteRequest, ChatRequest, ExplainRequest, T
 use swebash_ai::api::AiService;
 use swebash_ai::config::AiConfig;
 use swebash_ai::core::DefaultAiService;
-use swebash_ai::spi::llm_provider::LlmProviderClient;
+use swebash_ai::spi::chat_provider::ChatProviderClient;
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -32,20 +32,38 @@ fn anthropic_config() -> AiConfig {
     }
 }
 
+/// Build a `SimpleChatEngine` from a `ChatProviderClient` and config.
+fn build_chat_engine(
+    client: &ChatProviderClient,
+    config: &AiConfig,
+) -> chat_engine::SimpleChatEngine {
+    let chat_config = chat_engine::ChatConfig {
+        model: config.model.clone(),
+        temperature: 0.5,
+        max_tokens: 1024,
+        system_prompt: Some(swebash_ai::core::prompt::chat_system_prompt()),
+        max_history: config.history_size,
+        enable_summarization: false,
+    };
+    chat_engine::SimpleChatEngine::new(client.llm_service(), chat_config)
+}
+
 /// Try to create a real Anthropic-backed service.
 ///
 /// Returns `Ok(service)` when the provider initialises (API key present),
 /// or `Err(AiError)` when it cannot (missing key, network, etc.).
 async fn try_create_service() -> AiResult<DefaultAiService> {
     let config = anthropic_config();
-    let client = LlmProviderClient::new(&config).await?;
-    Ok(DefaultAiService::new(Box::new(client), config))
+    let client = ChatProviderClient::new(&config).await?;
+    let chat_engine = build_chat_engine(&client, &config);
+    Ok(DefaultAiService::new(Box::new(client), chat_engine, config))
 }
 
 /// Same as [`try_create_service`] but with a caller-supplied config.
 async fn try_create_service_with_config(config: AiConfig) -> AiResult<DefaultAiService> {
-    let client = LlmProviderClient::new(&config).await?;
-    Ok(DefaultAiService::new(Box::new(client), config))
+    let client = ChatProviderClient::new(&config).await?;
+    let chat_engine = build_chat_engine(&client, &config);
+    Ok(DefaultAiService::new(Box::new(client), chat_engine, config))
 }
 
 /// Assert that `err` is the kind we expect when the provider cannot be
@@ -626,10 +644,11 @@ async fn error_bad_api_key_propagates() {
 
     // The error may surface at client creation or at the first API call —
     // both are valid propagation paths.
-    let outcome = match LlmProviderClient::new(&config).await {
+    let outcome = match ChatProviderClient::new(&config).await {
         Err(e) => Err(e),
         Ok(client) => {
-            let service = DefaultAiService::new(Box::new(client), config);
+            let chat_engine = build_chat_engine(&client, &config);
+            let service = DefaultAiService::new(Box::new(client), chat_engine, config);
             service
                 .translate(TranslateRequest {
                     natural_language: "list files".to_string(),
@@ -711,7 +730,7 @@ async fn error_disabled_service_propagates_through_chat() {
 #[test]
 fn map_llm_error_configuration() {
     let llm_err = llm_provider::LlmError::Configuration("bad config".to_string());
-    let ai_err = swebash_ai::spi::llm_provider::map_llm_error(llm_err);
+    let ai_err = swebash_ai::spi::chat_provider::map_llm_error(llm_err);
     match ai_err {
         AiError::NotConfigured(msg) => assert_eq!(msg, "bad config"),
         other => panic!("Expected NotConfigured, got: {:?}", other),
@@ -723,7 +742,7 @@ fn map_llm_error_rate_limited() {
     let llm_err = llm_provider::LlmError::RateLimited {
         retry_after_ms: Some(5000),
     };
-    let ai_err = swebash_ai::spi::llm_provider::map_llm_error(llm_err);
+    let ai_err = swebash_ai::spi::chat_provider::map_llm_error(llm_err);
     match ai_err {
         AiError::RateLimited => {}
         other => panic!("Expected RateLimited, got: {:?}", other),
@@ -733,7 +752,7 @@ fn map_llm_error_rate_limited() {
 #[test]
 fn map_llm_error_timeout() {
     let llm_err = llm_provider::LlmError::Timeout(30000);
-    let ai_err = swebash_ai::spi::llm_provider::map_llm_error(llm_err);
+    let ai_err = swebash_ai::spi::chat_provider::map_llm_error(llm_err);
     match ai_err {
         AiError::Timeout => {}
         other => panic!("Expected Timeout, got: {:?}", other),
@@ -743,7 +762,7 @@ fn map_llm_error_timeout() {
 #[test]
 fn map_llm_error_network() {
     let llm_err = llm_provider::LlmError::NetworkError("connection refused".to_string());
-    let ai_err = swebash_ai::spi::llm_provider::map_llm_error(llm_err);
+    let ai_err = swebash_ai::spi::chat_provider::map_llm_error(llm_err);
     match ai_err {
         AiError::Provider(msg) => {
             assert!(
@@ -759,7 +778,7 @@ fn map_llm_error_network() {
 #[test]
 fn map_llm_error_serialization() {
     let llm_err = llm_provider::LlmError::SerializationError("bad json".to_string());
-    let ai_err = swebash_ai::spi::llm_provider::map_llm_error(llm_err);
+    let ai_err = swebash_ai::spi::chat_provider::map_llm_error(llm_err);
     match ai_err {
         AiError::ParseError(msg) => assert_eq!(msg, "bad json"),
         other => panic!("Expected ParseError, got: {:?}", other),
@@ -769,7 +788,7 @@ fn map_llm_error_serialization() {
 #[test]
 fn map_llm_error_fallthrough() {
     let llm_err = llm_provider::LlmError::ProviderNotFound("unknown-llm".to_string());
-    let ai_err = swebash_ai::spi::llm_provider::map_llm_error(llm_err);
+    let ai_err = swebash_ai::spi::chat_provider::map_llm_error(llm_err);
     match ai_err {
         AiError::Provider(_) => {}
         other => panic!("Expected Provider (catch-all), got: {:?}", other),

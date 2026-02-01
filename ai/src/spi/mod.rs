@@ -1,9 +1,9 @@
 /// L2 SPI: Provider plugin point.
 ///
 /// The `AiClient` trait abstracts over the underlying LLM provider.
-/// Only `llm_provider.rs` implements this trait, keeping the
-/// llm-provider dependency isolated to a single file.
-pub mod llm_provider;
+/// Only `chat_provider.rs` implements this trait, keeping the
+/// chat/llm-provider dependency isolated to a single file.
+pub mod chat_provider;
 
 use async_trait::async_trait;
 
@@ -14,7 +14,7 @@ use crate::api::error::AiResult;
 ///
 /// This is the isolation boundary. All core logic programs against
 /// this trait. Swapping the LLM backend requires changing only
-/// the `llm_provider` module.
+/// the `chat_provider` module.
 #[async_trait]
 pub trait AiClient: Send + Sync {
     /// Send a completion request to the LLM.

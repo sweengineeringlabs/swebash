@@ -2,15 +2,17 @@
 ///
 /// Wires the SPI client to the API service trait, delegating
 /// to feature-specific modules for each operation.
+///
+/// The chat feature uses `SimpleChatEngine` from the `chat` crate
+/// for conversation management with built-in memory. Stateless features
+/// (translate, explain, autocomplete) use the `AiClient` directly.
 pub mod chat;
 pub mod complete;
 pub mod explain;
-pub mod history;
 pub mod prompt;
 pub mod translate;
 
 use async_trait::async_trait;
-use tokio::sync::Mutex;
 
 use crate::api::error::{AiError, AiResult};
 use crate::api::types::*;
@@ -18,24 +20,29 @@ use crate::api::AiService;
 use crate::config::AiConfig;
 use crate::spi::AiClient;
 
+use chat_engine::{ChatEngine, SimpleChatEngine};
+
 /// The default implementation of `AiService`.
 ///
-/// Holds the LLM client and conversation history.
-/// All AI features are delegated to the core sub-modules.
+/// Holds the LLM client for stateless features and a `SimpleChatEngine`
+/// from the `chat` crate for conversational chat with memory management.
 pub struct DefaultAiService {
     client: Box<dyn AiClient>,
     config: AiConfig,
-    history: Mutex<history::ConversationHistory>,
+    chat_engine: SimpleChatEngine,
 }
 
 impl DefaultAiService {
-    /// Create a new service with the given client and config.
-    pub fn new(client: Box<dyn AiClient>, config: AiConfig) -> Self {
-        let history = history::ConversationHistory::new(config.history_size);
+    /// Create a new service with the given client, chat engine, and config.
+    pub fn new(
+        client: Box<dyn AiClient>,
+        chat_engine: SimpleChatEngine,
+        config: AiConfig,
+    ) -> Self {
         Self {
             client,
             config,
-            history: Mutex::new(history),
+            chat_engine,
         }
     }
 }
@@ -54,8 +61,7 @@ impl AiService for DefaultAiService {
 
     async fn chat(&self, request: ChatRequest) -> AiResult<ChatResponse> {
         self.ensure_ready()?;
-        let mut history = self.history.lock().await;
-        chat::chat(self.client.as_ref(), request, &mut history).await
+        chat::chat(&self.chat_engine, request).await
     }
 
     async fn autocomplete(&self, request: AutocompleteRequest) -> AiResult<AutocompleteResponse> {
@@ -93,13 +99,30 @@ impl DefaultAiService {
 
     /// Get a formatted display of conversation history.
     pub async fn format_history(&self) -> String {
-        let history = self.history.lock().await;
-        history.format_display()
+        let messages = self
+            .chat_engine
+            .memory()
+            .get_all_messages()
+            .await
+            .unwrap_or_default();
+
+        let mut output = String::new();
+        for msg in &messages {
+            let role_label = match msg.role {
+                chat_engine::ChatRole::System => continue,
+                chat_engine::ChatRole::User => "You",
+                chat_engine::ChatRole::Assistant => "AI",
+            };
+            output.push_str(&format!("[{}] {}\n", role_label, msg.content));
+        }
+        if output.is_empty() {
+            output.push_str("(no chat history)");
+        }
+        output
     }
 
     /// Clear conversation history.
     pub async fn clear_history(&self) {
-        let mut history = self.history.lock().await;
-        history.clear();
+        let _ = self.chat_engine.new_conversation().await;
     }
 }

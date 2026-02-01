@@ -8,7 +8,7 @@
 /// L5 Facade   - lib.rs (this file): re-exports, factory
 /// L4 Core     - core/: DefaultAiService, feature modules
 /// L3 API      - api/: AiService trait (consumer interface)
-/// L2 SPI      - spi/: AiClient trait (provider plugin point)
+/// L2 SPI      - spi/: AiClient trait + ChatProviderClient (chat/llm-provider)
 /// L1 Common   - api/types.rs, api/error.rs: shared types
 /// ```
 
@@ -34,6 +34,10 @@ pub use core::DefaultAiService;
 /// Returns `Ok(service)` if the provider initializes successfully,
 /// or `Err` if configuration is missing or invalid.
 ///
+/// Creates a `SimpleChatEngine` (from the `chat` crate) for conversational
+/// chat with built-in memory management, and an `AiClient` backed by
+/// `llm-provider` for stateless features (translate, explain, autocomplete).
+///
 /// The host should call this at startup and store the result as `Option`:
 /// ```ignore
 /// let ai_service = swebash_ai::create_ai_service().ok();
@@ -54,6 +58,19 @@ pub async fn create_ai_service() -> AiResult<DefaultAiService> {
         )));
     }
 
-    let client = spi::llm_provider::LlmProviderClient::new(&config).await?;
-    Ok(DefaultAiService::new(Box::new(client), config))
+    // Create the SPI client (initializes the LLM provider)
+    let client = spi::chat_provider::ChatProviderClient::new(&config).await?;
+
+    // Build the chat engine from the shared LLM service
+    let chat_config = chat_engine::ChatConfig {
+        model: config.model.clone(),
+        temperature: 0.5,
+        max_tokens: 1024,
+        system_prompt: Some(core::prompt::chat_system_prompt()),
+        max_history: config.history_size,
+        enable_summarization: false,
+    };
+    let chat_engine = chat_engine::SimpleChatEngine::new(client.llm_service(), chat_config);
+
+    Ok(DefaultAiService::new(Box::new(client), chat_engine, config))
 }

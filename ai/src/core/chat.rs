@@ -1,44 +1,31 @@
 /// Conversational assistant logic.
-use crate::api::error::AiResult;
-use crate::api::types::{AiMessage, ChatRequest, ChatResponse, CompletionOptions};
-use crate::core::history::ConversationHistory;
-use crate::core::prompt;
-use crate::spi::AiClient;
+///
+/// Delegates to the `SimpleChatEngine` from the `chat` crate, which
+/// handles conversation memory, context windowing, and LLM interaction.
+use crate::api::error::{AiError, AiResult};
+use crate::api::types::{ChatRequest, ChatResponse};
 
-/// Process a chat message, maintaining conversation history.
+use chat_engine::{ChatEngine, ChatMessage, SimpleChatEngine};
+
+/// Process a chat message using the chat engine.
+///
+/// The engine manages conversation history internally, including
+/// the system prompt, context window, and memory eviction.
 pub async fn chat(
-    client: &dyn AiClient,
+    engine: &SimpleChatEngine,
     request: ChatRequest,
-    history: &mut ConversationHistory,
 ) -> AiResult<ChatResponse> {
-    // Ensure system prompt is at the start
-    if history.is_empty() {
-        history.push(AiMessage::system(prompt::chat_system_prompt()));
-    }
+    let message = ChatMessage::user(&request.message);
 
-    // Add user message to history
-    history.push(AiMessage::user(&request.message));
+    // Create a no-op event sender — swebash doesn't consume agent events.
+    let (events, _stream) = react::event_stream(1);
 
-    // Build messages from history
-    let messages: Vec<AiMessage> = history
-        .messages()
-        .iter()
-        .map(|m| AiMessage {
-            role: m.role,
-            content: m.content.clone(),
-        })
-        .collect();
+    let response = engine
+        .send(message, events)
+        .await
+        .map_err(|e| AiError::Provider(e.to_string()))?;
 
-    let options = CompletionOptions {
-        temperature: Some(0.5),
-        max_tokens: Some(1024),
-    };
-
-    let response = client.complete(messages, options).await?;
-    let reply = response.content.trim().to_string();
-
-    // Add assistant reply to history
-    history.push(AiMessage::assistant(&reply));
-
-    Ok(ChatResponse { reply })
+    Ok(ChatResponse {
+        reply: response.message.content.trim().to_string(),
+    })
 }
