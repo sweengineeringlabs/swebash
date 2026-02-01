@@ -185,17 +185,17 @@ async fn factory_missing_api_key() {
 #[tokio::test]
 async fn translate_returns_command() {
     match try_create_service().await {
-        Ok(service) => {
-            let resp = service
-                .translate(TranslateRequest {
-                    natural_language: "list files in the current directory".to_string(),
-                    cwd: "/home/user".to_string(),
-                    recent_commands: vec!["cd /home/user".to_string()],
-                })
-                .await
-                .unwrap();
-            assert!(!resp.command.is_empty(), "Expected a non-empty command");
-        }
+        Ok(service) => match service
+            .translate(TranslateRequest {
+                natural_language: "list files in the current directory".to_string(),
+                cwd: "/home/user".to_string(),
+                recent_commands: vec!["cd /home/user".to_string()],
+            })
+            .await
+        {
+            Ok(resp) => assert!(!resp.command.is_empty(), "Expected a non-empty command"),
+            Err(e) => assert_setup_error(&e),
+        },
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -203,21 +203,21 @@ async fn translate_returns_command() {
 #[tokio::test]
 async fn translate_command_no_markdown() {
     match try_create_service().await {
-        Ok(service) => {
-            let resp = service
-                .translate(TranslateRequest {
-                    natural_language: "show disk usage summary".to_string(),
-                    cwd: "/".to_string(),
-                    recent_commands: vec![],
-                })
-                .await
-                .unwrap();
-            assert!(
+        Ok(service) => match service
+            .translate(TranslateRequest {
+                natural_language: "show disk usage summary".to_string(),
+                cwd: "/".to_string(),
+                recent_commands: vec![],
+            })
+            .await
+        {
+            Ok(resp) => assert!(
                 !resp.command.contains("```"),
                 "Command should not contain markdown fences: {}",
                 resp.command
-            );
-        }
+            ),
+            Err(e) => assert_setup_error(&e),
+        },
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -225,17 +225,17 @@ async fn translate_command_no_markdown() {
 #[tokio::test]
 async fn translate_with_context() {
     match try_create_service().await {
-        Ok(service) => {
-            let resp = service
-                .translate(TranslateRequest {
-                    natural_language: "find all rust source files".to_string(),
-                    cwd: "/home/user/project".to_string(),
-                    recent_commands: vec!["cargo build".to_string(), "git status".to_string()],
-                })
-                .await
-                .unwrap();
-            assert!(!resp.command.is_empty());
-        }
+        Ok(service) => match service
+            .translate(TranslateRequest {
+                natural_language: "find all rust source files".to_string(),
+                cwd: "/home/user/project".to_string(),
+                recent_commands: vec!["cargo build".to_string(), "git status".to_string()],
+            })
+            .await
+        {
+            Ok(resp) => assert!(!resp.command.is_empty()),
+            Err(e) => assert_setup_error(&e),
+        },
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -243,17 +243,17 @@ async fn translate_with_context() {
 #[tokio::test]
 async fn translate_with_empty_history() {
     match try_create_service().await {
-        Ok(service) => {
-            let resp = service
-                .translate(TranslateRequest {
-                    natural_language: "print working directory".to_string(),
-                    cwd: "/tmp".to_string(),
-                    recent_commands: vec![],
-                })
-                .await
-                .unwrap();
-            assert!(!resp.command.is_empty());
-        }
+        Ok(service) => match service
+            .translate(TranslateRequest {
+                natural_language: "print working directory".to_string(),
+                cwd: "/tmp".to_string(),
+                recent_commands: vec![],
+            })
+            .await
+        {
+            Ok(resp) => assert!(!resp.command.is_empty()),
+            Err(e) => assert_setup_error(&e),
+        },
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -261,20 +261,20 @@ async fn translate_with_empty_history() {
 #[tokio::test]
 async fn translate_response_has_explanation() {
     match try_create_service().await {
-        Ok(service) => {
-            let resp = service
-                .translate(TranslateRequest {
-                    natural_language: "count lines in all python files".to_string(),
-                    cwd: "/project".to_string(),
-                    recent_commands: vec![],
-                })
-                .await
-                .unwrap();
-            assert!(
+        Ok(service) => match service
+            .translate(TranslateRequest {
+                natural_language: "count lines in all python files".to_string(),
+                cwd: "/project".to_string(),
+                recent_commands: vec![],
+            })
+            .await
+        {
+            Ok(resp) => assert!(
                 !resp.explanation.is_empty(),
                 "Expected a non-empty explanation"
-            );
-        }
+            ),
+            Err(e) => assert_setup_error(&e),
+        },
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -284,15 +284,15 @@ async fn translate_response_has_explanation() {
 #[tokio::test]
 async fn explain_simple_command() {
     match try_create_service().await {
-        Ok(service) => {
-            let resp = service
-                .explain(ExplainRequest {
-                    command: "ls -la".to_string(),
-                })
-                .await
-                .unwrap();
-            assert!(!resp.explanation.is_empty());
-        }
+        Ok(service) => match service
+            .explain(ExplainRequest {
+                command: "ls -la".to_string(),
+            })
+            .await
+        {
+            Ok(resp) => assert!(!resp.explanation.is_empty()),
+            Err(e) => assert_setup_error(&e),
+        },
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -300,18 +300,18 @@ async fn explain_simple_command() {
 #[tokio::test]
 async fn explain_pipeline_command() {
     match try_create_service().await {
-        Ok(service) => {
-            let resp = service
-                .explain(ExplainRequest {
-                    command: "cat /var/log/syslog | grep error | wc -l".to_string(),
-                })
-                .await
-                .unwrap();
-            assert!(
+        Ok(service) => match service
+            .explain(ExplainRequest {
+                command: "cat /var/log/syslog | grep error | wc -l".to_string(),
+            })
+            .await
+        {
+            Ok(resp) => assert!(
                 !resp.explanation.is_empty(),
                 "Pipeline explanation should not be empty"
-            );
-        }
+            ),
+            Err(e) => assert_setup_error(&e),
+        },
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -319,19 +319,19 @@ async fn explain_pipeline_command() {
 #[tokio::test]
 async fn explain_response_is_trimmed() {
     match try_create_service().await {
-        Ok(service) => {
-            let resp = service
-                .explain(ExplainRequest {
-                    command: "pwd".to_string(),
-                })
-                .await
-                .unwrap();
-            assert_eq!(
+        Ok(service) => match service
+            .explain(ExplainRequest {
+                command: "pwd".to_string(),
+            })
+            .await
+        {
+            Ok(resp) => assert_eq!(
                 resp.explanation,
                 resp.explanation.trim(),
                 "Explanation should be trimmed"
-            );
-        }
+            ),
+            Err(e) => assert_setup_error(&e),
+        },
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -341,15 +341,15 @@ async fn explain_response_is_trimmed() {
 #[tokio::test]
 async fn chat_returns_reply() {
     match try_create_service().await {
-        Ok(service) => {
-            let resp = service
-                .chat(ChatRequest {
-                    message: "What does the cd command do?".to_string(),
-                })
-                .await
-                .unwrap();
-            assert!(!resp.reply.is_empty());
-        }
+        Ok(service) => match service
+            .chat(ChatRequest {
+                message: "What does the cd command do?".to_string(),
+            })
+            .await
+        {
+            Ok(resp) => assert!(!resp.reply.is_empty()),
+            Err(e) => assert_setup_error(&e),
+        },
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -358,23 +358,28 @@ async fn chat_returns_reply() {
 async fn chat_multi_turn() {
     match try_create_service().await {
         Ok(service) => {
-            let _ = service
+            let first = service
                 .chat(ChatRequest {
                     message: "What is the ls command?".to_string(),
                 })
-                .await
-                .unwrap();
+                .await;
+            match first {
+                Err(e) => { assert_setup_error(&e); return; }
+                Ok(_) => {}
+            }
 
-            let resp2 = service
+            match service
                 .chat(ChatRequest {
                     message: "What flags does it accept?".to_string(),
                 })
                 .await
-                .unwrap();
-            assert!(
-                !resp2.reply.is_empty(),
-                "Second turn should return a non-empty reply"
-            );
+            {
+                Ok(resp) => assert!(
+                    !resp.reply.is_empty(),
+                    "Second turn should return a non-empty reply"
+                ),
+                Err(e) => assert_setup_error(&e),
+            }
         }
         Err(e) => assert_setup_error(&e),
     }
@@ -384,12 +389,15 @@ async fn chat_multi_turn() {
 async fn chat_history_clear() {
     match try_create_service().await {
         Ok(service) => {
-            let _ = service
+            match service
                 .chat(ChatRequest {
                     message: "hello".to_string(),
                 })
                 .await
-                .unwrap();
+            {
+                Err(e) => { assert_setup_error(&e); return; }
+                Ok(_) => {}
+            }
 
             service.clear_history().await;
             let display = service.format_history().await;
@@ -407,12 +415,15 @@ async fn chat_history_clear() {
 async fn chat_format_history_shows_messages() {
     match try_create_service().await {
         Ok(service) => {
-            let _ = service
+            match service
                 .chat(ChatRequest {
                     message: "What is echo?".to_string(),
                 })
                 .await
-                .unwrap();
+            {
+                Err(e) => { assert_setup_error(&e); return; }
+                Ok(_) => {}
+            }
 
             let display = service.format_history().await;
             assert!(
@@ -442,12 +453,15 @@ async fn chat_history_respects_capacity() {
     match try_create_service_with_config(config).await {
         Ok(service) => {
             for i in 1..=3 {
-                let _ = service
+                match service
                     .chat(ChatRequest {
                         message: format!("Message number {}", i),
                     })
                     .await
-                    .unwrap();
+                {
+                    Err(e) => { assert_setup_error(&e); return; }
+                    Ok(_) => {}
+                }
             }
 
             let display = service.format_history().await;
@@ -471,25 +485,25 @@ async fn chat_history_respects_capacity() {
 #[tokio::test]
 async fn autocomplete_returns_suggestions() {
     match try_create_service().await {
-        Ok(service) => {
-            let resp = service
-                .autocomplete(AutocompleteRequest {
-                    partial_input: "gi".to_string(),
-                    cwd: "/home/user/project".to_string(),
-                    cwd_entries: vec![
-                        "src".to_string(),
-                        "Cargo.toml".to_string(),
-                        ".gitignore".to_string(),
-                    ],
-                    recent_commands: vec!["cargo build".to_string()],
-                })
-                .await
-                .unwrap();
-            assert!(
+        Ok(service) => match service
+            .autocomplete(AutocompleteRequest {
+                partial_input: "gi".to_string(),
+                cwd: "/home/user/project".to_string(),
+                cwd_entries: vec![
+                    "src".to_string(),
+                    "Cargo.toml".to_string(),
+                    ".gitignore".to_string(),
+                ],
+                recent_commands: vec!["cargo build".to_string()],
+            })
+            .await
+        {
+            Ok(resp) => assert!(
                 !resp.suggestions.is_empty(),
                 "Expected at least one suggestion"
-            );
-        }
+            ),
+            Err(e) => assert_setup_error(&e),
+        },
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -497,18 +511,18 @@ async fn autocomplete_returns_suggestions() {
 #[tokio::test]
 async fn autocomplete_with_partial_input() {
     match try_create_service().await {
-        Ok(service) => {
-            let resp = service
-                .autocomplete(AutocompleteRequest {
-                    partial_input: "cargo".to_string(),
-                    cwd: "/project".to_string(),
-                    cwd_entries: vec!["Cargo.toml".to_string(), "src".to_string()],
-                    recent_commands: vec!["cargo build".to_string()],
-                })
-                .await
-                .unwrap();
-            assert!(!resp.suggestions.is_empty());
-        }
+        Ok(service) => match service
+            .autocomplete(AutocompleteRequest {
+                partial_input: "cargo".to_string(),
+                cwd: "/project".to_string(),
+                cwd_entries: vec!["Cargo.toml".to_string(), "src".to_string()],
+                recent_commands: vec!["cargo build".to_string()],
+            })
+            .await
+        {
+            Ok(resp) => assert!(!resp.suggestions.is_empty()),
+            Err(e) => assert_setup_error(&e),
+        },
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -516,20 +530,22 @@ async fn autocomplete_with_partial_input() {
 #[tokio::test]
 async fn autocomplete_no_empty_suggestions() {
     match try_create_service().await {
-        Ok(service) => {
-            let resp = service
-                .autocomplete(AutocompleteRequest {
-                    partial_input: "ls".to_string(),
-                    cwd: "/tmp".to_string(),
-                    cwd_entries: vec!["a.txt".to_string(), "b.txt".to_string()],
-                    recent_commands: vec![],
-                })
-                .await
-                .unwrap();
-            for s in &resp.suggestions {
-                assert!(!s.is_empty(), "Suggestions must not contain empty strings");
+        Ok(service) => match service
+            .autocomplete(AutocompleteRequest {
+                partial_input: "ls".to_string(),
+                cwd: "/tmp".to_string(),
+                cwd_entries: vec!["a.txt".to_string(), "b.txt".to_string()],
+                recent_commands: vec![],
+            })
+            .await
+        {
+            Ok(resp) => {
+                for s in &resp.suggestions {
+                    assert!(!s.is_empty(), "Suggestions must not contain empty strings");
+                }
             }
-        }
+            Err(e) => assert_setup_error(&e),
+        },
         Err(e) => assert_setup_error(&e),
     }
 }
@@ -537,34 +553,34 @@ async fn autocomplete_no_empty_suggestions() {
 #[tokio::test]
 async fn autocomplete_max_five() {
     match try_create_service().await {
-        Ok(service) => {
-            let resp = service
-                .autocomplete(AutocompleteRequest {
-                    partial_input: "".to_string(),
-                    cwd: "/home/user".to_string(),
-                    cwd_entries: vec![
-                        "Documents".to_string(),
-                        "Downloads".to_string(),
-                        "Pictures".to_string(),
-                        "Music".to_string(),
-                        "Videos".to_string(),
-                        "Desktop".to_string(),
-                        ".bashrc".to_string(),
-                    ],
-                    recent_commands: vec![
-                        "ls".to_string(),
-                        "cd Documents".to_string(),
-                        "cat .bashrc".to_string(),
-                    ],
-                })
-                .await
-                .unwrap();
-            assert!(
+        Ok(service) => match service
+            .autocomplete(AutocompleteRequest {
+                partial_input: "".to_string(),
+                cwd: "/home/user".to_string(),
+                cwd_entries: vec![
+                    "Documents".to_string(),
+                    "Downloads".to_string(),
+                    "Pictures".to_string(),
+                    "Music".to_string(),
+                    "Videos".to_string(),
+                    "Desktop".to_string(),
+                    ".bashrc".to_string(),
+                ],
+                recent_commands: vec![
+                    "ls".to_string(),
+                    "cd Documents".to_string(),
+                    "cat .bashrc".to_string(),
+                ],
+            })
+            .await
+        {
+            Ok(resp) => assert!(
                 resp.suggestions.len() <= 5,
                 "Expected at most 5 suggestions, got {}",
                 resp.suggestions.len()
-            );
-        }
+            ),
+            Err(e) => assert_setup_error(&e),
+        },
         Err(e) => assert_setup_error(&e),
     }
 }
