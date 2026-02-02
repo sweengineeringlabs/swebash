@@ -1,9 +1,13 @@
 mod ai;
+mod history;
 mod imports;
+mod readline;
 mod runtime;
 mod state;
 
 use anyhow::{Context, Result};
+use history::History;
+use readline::{Completer, Hinter, ReadlineConfig, ValidationResult, Validator};
 use std::io::{self, Write};
 
 #[tokio::main]
@@ -41,8 +45,22 @@ async fn main() -> Result<()> {
     let buf_ptr = get_input_buf.call(&mut store, ())? as usize;
     let buf_cap = get_input_buf_len.call(&mut store, ())? as usize;
 
+    // Load configuration
+    let config = ReadlineConfig::load();
+
+    // Initialize history with file persistence
+    let history_path = dirs::home_dir()
+        .map(|h| h.join(".swebash_history"))
+        .unwrap_or_else(|| std::path::PathBuf::from(".swebash_history"));
+    let mut history = History::with_file(config.max_history_size, history_path);
+
+    // Initialize readline features
+    let completer = Completer::new();
+    let hinter = Hinter::new(config.colors.clone());
+
     let stdin = io::stdin();
     let mut line = String::new();
+    let mut multiline_buffer = String::new();
     let mut recent_commands: Vec<String> = Vec::new();
     let max_recent: usize = 10;
 
@@ -71,16 +89,75 @@ async fn main() -> Result<()> {
             }
             None => cwd,
         };
-        print!("\x1b[1;32m{}\x1b[0m/> ", display_cwd);
+        // Determine prompt based on multi-line mode
+        let prompt = if multiline_buffer.is_empty() {
+            format!("\x1b[1;32m{}\x1b[0m/> ", display_cwd)
+        } else {
+            "\x1b[1;32m...\x1b[0m> ".to_string()
+        };
+
+        // Show hint if enabled and not in multi-line mode
+        if config.enable_hints && multiline_buffer.is_empty() {
+            if let Some(hint) = hinter.hint(&multiline_buffer, &history) {
+                print!("{}", prompt);
+                print!("{}", hint);
+                print!("\r"); // Return to start of line
+            }
+        }
+
+        print!("{}", prompt);
         io::stdout().flush()?;
 
         line.clear();
         let n = stdin.read_line(&mut line)?;
         if n == 0 {
+            // EOF (Ctrl-D)
+            if !multiline_buffer.is_empty() {
+                println!(); // New line
+                multiline_buffer.clear();
+                continue;
+            }
             break;
         }
 
-        let cmd = line.trim();
+        let input = line.trim_end();
+
+        // Check for tab completion request (line ends with incomplete word + double space or tab)
+        if config.enable_completion && (input.ends_with("  ") || input.ends_with('\t')) {
+            let completion_line = input.trim_end();
+            let completions = completer.complete(completion_line, completion_line.len());
+
+            if !completions.is_empty() {
+                println!("\nCompletions:");
+                for comp in &completions {
+                    println!("  {}", comp.display);
+                }
+                println!();
+                multiline_buffer = completion_line.to_string();
+                continue;
+            }
+        }
+
+        // Add to multi-line buffer
+        if !multiline_buffer.is_empty() {
+            multiline_buffer.push('\n');
+        }
+        multiline_buffer.push_str(input);
+
+        // Check if command is complete
+        let validator = Validator::new();
+        if validator.validate(&multiline_buffer) == ValidationResult::Incomplete {
+            // Need more input
+            continue;
+        }
+
+        // Command is complete, process it
+        let cmd_with_leading_space = multiline_buffer.trim_end().to_string();
+        let cmd = multiline_buffer.trim().to_string();
+
+        // Clear multi-line buffer
+        multiline_buffer.clear();
+
         if cmd.is_empty() {
             continue;
         }
@@ -88,14 +165,17 @@ async fn main() -> Result<()> {
             break;
         }
 
+        // Add to history after checking for exit
+        history.add(cmd_with_leading_space);
+
         // Intercept AI commands before WASM dispatch
-        if let Some(ai_cmd) = ai::commands::parse_ai_command(cmd) {
+        if let Some(ai_cmd) = ai::commands::parse_ai_command(&cmd) {
             ai::handle_ai_command(&ai_service, ai_cmd, &recent_commands).await;
             continue;
         }
 
         // Track recent commands for AI context
-        recent_commands.push(cmd.to_string());
+        recent_commands.push(cmd.clone());
         if recent_commands.len() > max_recent {
             recent_commands.remove(0);
         }
@@ -114,5 +194,6 @@ async fn main() -> Result<()> {
         shell_eval.call(&mut store, cmd_bytes.len() as u32)?;
     }
 
+    // History is automatically saved on Drop
     Ok(())
 }

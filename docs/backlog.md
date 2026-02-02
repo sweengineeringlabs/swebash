@@ -46,10 +46,107 @@
 - [ ] 6.4 Streaming output for chat mode (future)
 - [ ] 6.5 Integration tests with providers (future)
 
+## Phase 7: Rustyline Enhancements - Tab Completion (✅ Complete - Simplified)
+**Goal**: Implement intelligent tab completion for commands, file paths, and arguments
+
+- [x] 7.1 Implement `Completer` module for swebash
+- [x] 7.2 Add builtin command completion (echo, pwd, cd, ls, cat, etc.)
+- [x] 7.3 Add file/directory path completion with tilde expansion
+- [x] 7.4 Add context-aware completion (directories show `/` suffix)
+- [ ] 7.5 Add command history-based completion (future)
+- [ ] 7.6 Add environment variable completion ($VAR) (future)
+- [x] 7.7 Integrate completer with REPL (double space trigger)
+- [ ] 7.8 Add completion for AI commands (future)
+- [x] 7.9 Add tests for completion logic (4 tests passing)
+- [x] 7.10 Document tab completion in user guide
+
+**Status**: Core features implemented (180 lines). Trigger: double space or tab.
+**File**: `host/src/readline/completer.rs`
+
+## Phase 8: Rustyline Enhancements - Syntax Highlighting
+**Goal**: Add color-coded syntax highlighting for commands as they're typed
+
+- [ ] 8.1 Implement `Highlighter` trait for swebash
+- [ ] 8.2 Add color scheme configuration (can use existing prompt colors)
+- [ ] 8.3 Highlight builtin commands (green)
+- [ ] 8.4 Highlight external commands (blue)
+- [ ] 8.5 Highlight invalid/unknown commands (red)
+- [ ] 8.6 Highlight strings/quotes (yellow)
+- [ ] 8.7 Highlight file paths (cyan)
+- [ ] 8.8 Highlight operators (|, >, <, &&, etc.)
+- [ ] 8.9 Integrate highlighter with rustyline Editor
+- [ ] 8.10 Add configurable color themes
+- [ ] 8.11 Add tests for highlighting logic
+- [ ] 8.12 Document syntax highlighting in user guide
+
+## Phase 9: Rustyline Enhancements - History Hints
+**Goal**: Show inline hints/suggestions based on command history (fish-shell style)
+
+- [ ] 9.1 Implement `Hinter` trait for swebash
+- [ ] 9.2 Add history-based hint matching (prefix search)
+- [ ] 9.3 Add hint display configuration (color, style)
+- [ ] 9.4 Add hint acceptance keybinding (Right arrow or Ctrl-F)
+- [ ] 9.5 Add hint filtering (show most recent/frequent match)
+- [ ] 9.6 Add hint context awareness (working directory, etc.)
+- [ ] 9.7 Integrate hinter with rustyline Editor
+- [ ] 9.8 Add option to disable hints via config
+- [ ] 9.9 Add tests for hint logic
+- [ ] 9.10 Document hints feature in user guide
+
+## Phase 10: Rustyline Enhancements - Vi Mode
+**Goal**: Add Vi editing mode as alternative to Emacs mode
+
+- [ ] 10.1 Add EditMode configuration option (Emacs/Vi)
+- [ ] 10.2 Implement Vi command mode keybindings
+- [ ] 10.3 Implement Vi insert mode keybindings
+- [ ] 10.4 Add visual mode indicator in prompt
+- [ ] 10.5 Add Vi-specific commands (dd, yy, p, etc.)
+- [ ] 10.6 Add Vi search commands (/, ?, n, N)
+- [ ] 10.7 Add Vi motion commands (w, b, e, $, ^, etc.)
+- [ ] 10.8 Add configuration file support (.swebashrc)
+- [ ] 10.9 Add runtime mode switching (if feasible)
+- [ ] 10.10 Add tests for Vi mode
+- [ ] 10.11 Document Vi mode in user guide
+
+## Phase 11: Rustyline Enhancements - Multi-line Editing
+**Goal**: Improve multi-line command editing for complex scripts
+
+- [ ] 11.1 Implement `Validator` trait for swebash
+- [ ] 11.2 Add line continuation detection (trailing backslash)
+- [ ] 11.3 Add bracket/quote matching for multi-line
+- [ ] 11.4 Add continuation prompt styling (different from main prompt)
+- [ ] 11.5 Add multi-line navigation (Up/Down within multi-line)
+- [ ] 11.6 Add multi-line history preservation
+- [ ] 11.7 Add auto-indent for multi-line commands
+- [ ] 11.8 Add bracket/quote auto-closing
+- [ ] 11.9 Integrate validator with rustyline Editor
+- [ ] 11.10 Add tests for multi-line editing
+- [ ] 11.11 Document multi-line editing in user guide
+
+## Phase 12: Rustyline Configuration System
+**Goal**: Make rustyline features configurable via config file
+
+- [ ] 12.1 Design .swebashrc configuration format (TOML/YAML)
+- [ ] 12.2 Add config file loading from ~/.swebashrc
+- [ ] 12.3 Add rustyline section in config (edit_mode, colors, etc.)
+- [ ] 12.4 Add keybinding customization support
+- [ ] 12.5 Add color theme customization
+- [ ] 12.6 Add history configuration (max_size, ignore_patterns)
+- [ ] 12.7 Add completion configuration (case_sensitive, etc.)
+- [ ] 12.8 Add config validation and error reporting
+- [ ] 12.9 Add config reload command (or on-the-fly)
+- [ ] 12.10 Add tests for config loading
+- [ ] 12.11 Create example .swebashrc file
+- [ ] 12.12 Document configuration in setup guide
+
 ## Future Work
 - Streaming responses for chat mode
 - Integration test suite with mock providers
-- YAML configuration file support
 - Custom prompt templates
 - Plugin system for additional AI features
 - Publish llm-provider to crates.io for version-based deps
+- inputrc compatibility layer (read GNU readline configs)
+- Rustyline macro/keyboard macro recording
+- Incremental search with preview
+- Command abbreviations/aliases via rustyline
+- Undo/redo history with visualization

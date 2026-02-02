@@ -1,0 +1,25 @@
+# swebash Configuration File
+# Copy to ~/.swebashrc to customize
+
+[readline]
+# Editing mode: "emacs" or "vi" (vi mode not yet implemented)
+edit_mode = "emacs"
+
+# History settings
+max_history_size = 1000
+history_ignore_space = true
+
+# Feature toggles
+enable_completion = true
+enable_highlighting = true
+enable_hints = true
+
+[readline.colors]
+# Color names: black, red, green, yellow, blue, magenta, cyan, white, gray
+builtin_command = "green"
+external_command = "blue"
+invalid_command = "red"
+string = "yellow"
+path = "cyan"
+operator = "magenta"
+hint = "gray"

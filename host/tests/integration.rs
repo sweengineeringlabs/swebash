@@ -1,6 +1,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::env;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -27,6 +28,11 @@ fn run(commands: &[&str]) -> (String, String) {
 
 /// Run shell commands with a specific working directory.
 fn run_in(dir: &Path, commands: &[&str]) -> (String, String) {
+    run_in_with_home(dir, commands, None)
+}
+
+/// Run shell commands with a specific working directory and optionally override HOME.
+fn run_in_with_home(dir: &Path, commands: &[&str], home: Option<&Path>) -> (String, String) {
     assert!(
         engine_wasm_path().exists(),
         "engine.wasm not found — build it first:\n  \
@@ -41,13 +47,19 @@ fn run_in(dir: &Path, commands: &[&str]) -> (String, String) {
     }
     input.push_str("exit\n");
 
-    let mut child = Command::new(host_exe())
+    let mut command = Command::new(host_exe());
+    command
         .current_dir(dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to start host binary");
+        .stderr(Stdio::piped());
+
+    // Override HOME directory if provided (for testing history file location)
+    if let Some(home_path) = home {
+        command.env("HOME", home_path);
+    }
+
+    let mut child = command.spawn().expect("failed to start host binary");
 
     child
         .stdin
@@ -427,5 +439,117 @@ fn unknown_command_reports_error() {
     assert!(
         !err.is_empty() || _out.contains("exited with code"),
         "unknown command should produce an error. stderr: {err}, stdout: {_out}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tests — history
+// ---------------------------------------------------------------------------
+
+#[test]
+fn history_file_created() {
+    let dir = TestDir::new("history_file");
+
+    // Run shell with custom HOME to control history file location
+    let (_out, _err) = run_in_with_home(
+        dir.path(),
+        &["echo test1", "echo test2", "echo test3"],
+        Some(dir.path()),
+    );
+
+    // Check that .swebash_history file was created
+    let history_file = dir.path().join(".swebash_history");
+    assert!(
+        history_file.exists(),
+        "history file should be created at {:?}",
+        history_file
+    );
+}
+
+#[test]
+fn history_persists_commands() {
+    let dir = TestDir::new("history_persist");
+
+    // Run shell once with some commands
+    let (_out1, _err1) = run_in_with_home(
+        dir.path(),
+        &["echo first", "echo second", "pwd"],
+        Some(dir.path()),
+    );
+
+    let history_file = dir.path().join(".swebash_history");
+    assert!(history_file.exists(), "history file should exist");
+
+    // Read history file and verify commands were saved
+    let history_content = std::fs::read_to_string(&history_file)
+        .expect("should be able to read history file");
+
+    assert!(
+        history_content.contains("echo first"),
+        "history should contain first command. content: {history_content}"
+    );
+    assert!(
+        history_content.contains("echo second"),
+        "history should contain second command. content: {history_content}"
+    );
+    assert!(
+        history_content.contains("pwd"),
+        "history should contain third command. content: {history_content}"
+    );
+}
+
+#[test]
+fn history_ignores_empty_lines() {
+    let dir = TestDir::new("history_empty");
+
+    // Run shell with empty lines between commands
+    let (_out, _err) = run_in_with_home(
+        dir.path(),
+        &["echo test", "", "", "echo another"],
+        Some(dir.path()),
+    );
+
+    let history_file = dir.path().join(".swebash_history");
+    let history_content = std::fs::read_to_string(&history_file)
+        .expect("should be able to read history file");
+
+    // Empty lines should not be in history, exit should not be in history
+    let line_count = history_content.lines().filter(|l| !l.is_empty()).count();
+    assert_eq!(
+        line_count, 2,
+        "history should have exactly 2 commands, got {line_count}. Content:\n{history_content}"
+    );
+
+    // Verify the actual commands
+    assert!(history_content.contains("echo test"), "should contain 'echo test'");
+    assert!(history_content.contains("echo another"), "should contain 'echo another'");
+}
+
+#[test]
+fn history_ignores_space_prefix() {
+    let dir = TestDir::new("history_space");
+
+    // Run shell with command starting with space
+    let (_out, _err) = run_in_with_home(
+        dir.path(),
+        &["echo visible", " echo secret", "pwd"],
+        Some(dir.path()),
+    );
+
+    let history_file = dir.path().join(".swebash_history");
+    let history_content = std::fs::read_to_string(&history_file)
+        .expect("should be able to read history file");
+
+    assert!(
+        history_content.contains("echo visible"),
+        "visible command should be in history"
+    );
+    assert!(
+        !history_content.contains("secret"),
+        "command with space prefix should not be in history"
+    );
+    assert!(
+        history_content.contains("pwd"),
+        "pwd command should be in history"
     );
 }
