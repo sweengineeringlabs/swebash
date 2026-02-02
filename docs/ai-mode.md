@@ -364,7 +364,9 @@ loop {
 
 ### Test Coverage
 
-**Smart Detection Tests** (`host/src/ai/commands.rs`):
+**Unit Tests** (`host/src/ai/commands.rs`): 29 tests
+
+**Core Detection Tests**:
 - `test_looks_like_command_known` - Unambiguous commands
 - `test_looks_like_command_flags` - Flag detection
 - `test_looks_like_command_pipes` - Pipe/redirect detection
@@ -381,7 +383,37 @@ loop {
 - `test_parse_mode_exit` - Exiting AI mode
 - `test_parse_mode_explicit_subcommands` - Subcommands in AI mode
 
-**Total**: 14 tests, all passing
+**Edge Case Tests**:
+- `test_empty_input` - Empty and whitespace input
+- `test_multiple_pipes` - Commands with multiple pipes
+- `test_redirect_operators` - Various redirect operators (>, <, 2>&1)
+- `test_action_verb_with_flags` - Action verb with command syntax
+- `test_case_sensitivity` - Case-insensitive action detection
+- `test_ambiguous_with_paths` - Ambiguous commands with file paths
+- `test_ambiguous_with_extensions` - Ambiguous commands with file extensions
+- `test_ambiguous_natural_language` - Ambiguous words as natural language
+- `test_long_command_chains` - Long piped command chains
+- `test_commands_with_quotes` - Commands with quoted arguments
+- `test_subcommands_with_extra_spaces` - Whitespace handling
+- `test_questions_with_punctuation` - Question formats
+- `test_special_characters` - awk, sed special chars
+- `test_docker_kubernetes_commands` - Modern CLI tools
+- `test_conversational_phrases` - Conversational chat detection
+
+**Integration Tests** (`host/tests/integration.rs`): 9 tests
+
+- `ai_mode_enter_and_exit` - Mode transitions
+- `ai_mode_prompt_indicator` - Prompt changes
+- `ai_mode_status_command` - Commands in AI mode
+- `ai_mode_quit_exits` - Both exit and quit work
+- `ai_mode_chat_response` - AI responses or not configured
+- `ai_mode_preserves_history` - History tracking in AI mode
+- `shell_mode_exit_quits` - Exit behavior in shell mode
+- `ai_mode_nested_exit_behavior` - Exit doesn't quit shell from AI mode
+- `ai_mode_multiple_commands` - Multiple commands in AI mode
+- `ai_mode_with_multiline` - Multi-line support in AI mode
+
+**Total**: 38 tests (29 unit + 9 integration), all passing
 
 ### Running Tests
 

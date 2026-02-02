@@ -162,7 +162,7 @@ pub fn parse_ai_mode_command(input: &str) -> AiCommand {
 /// Detects:
 /// - Known command names with flags/arguments that look like command syntax
 /// - Command flags (-x, --flag)
-/// - Pipes and redirects (|, >, <)
+/// - Pipes and redirects (|, >, <, 2>&1, etc.)
 ///
 /// Ambiguous cases (e.g., "find large files") are NOT treated as commands
 /// unless they have clear command syntax (flags, pipes, paths).
@@ -172,8 +172,12 @@ fn looks_like_command(input: &str) -> bool {
         return true;
     }
 
-    // Has pipes or redirects
-    if input.contains('|') || input.contains(" > ") || input.contains(" < ") {
+    // Has pipes or redirects (including file descriptors like 2>&1)
+    if input.contains('|') ||
+       input.contains(" > ") ||
+       input.contains(" < ") ||
+       input.contains("2>") ||
+       input.contains(">&") {
         return true;
     }
 
@@ -203,6 +207,10 @@ fn looks_like_command(input: &str) -> bool {
         }
         // Check if it has file extensions
         if rest.contains(".txt") || rest.contains(".log") || rest.contains(".sh") {
+            return true;
+        }
+        // Check if it has quoted strings (command arguments)
+        if rest.contains('"') || rest.contains('\'') {
             return true;
         }
         // Otherwise, treat as natural language
@@ -372,6 +380,210 @@ mod tests {
         assert!(matches!(
             parse_ai_mode_command("explain how pipes work"),
             AiCommand::Explain(_)
+        ));
+    }
+
+    #[test]
+    fn test_empty_input() {
+        // Empty input defaults to chat
+        assert!(matches!(
+            parse_ai_mode_command(""),
+            AiCommand::Chat(_)
+        ));
+        // Whitespace only defaults to chat
+        assert!(matches!(
+            parse_ai_mode_command("   "),
+            AiCommand::Chat(_)
+        ));
+    }
+
+    #[test]
+    fn test_multiple_pipes() {
+        // Command with multiple pipes
+        assert!(matches!(
+            parse_ai_mode_command("ps aux | grep node | wc -l"),
+            AiCommand::Explain(_)
+        ));
+    }
+
+    #[test]
+    fn test_redirect_operators() {
+        // Various redirect operators
+        assert!(matches!(
+            parse_ai_mode_command("echo test > output.txt"),
+            AiCommand::Explain(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("cat < input.txt"),
+            AiCommand::Explain(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("command 2>&1"),
+            AiCommand::Explain(_)
+        ));
+    }
+
+    #[test]
+    fn test_action_verb_with_flags() {
+        // Action verb but has flags → command takes priority
+        assert!(matches!(
+            parse_ai_mode_command("find . -name '*.log'"),
+            AiCommand::Explain(_)
+        ));
+    }
+
+    #[test]
+    fn test_case_sensitivity() {
+        // Action verbs should be case-insensitive
+        assert!(matches!(
+            parse_ai_mode_command("Find large files"),
+            AiCommand::Ask(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("LIST running processes"),
+            AiCommand::Ask(_)
+        ));
+    }
+
+    #[test]
+    fn test_ambiguous_with_paths() {
+        // Ambiguous commands with paths
+        assert!(matches!(
+            parse_ai_mode_command("find /var/log -name '*.log'"),
+            AiCommand::Explain(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("find ./documents -type f"),
+            AiCommand::Explain(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("find ~/Downloads"),
+            AiCommand::Explain(_)
+        ));
+    }
+
+    #[test]
+    fn test_ambiguous_with_extensions() {
+        // Ambiguous commands with file extensions
+        assert!(matches!(
+            parse_ai_mode_command("find error.log"),
+            AiCommand::Explain(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("echo test.txt"),
+            AiCommand::Explain(_)
+        ));
+    }
+
+    #[test]
+    fn test_ambiguous_natural_language() {
+        // Ambiguous commands without syntax → action request
+        assert!(matches!(
+            parse_ai_mode_command("find all large files"),
+            AiCommand::Ask(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("show me the current directory"),
+            AiCommand::Ask(_)
+        ));
+    }
+
+    #[test]
+    fn test_long_command_chains() {
+        // Long command chains with multiple operators
+        assert!(matches!(
+            parse_ai_mode_command("ls -la | grep '.txt' | sort | head -10"),
+            AiCommand::Explain(_)
+        ));
+    }
+
+    #[test]
+    fn test_commands_with_quotes() {
+        // Commands with quoted arguments
+        assert!(matches!(
+            parse_ai_mode_command("grep 'pattern' file.txt"),
+            AiCommand::Explain(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("echo \"hello world\""),
+            AiCommand::Explain(_)
+        ));
+    }
+
+    #[test]
+    fn test_subcommands_with_extra_spaces() {
+        // Explicit subcommands with extra whitespace
+        assert!(matches!(
+            parse_ai_mode_command("  ask   find files  "),
+            AiCommand::Ask(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("  explain   ls -la  "),
+            AiCommand::Explain(_)
+        ));
+    }
+
+    #[test]
+    fn test_questions_with_punctuation() {
+        // Various question formats
+        assert!(matches!(
+            parse_ai_mode_command("how do I compress files?"),
+            AiCommand::Chat(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("what is docker?"),
+            AiCommand::Chat(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("why isn't this working?"),
+            AiCommand::Chat(_)
+        ));
+    }
+
+    #[test]
+    fn test_special_characters() {
+        // Commands with special characters
+        assert!(matches!(
+            parse_ai_mode_command("awk '{print $1}' file.txt"),
+            AiCommand::Explain(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("sed 's/old/new/g' file.txt"),
+            AiCommand::Explain(_)
+        ));
+    }
+
+    #[test]
+    fn test_docker_kubernetes_commands() {
+        // Modern CLI tools
+        assert!(matches!(
+            parse_ai_mode_command("docker ps -a"),
+            AiCommand::Explain(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("kubectl get pods"),
+            AiCommand::Explain(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("cargo build --release"),
+            AiCommand::Explain(_)
+        ));
+    }
+
+    #[test]
+    fn test_conversational_phrases() {
+        // Conversational phrases that should go to chat
+        assert!(matches!(
+            parse_ai_mode_command("thanks for the help"),
+            AiCommand::Chat(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("that makes sense"),
+            AiCommand::Chat(_)
+        ));
+        assert!(matches!(
+            parse_ai_mode_command("can you explain that again?"),
+            AiCommand::Chat(_)
         ));
     }
 }

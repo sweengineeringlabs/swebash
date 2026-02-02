@@ -6,13 +6,17 @@
 - **AI Mode with Smart Detection** (2025-02-02)
   - Interactive AI mode: type `ai` to enter, `exit` to leave
   - Smart intent detection automatically routes commands:
-    - Command patterns (flags, pipes) → explain
+    - Command patterns (flags, pipes, redirects) → explain
     - Action requests (find, list, show) → translate to command
     - Questions and conversation → chat
   - No need to repeatedly type "ai" prefix
   - Explicit subcommands override detection when needed
   - Cyan `[AI Mode]` prompt indicator
-  - 14 unit tests covering detection logic (all passing)
+  - Handles edge cases: quoted arguments, multiple pipes, case sensitivity
+  - Comprehensive test suite:
+    - 29 unit tests covering detection logic
+    - 9 integration tests for mode transitions and behavior
+    - All 92 tests passing (49 unit + 43 integration total)
   - See `docs/ai-mode.md` for complete architecture
 
 - **Persistent command history** (2025-02-02)

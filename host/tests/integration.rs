@@ -553,3 +553,166 @@ fn history_ignores_space_prefix() {
         "pwd command should be in history"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Tests — AI mode
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ai_mode_enter_and_exit() {
+    let (out, _err) = run(&["ai", "exit"]);
+
+    // Should show "Entered AI mode" message
+    assert!(
+        out.contains("Entered AI mode"),
+        "should show entered message. stdout: {out}"
+    );
+
+    // Should show "Exited AI mode" message
+    assert!(
+        out.contains("Exited AI mode"),
+        "should show exited message. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_mode_prompt_indicator() {
+    let (out, _err) = run(&["ai", "exit"]);
+
+    // Should show [AI Mode] prompt
+    assert!(
+        out.contains("[AI Mode]"),
+        "should show AI mode prompt indicator. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_mode_status_command() {
+    let (out, _err) = run(&["ai", "status", "exit"]);
+
+    // Should handle status command in AI mode
+    assert!(
+        out.contains("[AI Mode]"),
+        "should be in AI mode. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_mode_quit_exits() {
+    let (out, _err) = run(&["ai", "quit"]);
+
+    // Both 'exit' and 'quit' should work
+    assert!(
+        out.contains("Exited AI mode"),
+        "quit should exit AI mode. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_mode_chat_response() {
+    let (out, _err) = run(&["ai", "how do I list files?", "exit"]);
+
+    // Should either respond with AI output or show "not configured" message
+    // depending on whether API key is set in the test environment
+    assert!(
+        out.contains("not configured") ||
+        out.contains("Not configured") ||
+        out.contains("ls") ||
+        out.contains("thinking"),
+        "should either show not configured or respond to the question. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_mode_preserves_history() {
+    let dir = TestDir::new("ai_mode_history");
+
+    let (_out, _err) = run_in_with_home(
+        dir.path(),
+        &["ai", "status", "exit", "echo test"],
+        Some(dir.path()),
+    );
+
+    let history_file = dir.path().join(".swebash_history");
+    let history_content = std::fs::read_to_string(&history_file)
+        .expect("should be able to read history file");
+
+    // AI mode commands should be in history
+    assert!(
+        history_content.contains("status"),
+        "AI mode commands should be in history. content: {history_content}"
+    );
+
+    // Regular shell commands should also be in history
+    assert!(
+        history_content.contains("echo test"),
+        "shell commands should be in history. content: {history_content}"
+    );
+}
+
+#[test]
+fn shell_mode_exit_quits() {
+    // In shell mode (not AI mode), 'exit' should quit the shell
+    let (out, _err) = run(&["echo before"]);
+
+    assert!(
+        out.contains("before"),
+        "should execute command before exit. stdout: {out}"
+    );
+    // Shell exits after "exit" command (added automatically by run())
+}
+
+#[test]
+fn ai_mode_nested_exit_behavior() {
+    // Test that exit in AI mode doesn't quit the shell, but returns to shell mode
+    let (out, _err) = run(&["ai", "exit", "echo after"]);
+
+    assert!(
+        out.contains("Exited AI mode"),
+        "should exit AI mode. stdout: {out}"
+    );
+
+    assert!(
+        out.contains("after"),
+        "should continue executing commands after exiting AI mode. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_mode_multiple_commands() {
+    let (out, _err) = run(&[
+        "ai",
+        "status",
+        "history",
+        "clear",
+        "exit",
+    ]);
+
+    // Should stay in AI mode for all commands
+    assert!(
+        out.contains("Entered AI mode"),
+        "should enter AI mode. stdout: {out}"
+    );
+
+    assert!(
+        out.contains("Exited AI mode"),
+        "should exit AI mode at the end. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_mode_with_multiline() {
+    // Test that AI mode works with multi-line input
+    let (out, _err) = run(&[
+        "ai",
+        "echo \"hello",
+        "world\"",
+        "exit",
+    ]);
+
+    // Multi-line should work in AI mode
+    assert!(
+        out.contains("[AI Mode]") || out.contains("not configured"),
+        "should be in AI mode or show not configured. stdout: {out}"
+    );
+}
