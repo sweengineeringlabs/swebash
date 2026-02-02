@@ -11,3 +11,4 @@ tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
 swebash-ai = { path = "../ai" }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
+crossterm = "0.27"

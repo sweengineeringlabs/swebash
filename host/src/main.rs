@@ -7,8 +7,7 @@ mod state;
 
 use anyhow::{Context, Result};
 use history::History;
-use readline::{Completer, Hinter, ReadlineConfig, ValidationResult, Validator};
-use std::io::{self, Write};
+use readline::{Completer, Hinter, LineEditor, ReadlineConfig, ValidationResult, Validator};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -57,9 +56,8 @@ async fn main() -> Result<()> {
     // Initialize readline features
     let completer = Completer::new();
     let hinter = Hinter::new(config.colors.clone());
+    let mut editor = LineEditor::new(config.clone(), hinter);
 
-    let stdin = io::stdin();
-    let mut line = String::new();
     let mut multiline_buffer = String::new();
     let mut recent_commands: Vec<String> = Vec::new();
     let max_recent: usize = 10;
@@ -103,29 +101,18 @@ async fn main() -> Result<()> {
             "\x1b[1;32m...\x1b[0m> ".to_string()
         };
 
-        // Show hint if enabled and not in multi-line mode
-        if config.enable_hints && multiline_buffer.is_empty() {
-            if let Some(hint) = hinter.hint(&multiline_buffer, &history) {
-                print!("{}", prompt);
-                print!("{}", hint);
-                print!("\r"); // Return to start of line
+        // Read line with editor
+        let line = match editor.read_line(&prompt, &history)? {
+            Some(line) => line,
+            None => {
+                // EOF (Ctrl-D)
+                if !multiline_buffer.is_empty() {
+                    multiline_buffer.clear();
+                    continue;
+                }
+                break;
             }
-        }
-
-        print!("{}", prompt);
-        io::stdout().flush()?;
-
-        line.clear();
-        let n = stdin.read_line(&mut line)?;
-        if n == 0 {
-            // EOF (Ctrl-D)
-            if !multiline_buffer.is_empty() {
-                println!(); // New line
-                multiline_buffer.clear();
-                continue;
-            }
-            break;
-        }
+        };
 
         let input = line.trim_end();
 

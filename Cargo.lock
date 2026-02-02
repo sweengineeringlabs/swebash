@@ -422,6 +422,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
+name = "crossterm"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f476fe445d41c9e991fd07515a6f463074b782242ccf4a5b7b1d1012e70824df"
+dependencies = [
+ "bitflags",
+ "crossterm_winapi",
+ "libc",
+ "mio 0.8.11",
+ "parking_lot",
+ "signal-hook",
+ "signal-hook-mio",
+ "winapi",
+]
+
+[[package]]
+name = "crossterm_winapi"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acdd7c62a3665c7f6830a51635d9ac9b23ed385797f70a83bb8bafe9c572ab2b"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
 name = "crypto-common"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -509,22 +534,7 @@ name = "dev-engineeringlabs-rustboot-config"
 version = "0.1.0"
 dependencies = [
  "dotenvy",
- "rustboot-macros 0.1.0",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror 1.0.69",
- "toml",
-]
-
-[[package]]
-name = "dev-engineeringlabs-rustboot-config"
-version = "0.1.0"
-source = "registry+file:///home/adentic/.cargo/registry.local/index"
-checksum = "eab4b966268313b956d240ab9f317ba284e264d7ac21a110b1ad65a9453bf637"
-dependencies = [
- "dotenvy",
- "rustboot-macros 0.1.0 (registry+file:///home/adentic/.cargo/registry.local/index)",
+ "rustboot-macros",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -546,7 +556,7 @@ dependencies = [
 name = "dev-engineeringlabs-rustboot-observability"
 version = "0.1.0"
 dependencies = [
- "rustboot-macros 0.1.0",
+ "rustboot-macros",
  "tracing",
  "uuid",
 ]
@@ -563,7 +573,7 @@ dependencies = [
 name = "dev-engineeringlabs-rustboot-resilience"
 version = "0.1.0"
 dependencies = [
- "rustboot-macros 0.1.0",
+ "rustboot-macros",
  "thiserror 1.0.69",
  "tokio",
 ]
@@ -571,8 +581,6 @@ dependencies = [
 [[package]]
 name = "dev-engineeringlabs-rustboot-streams"
 version = "0.1.0"
-source = "registry+file:///home/adentic/.cargo/registry.local/index"
-checksum = "ed75e42e3ee25ca22929b67ff2444012374faa001c3b42d394b63217da07b62e"
 dependencies = [
  "futures-core",
  "tokio",
@@ -582,10 +590,8 @@ dependencies = [
 [[package]]
 name = "dev-engineeringlabs-rustboot-validation"
 version = "0.1.0"
-source = "registry+file:///home/adentic/.cargo/registry.local/index"
-checksum = "0252c4581d3a6c0848e00673f3a7f06d1f2d5a61e6e54c293931e33ce42b4fb9"
 dependencies = [
- "rustboot-macros 0.1.0 (registry+file:///home/adentic/.cargo/registry.local/index)",
+ "rustboot-macros",
 ]
 
 [[package]]
@@ -1370,7 +1376,7 @@ version = "0.1.0"
 dependencies = [
  "async-stream",
  "async-trait",
- "dev-engineeringlabs-rustboot-config 0.1.0",
+ "dev-engineeringlabs-rustboot-config",
  "dev-engineeringlabs-rustboot-observability",
  "dev-engineeringlabs-rustboot-ratelimit",
  "dev-engineeringlabs-rustboot-resilience",
@@ -1437,6 +1443,18 @@ name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
+
+[[package]]
+name = "mio"
+version = "0.8.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4a650543ca06a924e8b371db273b2756685faae30f8487da1b56505a8f78b0c"
+dependencies = [
+ "libc",
+ "log",
+ "wasi",
+ "windows-sys 0.48.0",
+]
 
 [[package]]
 name = "mio"
@@ -1844,19 +1862,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustboot-macros"
-version = "0.1.0"
-source = "registry+file:///home/adentic/.cargo/registry.local/index"
-checksum = "0e9415eaa4d627e1d9066494808154dc0aaec277b542b0e75a5c464852fc2fdd"
-dependencies = [
- "darling",
- "proc-macro2",
- "quote",
- "serde",
- "syn",
-]
-
-[[package]]
 name = "rustc-demangle"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1933,7 +1938,7 @@ version = "2.0.0"
 dependencies = [
  "async-trait",
  "csv",
- "dev-engineeringlabs-rustboot-config 0.1.0 (registry+file:///home/adentic/.cargo/registry.local/index)",
+ "dev-engineeringlabs-rustboot-config",
  "dev-engineeringlabs-rustboot-streams",
  "dev-engineeringlabs-rustboot-validation",
  "rustratify-macros",
@@ -2149,6 +2154,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "signal-hook"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d881a16cf4426aa584979d30bd82cb33429027e42122b169753d6ef1085ed6e2"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
+name = "signal-hook-mio"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b75a19a7a740b25bc7944bdee6172368f988763b744e3d4dfe753f6b4ece40cc"
+dependencies = [
+ "libc",
+ "mio 0.8.11",
+ "signal-hook",
+]
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2160,9 +2186,9 @@ dependencies = [
 
 [[package]]
 name = "slab"
-version = "0.4.11"
+version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
+checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smallvec"
@@ -2212,6 +2238,7 @@ name = "swebash"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crossterm",
  "dirs",
  "serde",
  "swebash-ai",
@@ -2375,7 +2402,7 @@ checksum = "72a2903cd7736441aac9df9d7688bd0ce48edccaadf181c3b90be801e81d3d86"
 dependencies = [
  "bytes",
  "libc",
- "mio",
+ "mio 1.1.1",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",
@@ -3476,18 +3503,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.36"
+version = "0.8.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dafd85c832c1b68bbb4ec0c72c7f6f4fc5179627d2bc7c26b30e4c0cc11e76cc"
+checksum = "7456cf00f0685ad319c5b1693f291a650eaf345e941d082fc4e03df8a03996ac"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.36"
+version = "0.8.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cb7e4e8436d9db52fbd6625dbf2f45243ab84994a72882ec8227b99e72b439a"
+checksum = "1328722bbf2115db7e19d69ebcc15e795719e2d66b60827c6a69a117365e37a0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3556,9 +3583,9 @@ dependencies = [
 
 [[package]]
 name = "zmij"
-version = "1.0.17"
+version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02aae0f83f69aafc94776e879363e9771d7ecbffe2c7fbb6c14c5e00dfe88439"
+checksum = "3ff05f8caa9038894637571ae6b9e29466c1f4f829d26c9b28f869a29cbe3445"
 
 [[package]]
 name = "zstd"
