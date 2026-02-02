@@ -13,7 +13,9 @@
 
 use serial_test::serial;
 use swebash_ai::api::error::{AiError, AiResult};
-use swebash_ai::api::types::{AutocompleteRequest, ChatRequest, ExplainRequest, TranslateRequest};
+use swebash_ai::api::types::{
+    AutocompleteRequest, ChatRequest, ChatStreamEvent, ExplainRequest, TranslateRequest,
+};
 use swebash_ai::api::AiService;
 use swebash_ai::config::AiConfig;
 use swebash_ai::core::DefaultAiService;
@@ -475,6 +477,104 @@ async fn chat_history_respects_capacity() {
                 "Latest message should be in history: {}",
                 display
             );
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+// ── Chat streaming tests (2) ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn chat_streaming_returns_events() {
+    match try_create_service().await {
+        Ok(service) => {
+            let request = ChatRequest {
+                message: "What does the echo command do?".to_string(),
+            };
+            match service.chat_streaming(request).await {
+                Ok(mut rx) => {
+                    let mut got_delta = false;
+                    let mut got_done = false;
+
+                    while let Some(event) = rx.recv().await {
+                        match event {
+                            ChatStreamEvent::Delta(_) => got_delta = true,
+                            ChatStreamEvent::Done(text) => {
+                                got_done = true;
+                                assert!(!text.is_empty(), "Done text should not be empty");
+                            }
+                        }
+                    }
+
+                    assert!(got_delta, "Should have received at least one Delta event");
+                    assert!(got_done, "Should have received a Done event");
+                }
+                Err(e) => assert_setup_error(&e),
+            }
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+async fn chat_streaming_multi_turn_preserves_history() {
+    match try_create_service().await {
+        Ok(service) => {
+            // First turn — streaming
+            let request = ChatRequest {
+                message: "Remember this word: elephant".to_string(),
+            };
+            match service.chat_streaming(request).await {
+                Ok(mut rx) => {
+                    let mut first_text = String::new();
+                    while let Some(event) = rx.recv().await {
+                        match event {
+                            ChatStreamEvent::Delta(_) => {}
+                            ChatStreamEvent::Done(text) => {
+                                first_text = text;
+                                break;
+                            }
+                        }
+                    }
+                    // If the engine returned an error through the stream,
+                    // treat it like a setup error and skip the rest.
+                    if first_text.starts_with("Error:") {
+                        return;
+                    }
+                }
+                Err(e) => {
+                    assert_setup_error(&e);
+                    return;
+                }
+            }
+
+            // Second turn — streaming, should remember context
+            let request = ChatRequest {
+                message: "What word did I ask you to remember?".to_string(),
+            };
+            match service.chat_streaming(request).await {
+                Ok(mut rx) => {
+                    let mut full_text = String::new();
+                    while let Some(event) = rx.recv().await {
+                        match event {
+                            ChatStreamEvent::Delta(d) => full_text.push_str(&d),
+                            ChatStreamEvent::Done(text) => {
+                                full_text = text;
+                                break;
+                            }
+                        }
+                    }
+                    if full_text.starts_with("Error:") {
+                        return; // API-level error, not a test failure
+                    }
+                    assert!(
+                        full_text.to_lowercase().contains("elephant"),
+                        "Second turn should reference context from first turn, got: {}",
+                        full_text
+                    );
+                }
+                Err(e) => assert_setup_error(&e),
+            }
         }
         Err(e) => assert_setup_error(&e),
     }

@@ -5,8 +5,8 @@ pub mod output;
 use std::io::{self, BufRead};
 
 use swebash_ai::{
-    AiService, AutocompleteRequest, ChatRequest, DefaultAiService, ExplainRequest,
-    TranslateRequest,
+    AiService, AutocompleteRequest, ChatRequest, ChatStreamEvent, DefaultAiService,
+    ExplainRequest, TranslateRequest,
 };
 
 use commands::AiCommand;
@@ -131,21 +131,34 @@ async fn handle_explain(service: &DefaultAiService, cmd: &str) {
     }
 }
 
-/// Handle `ai chat` — conversational assistant.
+/// Handle `ai chat` — conversational assistant with streaming output.
 async fn handle_chat(service: &DefaultAiService, text: &str) {
     let request = ChatRequest {
         message: text.to_string(),
     };
 
     output::ai_thinking();
-    let result = service.chat(request).await;
-    output::ai_thinking_done();
 
-    match result {
-        Ok(response) => {
-            output::ai_reply(&response.reply);
+    match service.chat_streaming(request).await {
+        Ok(mut rx) => {
+            output::ai_thinking_done();
+            output::ai_reply_start();
+
+            while let Some(event) = rx.recv().await {
+                match event {
+                    ChatStreamEvent::Delta(delta) => {
+                        output::ai_reply_delta(&delta);
+                    }
+                    ChatStreamEvent::Done(_) => {
+                        break;
+                    }
+                }
+            }
+
+            output::ai_reply_end();
         }
         Err(e) => {
+            output::ai_thinking_done();
             output::ai_error(&e.to_string());
         }
     }

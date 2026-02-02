@@ -12,6 +12,8 @@ pub mod explain;
 pub mod prompt;
 pub mod translate;
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use crate::api::error::{AiError, AiResult};
@@ -26,10 +28,12 @@ use chat_engine::{ChatEngine, SimpleChatEngine};
 ///
 /// Holds the LLM client for stateless features and a `SimpleChatEngine`
 /// from the `chat` crate for conversational chat with memory management.
+/// The engine is wrapped in `Arc` so it can be shared with background
+/// streaming tasks while preserving interior mutability via `RwLock`.
 pub struct DefaultAiService {
     client: Box<dyn AiClient>,
     config: AiConfig,
-    chat_engine: SimpleChatEngine,
+    chat_engine: Arc<SimpleChatEngine>,
 }
 
 impl DefaultAiService {
@@ -42,7 +46,7 @@ impl DefaultAiService {
         Self {
             client,
             config,
-            chat_engine,
+            chat_engine: Arc::new(chat_engine),
         }
     }
 }
@@ -62,6 +66,14 @@ impl AiService for DefaultAiService {
     async fn chat(&self, request: ChatRequest) -> AiResult<ChatResponse> {
         self.ensure_ready().await?;
         chat::chat(&self.chat_engine, request).await
+    }
+
+    async fn chat_streaming(
+        &self,
+        request: ChatRequest,
+    ) -> AiResult<tokio::sync::mpsc::Receiver<ChatStreamEvent>> {
+        self.ensure_ready().await?;
+        chat::chat_streaming(&self.chat_engine, request).await
     }
 
     async fn autocomplete(&self, request: AutocompleteRequest) -> AiResult<AutocompleteResponse> {

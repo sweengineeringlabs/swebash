@@ -22,6 +22,12 @@ pub trait AiService: Send + Sync {
     /// Conversational chat with the AI assistant.
     async fn chat(&self, request: ChatRequest) -> AiResult<ChatResponse>;
 
+    /// Streaming conversational chat — returns a receiver of incremental events.
+    async fn chat_streaming(
+        &self,
+        request: ChatRequest,
+    ) -> AiResult<tokio::sync::mpsc::Receiver<ChatStreamEvent>>;
+
     /// Get autocomplete suggestions based on context.
     async fn autocomplete(&self, request: AutocompleteRequest) -> AiResult<AutocompleteResponse>;
 

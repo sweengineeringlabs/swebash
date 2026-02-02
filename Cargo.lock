@@ -213,6 +213,7 @@ version = "0.1.0"
 dependencies = [
  "agent-controller",
  "async-trait",
+ "futures",
  "llm-provider",
  "llm-summarizer",
  "parking_lot",
@@ -2223,6 +2224,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chat",
+ "futures",
  "llm-provider",
  "react",
  "serde",

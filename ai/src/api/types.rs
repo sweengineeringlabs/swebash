@@ -126,3 +126,12 @@ pub struct AiStatus {
     pub ready: bool,
     pub description: String,
 }
+
+/// Events emitted during a streaming chat response.
+#[derive(Debug, Clone)]
+pub enum ChatStreamEvent {
+    /// A partial content delta (token chunk).
+    Delta(String),
+    /// Stream complete — contains the full assembled reply.
+    Done(String),
+}

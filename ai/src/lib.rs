@@ -22,8 +22,8 @@ pub mod spi;
 pub use api::error::{AiError, AiResult};
 pub use api::types::{
     AiMessage, AiResponse, AiRole, AiStatus, AutocompleteRequest, AutocompleteResponse,
-    ChatRequest, ChatResponse, CompletionOptions, ExplainRequest, ExplainResponse,
-    TranslateRequest, TranslateResponse,
+    ChatRequest, ChatResponse, ChatStreamEvent, CompletionOptions, ExplainRequest,
+    ExplainResponse, TranslateRequest, TranslateResponse,
 };
 pub use api::AiService;
 pub use config::AiConfig;

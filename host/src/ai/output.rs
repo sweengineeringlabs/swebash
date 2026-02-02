@@ -48,13 +48,31 @@ pub fn ai_explanation(text: &str) {
     let _ = writeln!(io::stdout());
 }
 
-/// Print a chat reply.
+/// Print a chat reply (complete, non-streaming).
 pub fn ai_reply(text: &str) {
     let _ = writeln!(io::stdout());
     for line in text.lines() {
         let _ = writeln!(io::stdout(), "  {}{}{}", CYAN, line, RESET);
     }
     let _ = writeln!(io::stdout());
+}
+
+/// Begin a streaming chat reply — print prefix and set color.
+pub fn ai_reply_start() {
+    let _ = write!(io::stdout(), "\n  {}", CYAN);
+    let _ = io::stdout().flush();
+}
+
+/// Print a streaming token delta (no newline, immediate flush).
+pub fn ai_reply_delta(text: &str) {
+    let _ = write!(io::stdout(), "{}", text);
+    let _ = io::stdout().flush();
+}
+
+/// End a streaming chat reply — reset color and add trailing newline.
+pub fn ai_reply_end() {
+    let _ = writeln!(io::stdout(), "{}\n", RESET);
+    let _ = io::stdout().flush();
 }
 
 /// Print autocomplete suggestions.
