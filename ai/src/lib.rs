@@ -77,12 +77,21 @@ pub async fn create_ai_service() -> AiResult<DefaultAiService> {
 
     // Factory pattern - decide which ChatEngine provider to use
     let chat_engine: Arc<dyn chat_engine::ChatEngine> = if config.tools.enabled() {
-        // Use tool-aware engine
-        let tools = core::tools::create_tool_registry(&config);
+        // Use tool-aware engine with tools from rustratify
+        let tool_config = tool::ToolConfig {
+            enable_fs: config.tools.enable_fs,
+            enable_exec: config.tools.enable_exec,
+            enable_web: config.tools.enable_web,
+            fs_max_size: config.tools.fs_max_size,
+            exec_timeout: config.tools.exec_timeout,
+        };
+
+        let tools = tool::create_standard_registry(&tool_config);
+
         Arc::new(spi::tool_aware_engine::ToolAwareChatEngine::new(
             llm.clone(),
             chat_config,
-            tools,
+            Arc::new(tools),
         ))
     } else {
         // Use simple engine (no tools)

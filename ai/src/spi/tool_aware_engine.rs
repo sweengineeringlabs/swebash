@@ -42,6 +42,7 @@ pub struct ToolAwareChatEngine {
 
     // Tool-specific additions
     tools: Arc<ToolRegistry>,
+    max_tool_iterations: usize,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -61,7 +62,7 @@ impl ToolAwareChatEngine {
     pub fn new(
         llm: Arc<dyn LlmService>,
         config: ChatConfig,
-        tools: ToolRegistry,
+        tools: Arc<ToolRegistry>,
     ) -> Self {
         let max_context_tokens = 128_000;
         let reserved_tokens = config.max_tokens as usize + 1024;
@@ -78,7 +79,8 @@ impl ToolAwareChatEngine {
             state: RwLock::new(EngineState::Idle),
             conversation_state: RwLock::new(ConversationState::Idle),
             metrics: RwLock::new(ToolAwareMetrics::default()),
-            tools: Arc::new(tools),
+            tools,
+            max_tool_iterations: 10,  // Default max iterations
         }
     }
 
@@ -87,6 +89,17 @@ impl ToolAwareChatEngine {
     fn build_messages(&self) -> Vec<Message> {
         let context = self.context.read();
         context.messages().cloned().collect()
+    }
+
+    fn convert_tool_definitions(&self) -> Vec<llm_provider::ToolDefinition> {
+        self.tools.definitions()
+            .into_iter()
+            .map(|def| llm_provider::ToolDefinition {
+                name: def.name,
+                description: def.description,
+                parameters: def.parameters,
+            })
+            .collect()
     }
 
     fn to_llm_message(msg: &ChatMessage) -> Message {
@@ -156,21 +169,36 @@ impl ToolAwareChatEngine {
                 tool_call.name, tool_call.arguments
             );
 
-            // Execute tool
-            let result = self.tools
-                .execute(&tool_call.name, &tool_call.arguments)
-                .await;
+            // Get tool from registry
+            let tool = self.tools.get(&tool_call.name);
 
-            let result_content = match result {
-                Ok(content) => {
-                    self.metrics.write().tool_successes += 1;
-                    debug!("Tool {} succeeded", tool_call.name);
-                    content
+            let result_content = match tool {
+                Some(tool) => {
+                    // Parse arguments as JSON Value
+                    let args: serde_json::Value = serde_json::from_str(&tool_call.arguments)
+                        .unwrap_or_else(|_| serde_json::json!({}));
+
+                    // Execute tool
+                    match tool.execute(args).await {
+                        Ok(output) => {
+                            self.metrics.write().tool_successes += 1;
+                            debug!("Tool {} succeeded", tool_call.name);
+
+                            // Convert ToolOutput to JSON string
+                            serde_json::to_string(&output.content)
+                                .unwrap_or_else(|_| "{}".to_string())
+                        }
+                        Err(e) => {
+                            self.metrics.write().tool_failures += 1;
+                            debug!("Tool {} failed: {}", tool_call.name, e);
+                            format!(r#"{{"error": true, "message": "{}"}}"#, e)
+                        }
+                    }
                 }
-                Err(e) => {
+                None => {
                     self.metrics.write().tool_failures += 1;
-                    debug!("Tool {} failed: {}", tool_call.name, e);
-                    format!(r#"{{"error": true, "message": "{}"}}"#, e)
+                    debug!("Tool {} not found", tool_call.name);
+                    format!(r#"{{"error": true, "message": "Tool not found: {}"}}"#, tool_call.name)
                 }
             };
 
@@ -223,7 +251,7 @@ impl ToolAwareChatEngine {
         };
 
         loop {
-            if iteration >= self.tools.config.max_iterations {
+            if iteration >= self.max_tool_iterations {
                 self.metrics.write().errors += 1;
                 return Err(ChatError::Config(
                     "Max tool iterations reached".to_string()
@@ -237,6 +265,8 @@ impl ToolAwareChatEngine {
                 (config.model.clone(), config.temperature, config.max_tokens)
             };
 
+            let tool_definitions = self.convert_tool_definitions();
+
             let request = CompletionRequest {
                 model,
                 messages,
@@ -244,11 +274,11 @@ impl ToolAwareChatEngine {
                 max_tokens: Some(max_tokens),
                 top_p: None,
                 stop: None,
-                tools: Some(self.tools.definitions()),
+                tools: Some(tool_definitions.clone()),
                 tool_choice: Some(ToolChoice::Auto),
             };
 
-            debug!("Sending LLM request with {} tools", self.tools.definitions().len());
+            debug!("Sending LLM request with {} tools", tool_definitions.len());
 
             // Call LLM
             let response = self.llm.complete(request).await
