@@ -3,6 +3,18 @@
 ## [Unreleased]
 
 ### Added
+- **AI Mode with Smart Detection** (2025-02-02)
+  - Interactive AI mode: type `ai` to enter, `exit` to leave
+  - Smart intent detection automatically routes commands:
+    - Command patterns (flags, pipes) → explain
+    - Action requests (find, list, show) → translate to command
+    - Questions and conversation → chat
+  - No need to repeatedly type "ai" prefix
+  - Explicit subcommands override detection when needed
+  - Cyan `[AI Mode]` prompt indicator
+  - 14 unit tests covering detection logic (all passing)
+  - See `docs/ai-mode.md` for complete architecture
+
 - **Persistent command history** (2025-02-02)
   - Custom, in-house implementation (no external deps)
   - Commands automatically saved to `~/.swebash_history`

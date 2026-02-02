@@ -63,6 +63,7 @@ async fn main() -> Result<()> {
     let mut multiline_buffer = String::new();
     let mut recent_commands: Vec<String> = Vec::new();
     let max_recent: usize = 10;
+    let mut ai_mode = false; // Track if we're in AI mode
 
     let home_dir = dirs::home_dir();
 
@@ -89,8 +90,14 @@ async fn main() -> Result<()> {
             }
             None => cwd,
         };
-        // Determine prompt based on multi-line mode
-        let prompt = if multiline_buffer.is_empty() {
+        // Determine prompt based on AI mode and multi-line mode
+        let prompt = if ai_mode {
+            if multiline_buffer.is_empty() {
+                "\x1b[1;36m[AI Mode]\x1b[0m > ".to_string()
+            } else {
+                "\x1b[1;36m...\x1b[0m> ".to_string()
+            }
+        } else if multiline_buffer.is_empty() {
             format!("\x1b[1;32m{}\x1b[0m/> ", display_cwd)
         } else {
             "\x1b[1;32m...\x1b[0m> ".to_string()
@@ -161,17 +168,47 @@ async fn main() -> Result<()> {
         if cmd.is_empty() {
             continue;
         }
+
+        // Handle exit differently based on mode
         if cmd == "exit" {
-            break;
+            if ai_mode {
+                // In AI mode, exit returns to shell
+                ai_mode = false;
+                println!("Exited AI mode.");
+                continue;
+            } else {
+                // In shell mode, exit quits the shell
+                break;
+            }
         }
 
         // Add to history after checking for exit
         history.add(cmd_with_leading_space);
 
-        // Intercept AI commands before WASM dispatch
-        if let Some(ai_cmd) = ai::commands::parse_ai_command(&cmd) {
-            ai::handle_ai_command(&ai_service, ai_cmd, &recent_commands).await;
+        // Handle commands based on current mode
+        if ai_mode {
+            // In AI mode: use smart detection
+            let ai_cmd = ai::commands::parse_ai_mode_command(&cmd);
+            match ai_cmd {
+                ai::commands::AiCommand::ExitMode => {
+                    ai_mode = false;
+                    println!("Exited AI mode.");
+                }
+                _ => {
+                    ai::handle_ai_command(&ai_service, ai_cmd, &recent_commands).await;
+                }
+            }
             continue;
+        } else {
+            // In shell mode: check for AI command triggers
+            if let Some(ai_cmd) = ai::commands::parse_ai_command(&cmd) {
+                let enter_ai_mode = ai::handle_ai_command(&ai_service, ai_cmd, &recent_commands).await;
+                if enter_ai_mode {
+                    ai_mode = true;
+                    println!("Entered AI mode. Type 'exit' or 'quit' to return to shell.");
+                }
+                continue;
+            }
         }
 
         // Track recent commands for AI context

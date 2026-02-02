@@ -15,20 +15,40 @@ use commands::AiCommand;
 ///
 /// This is called from the REPL loop when an AI command trigger is detected.
 /// The `service` is `Option` — if `None`, the user gets a friendly "not configured" message.
+///
+/// Returns `true` if AI mode should be entered (for EnterMode command).
 pub async fn handle_ai_command(
     service: &Option<DefaultAiService>,
     command: AiCommand,
     recent_commands: &[String],
-) {
+) -> bool {
     match command {
-        AiCommand::Status => handle_status(service).await,
-        AiCommand::History => handle_history(service).await,
-        AiCommand::Clear => handle_clear(service).await,
+        AiCommand::EnterMode => {
+            // Signal to REPL that AI mode should be entered
+            return true;
+        }
+        AiCommand::ExitMode => {
+            // This should only be called from AI mode, but handle gracefully
+            output::ai_info("Not in AI mode.");
+            return false;
+        }
+        AiCommand::Status => {
+            handle_status(service).await;
+            false
+        }
+        AiCommand::History => {
+            handle_history(service).await;
+            false
+        }
+        AiCommand::Clear => {
+            handle_clear(service).await;
+            false
+        }
         _ => {
             // All other commands require a configured service
             let Some(svc) = service else {
                 output::ai_not_configured();
-                return;
+                return false;
             };
             match command {
                 AiCommand::Ask(text) => handle_ask(svc, &text, recent_commands).await,
@@ -37,6 +57,7 @@ pub async fn handle_ai_command(
                 AiCommand::Suggest => handle_suggest(svc, recent_commands).await,
                 _ => unreachable!(),
             }
+            false
         }
     }
 }
