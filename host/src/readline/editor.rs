@@ -18,6 +18,41 @@ enum ControlFlow {
     Eof,
 }
 
+/// Calculate the visible width of a string, excluding ANSI escape sequences.
+///
+/// ANSI codes like `\x1b[1;32m` (colors, bold, etc.) don't take up space on the terminal,
+/// but are counted by `.chars().count()`. This function strips them to get the actual
+/// display width.
+fn visible_width(s: &str) -> usize {
+    let mut count = 0;
+    let mut chars = s.chars();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            // Skip ANSI escape sequence
+            // Format: ESC [ <params> <command>
+            // or: ESC <command> (for simpler sequences)
+            if chars.as_str().starts_with('[') {
+                // CSI sequence: skip until we hit a letter (the command)
+                chars.next(); // consume '['
+                while let Some(c) = chars.next() {
+                    if c.is_ascii_alphabetic() || c == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                // Simple escape sequence, skip next char
+                chars.next();
+            }
+        } else {
+            // Regular visible character
+            count += 1;
+        }
+    }
+
+    count
+}
+
 /// Line editor with arrow key support
 pub struct LineEditor {
     buffer: String,
@@ -99,12 +134,15 @@ impl LineEditor {
                         self.render(prompt, history)?;
                     }
                     ControlFlow::Submit => {
-                        // Move to new line
-                        println!();
+                        // Move to new line (use \r\n for raw mode)
+                        print!("\r\n");
+                        io::stdout().flush()?;
                         return Ok(Some(self.buffer.clone()));
                     }
                     ControlFlow::Eof => {
-                        println!();
+                        // Move to new line (use \r\n for raw mode)
+                        print!("\r\n");
+                        io::stdout().flush()?;
                         return Ok(None);
                     }
                 }
@@ -330,7 +368,8 @@ impl LineEditor {
         }
 
         // Move cursor to correct position
-        let cursor_col = prompt.chars().count() + self.cursor;
+        // Use visible width (excluding ANSI codes) for proper cursor positioning
+        let cursor_col = visible_width(prompt) + self.cursor;
         queue!(stdout, cursor::MoveToColumn(cursor_col as u16))?;
 
         stdout.flush()?;
@@ -814,5 +853,42 @@ mod tests {
         // Move right
         editor.move_cursor_right();
         assert_eq!(editor.cursor, editor.buffer.len());
+    }
+
+    #[test]
+    fn test_visible_width_plain_text() {
+        assert_eq!(visible_width("hello"), 5);
+        assert_eq!(visible_width("~/swebash/> "), 12);
+        assert_eq!(visible_width(""), 0);
+    }
+
+    #[test]
+    fn test_visible_width_with_ansi_codes() {
+        // Green color: \x1b[1;32m, reset: \x1b[0m
+        assert_eq!(visible_width("\x1b[1;32mhello\x1b[0m"), 5);
+
+        // Actual shell prompt: green path + reset + "/> "
+        assert_eq!(visible_width("\x1b[1;32m~/swebash\x1b[0m/> "), 12);
+
+        // AI mode prompt: cyan [AI Mode] + reset + " > "
+        assert_eq!(visible_width("\x1b[1;36m[AI Mode]\x1b[0m > "), 12);
+
+        // Multi-line continuation prompt
+        assert_eq!(visible_width("\x1b[1;32m...\x1b[0m> "), 5);
+    }
+
+    #[test]
+    fn test_visible_width_multiple_ansi_codes() {
+        // Multiple ANSI codes in sequence
+        assert_eq!(visible_width("\x1b[1m\x1b[32mhello\x1b[0m"), 5);
+
+        // ANSI codes with spaces
+        assert_eq!(visible_width("\x1b[1;31merror:\x1b[0m test"), 11);
+    }
+
+    #[test]
+    fn test_visible_width_empty_ansi() {
+        // Just ANSI codes, no visible text
+        assert_eq!(visible_width("\x1b[1;32m\x1b[0m"), 0);
     }
 }
