@@ -3,14 +3,15 @@
 /// Wires the SPI client to the API service trait, delegating
 /// to feature-specific modules for each operation.
 ///
-/// The chat feature uses `SimpleChatEngine` from the `chat` crate
-/// for conversation management with built-in memory. Stateless features
-/// (translate, explain, autocomplete) use the `AiClient` directly.
+/// The chat feature uses a ChatEngine implementation (SimpleChatEngine
+/// or ToolAwareChatEngine) for conversation management with built-in memory.
+/// Stateless features (translate, explain, autocomplete) use the `AiClient` directly.
 pub mod chat;
 pub mod complete;
 pub mod explain;
 pub mod prompt;
 pub mod translate;
+pub mod tools;
 
 use std::sync::Arc;
 
@@ -22,31 +23,31 @@ use crate::api::AiService;
 use crate::config::AiConfig;
 use crate::spi::AiClient;
 
-use chat_engine::{ChatEngine, SimpleChatEngine};
+use chat_engine::ChatEngine;
 
 /// The default implementation of `AiService`.
 ///
-/// Holds the LLM client for stateless features and a `SimpleChatEngine`
-/// from the `chat` crate for conversational chat with memory management.
-/// The engine is wrapped in `Arc` so it can be shared with background
-/// streaming tasks while preserving interior mutability via `RwLock`.
+/// Holds the LLM client for stateless features and a `ChatEngine`
+/// implementation for conversational chat with memory management.
+/// The engine uses the provider pattern - can be SimpleChatEngine
+/// or ToolAwareChatEngine depending on configuration.
 pub struct DefaultAiService {
     client: Box<dyn AiClient>,
     config: AiConfig,
-    chat_engine: Arc<SimpleChatEngine>,
+    chat_engine: Arc<dyn ChatEngine>,
 }
 
 impl DefaultAiService {
     /// Create a new service with the given client, chat engine, and config.
     pub fn new(
         client: Box<dyn AiClient>,
-        chat_engine: SimpleChatEngine,
+        chat_engine: Arc<dyn ChatEngine>,
         config: AiConfig,
     ) -> Self {
         Self {
             client,
             config,
-            chat_engine: Arc::new(chat_engine),
+            chat_engine,
         }
     }
 }
@@ -65,7 +66,7 @@ impl AiService for DefaultAiService {
 
     async fn chat(&self, request: ChatRequest) -> AiResult<ChatResponse> {
         self.ensure_ready().await?;
-        chat::chat(&self.chat_engine, request).await
+        chat::chat(self.chat_engine.as_ref(), request).await
     }
 
     async fn chat_streaming(

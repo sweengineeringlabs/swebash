@@ -1,7 +1,7 @@
 /// Conversational assistant logic.
 ///
-/// Delegates to the `SimpleChatEngine` from the `chat` crate, which
-/// handles conversation memory, context windowing, and LLM interaction.
+/// Delegates to a `ChatEngine` implementation (SimpleChatEngine or ToolAwareChatEngine),
+/// which handles conversation memory, context windowing, and LLM interaction.
 use std::sync::Arc;
 
 use futures::StreamExt;
@@ -9,7 +9,7 @@ use futures::StreamExt;
 use crate::api::error::{AiError, AiResult};
 use crate::api::types::{ChatRequest, ChatResponse, ChatStreamEvent};
 
-use chat_engine::{ChatEngine, ChatMessage, SimpleChatEngine};
+use chat_engine::{ChatEngine, ChatMessage};
 use react::AgentEvent;
 
 /// Process a chat message using the chat engine.
@@ -17,7 +17,7 @@ use react::AgentEvent;
 /// The engine manages conversation history internally, including
 /// the system prompt, context window, and memory eviction.
 pub async fn chat(
-    engine: &SimpleChatEngine,
+    engine: &dyn ChatEngine,
     request: ChatRequest,
 ) -> AiResult<ChatResponse> {
     let message = ChatMessage::user(&request.message);
@@ -43,7 +43,7 @@ pub async fn chat(
 /// that yields `ChatStreamEvent::Delta` for each token chunk, followed
 /// by `ChatStreamEvent::Done` with the full assembled reply.
 pub async fn chat_streaming(
-    engine: &Arc<SimpleChatEngine>,
+    engine: &Arc<dyn ChatEngine>,
     request: ChatRequest,
 ) -> AiResult<tokio::sync::mpsc::Receiver<ChatStreamEvent>> {
     let (tx, rx) = tokio::sync::mpsc::channel(64);
@@ -55,7 +55,7 @@ pub async fn chat_streaming(
 
     // Task A: drive the engine — emits AgentEvents via `events`
     tokio::spawn(async move {
-        if let Err(e) = engine.send_streaming(message, events).await {
+        if let Err(e) = engine.as_ref().send_streaming(message, events).await {
             let _ = tx_err
                 .send(ChatStreamEvent::Done(format!("Error: {}", e)))
                 .await;
