@@ -267,8 +267,20 @@ impl LineEditor {
                 Ok(ControlFlow::Continue)
             }
 
-            // Tab - insert tab character (completion could be added later)
+            // Tab - accept hint if available, otherwise insert tab
             (KeyCode::Tab, _) => {
+                // Check if there's a hint to accept (only at end of line)
+                if self.cursor == self.buffer.len() {
+                    if let Some(hint) = self.hinter.hint(&self.buffer, history) {
+                        // Strip ANSI codes from hint to get the actual text
+                        let hint_text = Self::strip_ansi(&hint);
+                        // Append hint to buffer
+                        self.buffer.push_str(&hint_text);
+                        self.cursor = self.buffer.len();
+                        return Ok(ControlFlow::Continue);
+                    }
+                }
+                // No hint available, insert tab character
                 self.buffer.insert(self.cursor, '\t');
                 self.cursor += 1;
                 Ok(ControlFlow::Continue)
@@ -342,6 +354,35 @@ impl LineEditor {
                 }
             }
         }
+    }
+
+    /// Strip ANSI escape sequences from a string
+    fn strip_ansi(s: &str) -> String {
+        let mut result = String::new();
+        let mut chars = s.chars();
+
+        while let Some(ch) = chars.next() {
+            if ch == '\x1b' {
+                // Skip ANSI escape sequence
+                if chars.as_str().starts_with('[') {
+                    // CSI sequence: skip until we hit a letter (the command)
+                    chars.next(); // consume '['
+                    while let Some(c) = chars.next() {
+                        if c.is_ascii_alphabetic() || c == 'm' {
+                            break;
+                        }
+                    }
+                } else {
+                    // Simple escape sequence, skip next char
+                    chars.next();
+                }
+            } else {
+                // Regular character
+                result.push(ch);
+            }
+        }
+
+        result
     }
 
     fn render(&self, prompt: &str, history: &History) -> Result<()> {
@@ -826,7 +867,27 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_key_tab() {
+    fn test_handle_key_tab_with_hint() {
+        let mut editor = create_test_editor();
+        let mut history = History::new(100);
+
+        // Add "ai" to history so it becomes a hint
+        history.add("ai".to_string());
+
+        // Type "a"
+        editor.buffer = "a".to_string();
+        editor.cursor = 1;
+
+        // Press Tab - should accept hint and complete to "ai"
+        let key = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        editor.handle_key(key, &history).unwrap();
+
+        assert_eq!(editor.buffer, "ai");
+        assert_eq!(editor.cursor, 2);
+    }
+
+    #[test]
+    fn test_handle_key_tab_without_hint() {
         let mut editor = create_test_editor();
         let history = History::new(100);
 
@@ -838,6 +899,13 @@ mod tests {
 
         assert_eq!(editor.buffer, "test\t");
         assert_eq!(editor.cursor, 5);
+    }
+
+    #[test]
+    fn test_strip_ansi() {
+        assert_eq!(LineEditor::strip_ansi("hello"), "hello");
+        assert_eq!(LineEditor::strip_ansi("\x1b[1;32mhello\x1b[0m"), "hello");
+        assert_eq!(LineEditor::strip_ansi("\x1b[36mai\x1b[0m"), "ai");
     }
 
     #[test]
