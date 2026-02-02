@@ -2389,6 +2389,7 @@ dependencies = [
  "anyhow",
  "crossterm",
  "dirs",
+ "dotenvy",
  "serde",
  "swebash-ai",
  "tokio",

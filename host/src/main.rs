@@ -11,6 +11,10 @@ use readline::{Completer, Hinter, LineEditor, ReadlineConfig, ValidationResult, 
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load .env file if present (for development convenience)
+    // Silently ignore if file doesn't exist - env vars can be set via shell
+    let _ = dotenvy::dotenv();
+
     // Initialize AI service (None if unconfigured — shell continues without AI)
     let ai_service = swebash_ai::create_ai_service().await.ok();
 
