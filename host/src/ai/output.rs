@@ -48,15 +48,6 @@ pub fn ai_explanation(text: &str) {
     let _ = writeln!(io::stdout());
 }
 
-/// Print a chat reply (complete, non-streaming).
-pub fn ai_reply(text: &str) {
-    let _ = writeln!(io::stdout());
-    for line in text.lines() {
-        let _ = writeln!(io::stdout(), "  {}{}{}", CYAN, line, RESET);
-    }
-    let _ = writeln!(io::stdout());
-}
-
 /// Begin a streaming chat reply — print prefix and set color.
 pub fn ai_reply_start() {
     let _ = write!(io::stdout(), "\n  {}", CYAN);
