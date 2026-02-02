@@ -3,10 +3,7 @@
 /// The `AiClient` trait abstracts over the underlying LLM provider.
 /// `chat_provider.rs` implements this trait, keeping the chat/llm-provider
 /// dependency isolated.
-///
-/// `tool_aware_engine` provides a ChatEngine implementation with tool calling.
 pub mod chat_provider;
-pub mod tool_aware_engine;
 
 use async_trait::async_trait;
 

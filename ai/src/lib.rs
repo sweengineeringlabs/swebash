@@ -88,7 +88,7 @@ pub async fn create_ai_service() -> AiResult<DefaultAiService> {
 
         let tools = tool::create_standard_registry(&tool_config);
 
-        Arc::new(spi::tool_aware_engine::ToolAwareChatEngine::new(
+        Arc::new(chat_engine::ToolAwareChatEngine::new(
             llm.clone(),
             chat_config,
             Arc::new(tools),
