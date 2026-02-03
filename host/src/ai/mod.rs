@@ -170,7 +170,10 @@ async fn handle_chat(service: &DefaultAiService, text: &str) {
                     ChatStreamEvent::Delta(delta) => {
                         output::ai_reply_delta(&delta);
                     }
-                    ChatStreamEvent::Done(_) => {
+                    ChatStreamEvent::Done(final_text) => {
+                        if !final_text.is_empty() {
+                            output::ai_reply_delta(&final_text);
+                        }
                         break;
                     }
                 }
