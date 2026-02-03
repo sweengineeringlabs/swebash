@@ -53,15 +53,30 @@ pub async fn chat_streaming(
     let engine = engine.clone();
     let tx_err = tx.clone();
 
-    // Task A: drive the engine — emits AgentEvents via `events`
+    // Task B: forward real-time content deltas.
     //
-    // Some engines (e.g. ToolAwareChatEngine) delegate to a non-streaming
-    // implementation that never emits AgentEvent::Content.  In that case
-    // Task B will never forward anything.  As a fallback we send the
-    // completed response here so the consumer always receives a Done event.
+    // Only non-final events are forwarded as Delta.  The final
+    // `is_final: true` event carries the full accumulated content
+    // (duplicating the deltas), so it is intentionally ignored here.
+    // Task A is the sole source of the Done event.
+    let task_b = tokio::spawn(async move {
+        while let Some(event) = event_stream.next().await {
+            if let AgentEvent::Content { content, is_final: false } = event {
+                let _ = tx.send(ChatStreamEvent::Delta(content)).await;
+            }
+        }
+    });
+
+    // Task A: drive the engine, then send Done.
+    //
+    // After `send_streaming` returns, the event sender is dropped,
+    // which closes the event stream and lets Task B finish.  We wait
+    // for Task B to drain any remaining buffered deltas, then send
+    // Done with the authoritative response content.
     tokio::spawn(async move {
         match engine.as_ref().send_streaming(message, events).await {
             Ok(response) => {
+                let _ = task_b.await;
                 let _ = tx_err
                     .send(ChatStreamEvent::Done(
                         response.message.content.trim().to_string(),
@@ -72,24 +87,6 @@ pub async fn chat_streaming(
                 let _ = tx_err
                     .send(ChatStreamEvent::Done(format!("Error: {}", e)))
                     .await;
-            }
-        }
-    });
-
-    // Task B: forward AgentEvents → ChatStreamEvents
-    tokio::spawn(async move {
-        while let Some(event) = event_stream.next().await {
-            match event {
-                AgentEvent::Content { content, is_final } => {
-                    if is_final {
-                        let _ = tx
-                            .send(ChatStreamEvent::Done(content.trim().to_string()))
-                            .await;
-                    } else {
-                        let _ = tx.send(ChatStreamEvent::Delta(content)).await;
-                    }
-                }
-                _ => {} // Ignore non-content events
             }
         }
     });

@@ -140,6 +140,8 @@
 - [ ] 12.12 Document configuration in setup guide
 
 ## Future Work
+- Evaluate Loom (tokio-rs/loom) for exhaustive concurrency testing of async task coordination
+- Evaluate Shuttle (awslabs/shuttle) for randomized concurrency testing of async/tokio code
 - Streaming responses for chat mode
 - Integration test suite with mock providers
 - Custom prompt templates

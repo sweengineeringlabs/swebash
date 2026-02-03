@@ -146,6 +146,19 @@ cargo run
 | Multiple switches | `@git` → `@review` → `@shell` → `exit` | Each switch updates prompt, exit works cleanly |
 | Active marker follows | `@review` then `agents` | Agent list shows `*review` as active |
 
+### 14b. Agent Switching (from Shell Mode)
+
+Typing `@agent` directly from the shell prompt (without entering AI mode first with `ai`) should switch to the agent **and** enter AI mode. Natural language input must be routed to the AI, not executed as a shell command.
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| @devops enters AI mode | Type `@devops` from shell prompt | Prints "Switched to DevOps Assistant (devops)" and "Entered AI mode", prompt changes to `[AI:devops] >` |
+| @git enters AI mode | Type `@git` from shell prompt | Prints "Switched to Git Assistant (git)" and "Entered AI mode", prompt changes to `[AI:git] >` |
+| @review enters AI mode | Type `@review` from shell prompt | Prints "Switched to Code Reviewer (review)" and "Entered AI mode", prompt changes to `[AI:review] >` |
+| NL not executed as command | `@devops` then `do we have docker installed?` | AI responds (or shows "not configured"); does **not** print "No such file or directory" |
+| Exit returns to shell | `@devops` then `exit` then `echo hello` | Exits AI mode, `echo hello` prints `hello` normally |
+| `ai @agent` also works | Type `ai @devops` from shell prompt | Same behavior as `@devops` — enters AI mode with devops agent |
+
 ### 15. One-Shot Agent Chat (Shell Mode)
 
 | Test | Command | Expected |
@@ -203,12 +216,12 @@ cargo test -p swebash-ai -p swebash
 
 | Suite | Location | Count |
 |-------|----------|-------|
-| Host unit tests | `host/src/` | 88 |
-| Host integration | `host/tests/integration.rs` | 49 |
+| Host unit tests | `host/src/` | 100 |
+| Host integration | `host/tests/integration.rs` | 54 |
 | Readline integration | `host/tests/readline_tests.rs` | 19 |
 | AI unit tests | `ai/src/` | 7 |
 | AI integration | `ai/tests/integration.rs` | 64 |
-| **Total** | | **227** |
+| **Total** | | **244** |
 
 ### Agent-Specific Automated Tests
 
@@ -232,3 +245,18 @@ cargo test -p swebash-ai -p swebash
 | `ai_mode_prompt_shows_default_agent` | Host integration | Prompt shows `[AI:shell]` |
 | `ai_agent_one_shot_from_shell` | Host integration | `ai @review hello` one-shot |
 | `ai_agent_switch_back_and_forth` | Host integration | Multiple switches without crash |
+| `switch_agent_enters_ai_mode` | Host unit | `SwitchAgent` returns true (enters AI mode) |
+| `switch_agent_enters_ai_mode_all_agents` | Host unit | All agent names enter AI mode |
+| `enter_mode_enters_ai_mode` | Host unit | `EnterMode` returns true |
+| `exit_mode_does_not_enter_ai_mode` | Host unit | `ExitMode` returns false |
+| `agent_chat_does_not_enter_ai_mode` | Host unit | One-shot chat stays in shell mode |
+| `status_does_not_enter_ai_mode` | Host unit | Status returns false |
+| `list_agents_does_not_enter_ai_mode` | Host unit | ListAgents returns false |
+| `history_does_not_enter_ai_mode` | Host unit | History returns false |
+| `clear_does_not_enter_ai_mode` | Host unit | Clear returns false |
+| `chat_does_not_enter_ai_mode` | Host unit | Chat returns false |
+| `ai_agent_switch_from_shell_enters_ai_mode` | Host integration | `@devops` from shell enters AI mode |
+| `ai_agent_switch_from_shell_no_shell_execution` | Host integration | NL after `@devops` not executed as command |
+| `ai_agent_switch_from_shell_exit_returns_to_shell` | Host integration | Exit after `@devops` returns to working shell |
+| `ai_agent_switch_from_shell_all_agents` | Host integration | All `@agent` shorthands enter AI mode |
+| `ai_agent_switch_from_shell_with_ai_prefix` | Host integration | `ai @devops` enters AI mode |

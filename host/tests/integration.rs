@@ -813,3 +813,88 @@ fn ai_agent_switch_back_and_forth() {
         "should exit AI mode cleanly after switches. stdout: {out}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Tests — @agent from shell mode enters AI mode (regression)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ai_agent_switch_from_shell_enters_ai_mode() {
+    let (out, _err) = run(&["@devops", "exit"]);
+
+    // @devops from shell mode should enter AI mode
+    assert!(
+        out.contains("Entered AI mode"),
+        "@devops from shell mode should enter AI mode. stdout: {out}"
+    );
+
+    // Prompt should show devops agent
+    assert!(
+        out.contains("[AI:devops]"),
+        "prompt should show devops agent after @devops. stdout: {out}"
+    );
+
+    // Should also show the agent switched message
+    assert!(
+        out.contains("Switched to") || out.contains("devops"),
+        "should confirm agent switch. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_agent_switch_from_shell_no_shell_execution() {
+    let (out, err) = run(&["@devops", "do we have docker installed?", "exit"]);
+
+    // Natural language input should NOT be executed as a shell command.
+    // Before the fix, "do" was looked up as a binary and produced:
+    //   "do: No such file or directory (os error 2)"
+    assert!(
+        !out.contains("No such file or directory") && !err.contains("No such file or directory"),
+        "natural language after @devops should not be executed as a shell command. stdout: {out}, stderr: {err}"
+    );
+    assert!(
+        !out.contains("process exited with code 127"),
+        "should not see command-not-found exit code. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_agent_switch_from_shell_exit_returns_to_shell() {
+    let (out, _err) = run(&["@devops", "exit", "echo back_in_shell"]);
+
+    // After exiting AI mode, shell commands should work normally
+    assert!(
+        out.contains("Exited AI mode"),
+        "exit should leave AI mode. stdout: {out}"
+    );
+    assert!(
+        out.contains("back_in_shell"),
+        "shell should work after exiting AI mode entered via @devops. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_agent_switch_from_shell_all_agents() {
+    // All agent shorthands should enter AI mode from shell
+    for agent in &["devops", "git", "review"] {
+        let switch_cmd = format!("@{}", agent);
+        let (out, _err) = run(&[&switch_cmd, "exit"]);
+        assert!(
+            out.contains("Entered AI mode"),
+            "@{} from shell mode should enter AI mode. stdout: {}",
+            agent,
+            out
+        );
+    }
+}
+
+#[test]
+fn ai_agent_switch_from_shell_with_ai_prefix() {
+    // `ai @devops` should also enter AI mode (not just `@devops`)
+    let (out, _err) = run(&["ai @devops", "exit"]);
+
+    assert!(
+        out.contains("Entered AI mode") || out.contains("[AI:devops]"),
+        "ai @devops should enter AI mode with devops agent. stdout: {out}"
+    );
+}

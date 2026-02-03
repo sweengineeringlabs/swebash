@@ -685,9 +685,9 @@ async fn chat_streaming_multi_turn_preserves_history() {
                     let mut full_reply = String::new();
                     while let Some(event) = rx.recv().await {
                         match event {
-                            ChatStreamEvent::Delta(content) => full_reply.push_str(&content),
+                            ChatStreamEvent::Delta(_) => {}
                             ChatStreamEvent::Done(content) => {
-                                full_reply.push_str(&content);
+                                full_reply = content;
                                 break;
                             }
                         }
@@ -1334,11 +1334,9 @@ async fn tool_invocation_streaming_fs_read() {
                         let mut full_reply = String::new();
                         while let Some(event) = rx.recv().await {
                             match event {
-                                ChatStreamEvent::Delta(content) => {
-                                    full_reply.push_str(&content);
-                                }
+                                ChatStreamEvent::Delta(_) => {}
                                 ChatStreamEvent::Done(content) => {
-                                    full_reply.push_str(&content);
+                                    full_reply = content;
                                     break;
                                 }
                             }

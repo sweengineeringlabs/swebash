@@ -215,7 +215,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 name = "chat"
 version = "0.1.0"
 source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
-checksum = "14b064b68cefbd2fbb30e1ae1787363b205ff6ef040887163e2fee6c92a6fba8"
+checksum = "d445469c74d3a60572953aac2de2d445045ea375417cc695975e23b2781beac1"
 dependencies = [
  "agent-controller",
  "async-trait",
@@ -1396,7 +1396,7 @@ checksum = "6373607a59f0be73a39b6fe456b8192fcc3585f602af20751600e974dd455e77"
 name = "llm-provider"
 version = "0.1.0"
 source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
-checksum = "d65290d4a1fa03b1d4f5954592cf659cf9965cce6b2add39276a78eaf14c3bb4"
+checksum = "00ba32982e2569378096f069b058942e8236eb67e438aa8f3d54b2970c7817a7"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1731,7 +1731,7 @@ dependencies = [
 name = "react"
 version = "0.1.0"
 source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
-checksum = "409c7777f3bcfaf94eb44afb1f5f104e789e1630a8f5fecbbb4f2bac86043ca4"
+checksum = "51bba9c454cf56cdcaf458ccffc7c78f07b47e3d9daec3677ed12679fc5ca405"
 dependencies = [
  "agent-cache",
  "agent-controller",
@@ -3549,18 +3549,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.37"
+version = "0.8.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7456cf00f0685ad319c5b1693f291a650eaf345e941d082fc4e03df8a03996ac"
+checksum = "57cf3aa6855b23711ee9852dfc97dfaa51c45feaba5b645d0c777414d494a961"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.37"
+version = "0.8.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1328722bbf2115db7e19d69ebcc15e795719e2d66b60827c6a69a117365e37a0"
+checksum = "8a616990af1a287837c4fe6596ad77ef57948f787e46ce28e166facc0cc1cb75"
 dependencies = [
  "proc-macro2",
  "quote",

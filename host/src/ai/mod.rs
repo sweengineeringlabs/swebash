@@ -50,7 +50,7 @@ pub async fn handle_ai_command(
         }
         AiCommand::SwitchAgent(agent_id) => {
             handle_switch_agent(service, &agent_id).await;
-            false
+            true
         }
         AiCommand::AgentChat { agent, text } => {
             handle_agent_chat(service, &agent, &text).await;
@@ -340,4 +340,94 @@ async fn handle_agent_chat(service: &Option<DefaultAiService>, agent_id: &str, t
 
     // Switch back to previous agent
     let _ = svc.switch_agent(&previous).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// SwitchAgent should return true so the REPL enters AI mode.
+    /// This is the core fix — previously it returned false, causing
+    /// subsequent input to be executed as shell commands.
+    #[tokio::test]
+    async fn switch_agent_enters_ai_mode() {
+        let result =
+            handle_ai_command(&None, AiCommand::SwitchAgent("devops".to_string()), &[]).await;
+        assert!(result, "SwitchAgent should return true to enter AI mode");
+    }
+
+    /// SwitchAgent should enter AI mode for any agent name.
+    #[tokio::test]
+    async fn switch_agent_enters_ai_mode_all_agents() {
+        for agent in &["devops", "git", "review", "shell"] {
+            let result =
+                handle_ai_command(&None, AiCommand::SwitchAgent(agent.to_string()), &[]).await;
+            assert!(
+                result,
+                "SwitchAgent({}) should return true to enter AI mode",
+                agent
+            );
+        }
+    }
+
+    /// EnterMode (bare `ai` command) should also return true.
+    #[tokio::test]
+    async fn enter_mode_enters_ai_mode() {
+        let result = handle_ai_command(&None, AiCommand::EnterMode, &[]).await;
+        assert!(result, "EnterMode should return true");
+    }
+
+    /// ExitMode should return false (not enter AI mode).
+    #[tokio::test]
+    async fn exit_mode_does_not_enter_ai_mode() {
+        let result = handle_ai_command(&None, AiCommand::ExitMode, &[]).await;
+        assert!(!result, "ExitMode should return false");
+    }
+
+    /// One-shot AgentChat should NOT enter persistent AI mode.
+    #[tokio::test]
+    async fn agent_chat_does_not_enter_ai_mode() {
+        let cmd = AiCommand::AgentChat {
+            agent: "devops".to_string(),
+            text: "hello".to_string(),
+        };
+        let result = handle_ai_command(&None, cmd, &[]).await;
+        assert!(!result, "AgentChat (one-shot) should not enter AI mode");
+    }
+
+    /// Status command should not enter AI mode.
+    #[tokio::test]
+    async fn status_does_not_enter_ai_mode() {
+        let result = handle_ai_command(&None, AiCommand::Status, &[]).await;
+        assert!(!result, "Status should return false");
+    }
+
+    /// ListAgents command should not enter AI mode.
+    #[tokio::test]
+    async fn list_agents_does_not_enter_ai_mode() {
+        let result = handle_ai_command(&None, AiCommand::ListAgents, &[]).await;
+        assert!(!result, "ListAgents should return false");
+    }
+
+    /// History command should not enter AI mode.
+    #[tokio::test]
+    async fn history_does_not_enter_ai_mode() {
+        let result = handle_ai_command(&None, AiCommand::History, &[]).await;
+        assert!(!result, "History should return false");
+    }
+
+    /// Clear command should not enter AI mode.
+    #[tokio::test]
+    async fn clear_does_not_enter_ai_mode() {
+        let result = handle_ai_command(&None, AiCommand::Clear, &[]).await;
+        assert!(!result, "Clear should return false");
+    }
+
+    /// Chat command should not enter AI mode.
+    #[tokio::test]
+    async fn chat_does_not_enter_ai_mode() {
+        let result =
+            handle_ai_command(&None, AiCommand::Chat("hello".to_string()), &[]).await;
+        assert!(!result, "Chat should return false");
+    }
 }

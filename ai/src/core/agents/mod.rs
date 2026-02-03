@@ -192,7 +192,7 @@ impl AgentRegistry {
                 self.llm.clone(),
                 chat_config,
                 Arc::new(registry),
-            ))
+            ).with_max_iterations(effective_tools.max_iterations))
         } else {
             Arc::new(SimpleChatEngine::new(self.llm.clone(), chat_config))
         }
