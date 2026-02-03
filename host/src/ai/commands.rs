@@ -109,6 +109,24 @@ pub fn parse_ai_command(input: &str) -> Option<AiCommand> {
         }
     }
 
+    // Shorthand: `@<agent> [text]` — without `ai` prefix
+    if let Some(agent_rest) = trimmed.strip_prefix('@') {
+        if let Some((agent, text)) = agent_rest.split_once(|c: char| c.is_whitespace()) {
+            let agent = agent.trim();
+            let text = text.trim();
+            if !agent.is_empty() && !text.is_empty() {
+                return Some(AiCommand::AgentChat {
+                    agent: agent.to_string(),
+                    text: text.to_string(),
+                });
+            }
+        }
+        let agent = agent_rest.trim();
+        if !agent.is_empty() {
+            return Some(AiCommand::SwitchAgent(agent.to_string()));
+        }
+    }
+
     // Exact match: `ai status`, etc. (without trailing space parsed above)
     match trimmed {
         "ai suggest" => return Some(AiCommand::Suggest),
@@ -654,11 +672,34 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_agent_chat_shell_mode_shorthand() {
+        // `@review check main.rs` — without `ai` prefix
+        match parse_ai_command("@review check main.rs") {
+            Some(AiCommand::AgentChat { agent, text }) => {
+                assert_eq!(agent, "review");
+                assert_eq!(text, "check main.rs");
+            }
+            other => panic!("Expected AgentChat, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn test_parse_switch_agent_shell_mode() {
         // `ai @review` with no text
         match parse_ai_command("ai @review") {
             Some(AiCommand::SwitchAgent(agent)) => {
                 assert_eq!(agent, "review");
+            }
+            other => panic!("Expected SwitchAgent, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_switch_agent_shell_mode_shorthand() {
+        // `@devops` — without `ai` prefix
+        match parse_ai_command("@devops") {
+            Some(AiCommand::SwitchAgent(agent)) => {
+                assert_eq!(agent, "devops");
             }
             other => panic!("Expected SwitchAgent, got {:?}", other),
         }
