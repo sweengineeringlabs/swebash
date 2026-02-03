@@ -54,11 +54,25 @@ pub async fn chat_streaming(
     let tx_err = tx.clone();
 
     // Task A: drive the engine — emits AgentEvents via `events`
+    //
+    // Some engines (e.g. ToolAwareChatEngine) delegate to a non-streaming
+    // implementation that never emits AgentEvent::Content.  In that case
+    // Task B will never forward anything.  As a fallback we send the
+    // completed response here so the consumer always receives a Done event.
     tokio::spawn(async move {
-        if let Err(e) = engine.as_ref().send_streaming(message, events).await {
-            let _ = tx_err
-                .send(ChatStreamEvent::Done(format!("Error: {}", e)))
-                .await;
+        match engine.as_ref().send_streaming(message, events).await {
+            Ok(response) => {
+                let _ = tx_err
+                    .send(ChatStreamEvent::Done(
+                        response.message.content.trim().to_string(),
+                    ))
+                    .await;
+            }
+            Err(e) => {
+                let _ = tx_err
+                    .send(ChatStreamEvent::Done(format!("Error: {}", e)))
+                    .await;
+            }
         }
     });
 

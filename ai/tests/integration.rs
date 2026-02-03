@@ -11,6 +11,8 @@
 /// ANTHROPIC_API_KEY=sk-... cargo test --manifest-path ai/Cargo.toml # full integration
 /// ```
 
+use std::path::PathBuf;
+
 use serial_test::serial;
 use swebash_ai::api::error::{AiError, AiResult};
 use swebash_ai::api::types::{
@@ -1125,4 +1127,261 @@ async fn tool_aware_streaming_basic_message() {
         }
         Err(e) => assert_setup_error(&e),
     }
+}
+
+// ── Tool invocation helpers ──────────────────────────────────────────────
+
+/// Create a temp file whose content is a unique UUID marker.
+/// Returns `(path, marker)` so the test can ask the agent to read the file
+/// and then assert the marker appears in the reply.
+fn create_marker_file(prefix: &str) -> (PathBuf, String) {
+    let marker = uuid::Uuid::new_v4().to_string();
+    let dir = std::env::temp_dir();
+    let filename = format!("{prefix}_{marker}.txt");
+    let path = dir.join(&filename);
+    std::fs::write(&path, &marker).expect("failed to write marker file");
+    (path, marker)
+}
+
+/// AiConfig with only filesystem tools enabled and confirmation disabled.
+fn config_fs_only() -> AiConfig {
+    AiConfig {
+        enabled: true,
+        provider: "anthropic".to_string(),
+        model: std::env::var("LLM_DEFAULT_MODEL")
+            .unwrap_or_else(|_| "claude-sonnet-4-20250514".to_string()),
+        history_size: 20,
+        tools: ToolConfig {
+            enable_fs: true,
+            enable_exec: false,
+            enable_web: false,
+            require_confirmation: false,
+            max_tool_calls_per_turn: 10,
+            max_iterations: 10,
+            fs_max_size: 1_048_576,
+            exec_timeout: 30,
+        },
+    }
+}
+
+/// AiConfig with only command-execution tool enabled and confirmation disabled.
+fn config_exec_only() -> AiConfig {
+    AiConfig {
+        enabled: true,
+        provider: "anthropic".to_string(),
+        model: std::env::var("LLM_DEFAULT_MODEL")
+            .unwrap_or_else(|_| "claude-sonnet-4-20250514".to_string()),
+        history_size: 20,
+        tools: ToolConfig {
+            enable_fs: false,
+            enable_exec: true,
+            enable_web: false,
+            require_confirmation: false,
+            max_tool_calls_per_turn: 10,
+            max_iterations: 10,
+            fs_max_size: 1_048_576,
+            exec_timeout: 30,
+        },
+    }
+}
+
+// ── Tool invocation integration tests (5) ────────────────────────────────
+
+/// Verify the agent can read a file via the FileSystemTool.
+/// We create a temp file with a UUID marker, ask the agent to read it,
+/// and assert the marker is present in the reply.
+#[tokio::test]
+async fn tool_invocation_fs_read_file() {
+    let (path, marker) = create_marker_file("fs_read");
+    let config = config_fs_only();
+
+    let result = try_create_service_with_tools(config).await;
+    match result {
+        Ok(service) => {
+            let request = ChatRequest {
+                message: format!(
+                    "Read the file at {} and reply with its exact contents. \
+                     Do not paraphrase — just output the raw text.",
+                    path.display()
+                ),
+            };
+            match service.chat(request).await {
+                Ok(response) => {
+                    assert!(
+                        response.reply.contains(&marker),
+                        "Expected reply to contain marker {marker}, got: {}",
+                        response.reply
+                    );
+                }
+                Err(e) => assert_setup_error(&e),
+            }
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+
+    std::fs::remove_file(&path).ok();
+}
+
+/// Verify the agent can execute a command via the CommandExecutorTool.
+/// We ask it to echo a UUID marker and assert the marker is in the reply.
+#[tokio::test]
+async fn tool_invocation_exec_command() {
+    let marker = uuid::Uuid::new_v4().to_string();
+    let config = config_exec_only();
+
+    let result = try_create_service_with_tools(config).await;
+    match result {
+        Ok(service) => {
+            let request = ChatRequest {
+                message: format!(
+                    "Run the command: echo {marker}\n\
+                     Then reply with the exact output of that command."
+                ),
+            };
+            match service.chat(request).await {
+                Ok(response) => {
+                    assert!(
+                        response.reply.contains(&marker),
+                        "Expected reply to contain marker {marker}, got: {}",
+                        response.reply
+                    );
+                }
+                Err(e) => assert_setup_error(&e),
+            }
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+/// Verify the agent can list a directory via the FileSystemTool.
+/// We create a temp directory with uniquely named files and ask the
+/// agent to list it.
+#[tokio::test]
+async fn tool_invocation_fs_list_directory() {
+    let marker = uuid::Uuid::new_v4().to_string();
+    let dir = std::env::temp_dir().join(format!("swebash_list_{marker}"));
+    std::fs::create_dir_all(&dir).expect("failed to create temp dir");
+
+    let file_a = format!("alpha_{marker}.txt");
+    let file_b = format!("bravo_{marker}.txt");
+    std::fs::write(dir.join(&file_a), "a").expect("write a");
+    std::fs::write(dir.join(&file_b), "b").expect("write b");
+
+    let config = config_fs_only();
+    let result = try_create_service_with_tools(config).await;
+    match result {
+        Ok(service) => {
+            let request = ChatRequest {
+                message: format!(
+                    "List the files in the directory {}. \
+                     Reply with the filenames you see.",
+                    dir.display()
+                ),
+            };
+            match service.chat(request).await {
+                Ok(response) => {
+                    let reply = &response.reply;
+                    assert!(
+                        reply.contains(&file_a) || reply.contains(&file_b),
+                        "Expected reply to contain at least one of [{file_a}, {file_b}], got: {reply}"
+                    );
+                }
+                Err(e) => assert_setup_error(&e),
+            }
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Verify the agent can perform a multi-step filesystem operation:
+/// first check if a file exists, then read its contents.
+#[tokio::test]
+async fn tool_invocation_multi_step_fs() {
+    let (path, marker) = create_marker_file("multi_step");
+    let config = config_fs_only();
+
+    let result = try_create_service_with_tools(config).await;
+    match result {
+        Ok(service) => {
+            let request = ChatRequest {
+                message: format!(
+                    "First, check whether the file {} exists. \
+                     If it does, read it and reply with its exact contents.",
+                    path.display()
+                ),
+            };
+            match service.chat(request).await {
+                Ok(response) => {
+                    assert!(
+                        response.reply.contains(&marker),
+                        "Expected reply to contain marker {marker}, got: {}",
+                        response.reply
+                    );
+                }
+                Err(e) => assert_setup_error(&e),
+            }
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+
+    std::fs::remove_file(&path).ok();
+}
+
+/// Verify the agent can read a file via the streaming chat path.
+/// Same as `tool_invocation_fs_read_file` but uses `chat_streaming()`.
+#[tokio::test]
+async fn tool_invocation_streaming_fs_read() {
+    let (path, marker) = create_marker_file("stream_read");
+    let config = config_fs_only();
+
+    let result = try_create_service_with_tools(config).await;
+    match result {
+        Ok(service) => {
+            let request = ChatRequest {
+                message: format!(
+                    "Read the file at {} and reply with its exact contents. \
+                     Do not paraphrase — just output the raw text.",
+                    path.display()
+                ),
+            };
+            match service.chat_streaming(request).await {
+                Ok(mut rx) => {
+                    let timeout_duration = std::time::Duration::from_secs(60);
+                    let receive_future = async {
+                        let mut full_reply = String::new();
+                        while let Some(event) = rx.recv().await {
+                            match event {
+                                ChatStreamEvent::Delta(content) => {
+                                    full_reply.push_str(&content);
+                                }
+                                ChatStreamEvent::Done(content) => {
+                                    full_reply.push_str(&content);
+                                    break;
+                                }
+                            }
+                        }
+                        full_reply
+                    };
+
+                    match tokio::time::timeout(timeout_duration, receive_future).await {
+                        Ok(full_reply) => {
+                            assert!(
+                                full_reply.contains(&marker),
+                                "Expected streaming reply to contain marker {marker}, got: {full_reply}"
+                            );
+                        }
+                        Err(_) => {
+                            panic!("Streaming tool invocation timed out after 60s");
+                        }
+                    }
+                }
+                Err(e) => assert_setup_error(&e),
+            }
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+
+    std::fs::remove_file(&path).ok();
 }
