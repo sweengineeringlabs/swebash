@@ -6,7 +6,7 @@
 ///
 /// ```text
 /// L5 Facade   - lib.rs (this file): re-exports, factory
-/// L4 Core     - core/: DefaultAiService, feature modules
+/// L4 Core     - core/: DefaultAiService, feature modules, agent framework
 /// L3 API      - api/: AiService trait (consumer interface)
 /// L2 SPI      - spi/: AiClient trait + ChatProviderClient (chat/llm-provider)
 /// L1 Common   - api/types.rs, api/error.rs: shared types
@@ -21,7 +21,7 @@ pub mod spi;
 
 pub use api::error::{AiError, AiResult};
 pub use api::types::{
-    AiMessage, AiResponse, AiRole, AiStatus, AutocompleteRequest, AutocompleteResponse,
+    AgentInfo, AiMessage, AiResponse, AiRole, AiStatus, AutocompleteRequest, AutocompleteResponse,
     ChatRequest, ChatResponse, ChatStreamEvent, CompletionOptions, ExplainRequest,
     ExplainResponse, TranslateRequest, TranslateResponse,
 };
@@ -34,18 +34,15 @@ pub use core::DefaultAiService;
 /// Returns `Ok(service)` if the provider initializes successfully,
 /// or `Err` if configuration is missing or invalid.
 ///
-/// Creates a `ChatEngine` implementation (SimpleChatEngine or ToolAwareChatEngine
-/// based on configuration) for conversational chat with built-in memory management,
-/// and an `AiClient` backed by `llm-provider` for stateless features
-/// (translate, explain, autocomplete).
+/// Creates an `AgentRegistry` with built-in agents (shell, review, devops, git),
+/// each with its own `ChatEngine` (lazily created on first use).
+/// Stateless features (translate, explain, autocomplete) use the `AiClient` directly.
 ///
 /// The host should call this at startup and store the result as `Option`:
 /// ```ignore
 /// let ai_service = swebash_ai::create_ai_service().ok();
 /// ```
 pub async fn create_ai_service() -> AiResult<DefaultAiService> {
-    use std::sync::Arc;
-
     let config = AiConfig::from_env();
 
     if !config.enabled {
@@ -65,38 +62,8 @@ pub async fn create_ai_service() -> AiResult<DefaultAiService> {
     let client = spi::chat_provider::ChatProviderClient::new(&config).await?;
     let llm = client.llm_service();
 
-    // Build chat engine configuration
-    let chat_config = chat_engine::ChatConfig {
-        model: config.model.clone(),
-        temperature: 0.5,
-        max_tokens: 1024,
-        system_prompt: Some(core::prompt::chat_system_prompt()),
-        max_history: config.history_size,
-        enable_summarization: false,
-    };
+    // Build the agent registry with built-in agents
+    let agents = core::agents::builtins::create_default_registry(llm, config.clone());
 
-    // Factory pattern - decide which ChatEngine provider to use
-    let chat_engine: Arc<dyn chat_engine::ChatEngine> = if config.tools.enabled() {
-        // Use tool-aware engine with tools from rustratify
-        let tool_config = tool::ToolConfig {
-            enable_fs: config.tools.enable_fs,
-            enable_exec: config.tools.enable_exec,
-            enable_web: config.tools.enable_web,
-            fs_max_size: config.tools.fs_max_size,
-            exec_timeout: config.tools.exec_timeout,
-        };
-
-        let tools = tool::create_standard_registry(&tool_config);
-
-        Arc::new(chat_engine::ToolAwareChatEngine::new(
-            llm.clone(),
-            chat_config,
-            Arc::new(tools),
-        ))
-    } else {
-        // Use simple engine (no tools)
-        Arc::new(chat_engine::SimpleChatEngine::new(llm.clone(), chat_config))
-    };
-
-    Ok(DefaultAiService::new(Box::new(client), chat_engine, config))
+    Ok(DefaultAiService::new(Box::new(client), agents, config))
 }

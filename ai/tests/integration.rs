@@ -34,57 +34,9 @@ fn anthropic_config() -> AiConfig {
             .unwrap_or_else(|_| "claude-sonnet-4-20250514".to_string()),
         history_size: 20,
         tools: ToolConfig::default(),
+        default_agent: "shell".to_string(),
+        agent_auto_detect: true,
     }
-}
-
-/// Build a `SimpleChatEngine` from a `ChatProviderClient` and config.
-/// Note: This always creates SimpleChatEngine. For ToolAware tests, use `build_tool_aware_engine`.
-fn build_chat_engine(
-    client: &ChatProviderClient,
-    config: &AiConfig,
-) -> std::sync::Arc<dyn chat_engine::ChatEngine> {
-    let chat_config = chat_engine::ChatConfig {
-        model: config.model.clone(),
-        temperature: 0.5,
-        max_tokens: 1024,
-        system_prompt: Some(swebash_ai::core::prompt::chat_system_prompt()),
-        max_history: config.history_size,
-        enable_summarization: false,
-    };
-    std::sync::Arc::new(chat_engine::SimpleChatEngine::new(client.llm_service(), chat_config))
-}
-
-/// Build a `ToolAwareChatEngine` with the given tool configuration.
-fn build_tool_aware_engine(
-    client: &ChatProviderClient,
-    config: &AiConfig,
-) -> std::sync::Arc<dyn chat_engine::ChatEngine> {
-    use std::sync::Arc;
-
-    let chat_config = chat_engine::ChatConfig {
-        model: config.model.clone(),
-        temperature: 0.5,
-        max_tokens: 1024,
-        system_prompt: Some(swebash_ai::core::prompt::chat_system_prompt()),
-        max_history: config.history_size,
-        enable_summarization: false,
-    };
-
-    let tool_config = tool::ToolConfig {
-        enable_fs: config.tools.enable_fs,
-        enable_exec: config.tools.enable_exec,
-        enable_web: config.tools.enable_web,
-        fs_max_size: config.tools.fs_max_size,
-        exec_timeout: config.tools.exec_timeout,
-    };
-
-    let tools = tool::create_standard_registry(&tool_config);
-
-    Arc::new(chat_engine::ToolAwareChatEngine::new(
-        client.llm_service(),
-        chat_config,
-        Arc::new(tools),
-    ))
 }
 
 /// Try to create a real Anthropic-backed service.
@@ -94,22 +46,25 @@ fn build_tool_aware_engine(
 async fn try_create_service() -> AiResult<DefaultAiService> {
     let config = anthropic_config();
     let client = ChatProviderClient::new(&config).await?;
-    let chat_engine = build_chat_engine(&client, &config);
-    Ok(DefaultAiService::new(Box::new(client), chat_engine, config))
+    let llm = client.llm_service();
+    let agents = swebash_ai::core::agents::builtins::create_default_registry(llm, config.clone());
+    Ok(DefaultAiService::new(Box::new(client), agents, config))
 }
 
 /// Same as [`try_create_service`] but with a caller-supplied config.
 async fn try_create_service_with_config(config: AiConfig) -> AiResult<DefaultAiService> {
     let client = ChatProviderClient::new(&config).await?;
-    let chat_engine = build_chat_engine(&client, &config);
-    Ok(DefaultAiService::new(Box::new(client), chat_engine, config))
+    let llm = client.llm_service();
+    let agents = swebash_ai::core::agents::builtins::create_default_registry(llm, config.clone());
+    Ok(DefaultAiService::new(Box::new(client), agents, config))
 }
 
 /// Create service with ToolAwareChatEngine using the factory pattern.
 async fn try_create_service_with_tools(config: AiConfig) -> AiResult<DefaultAiService> {
     let client = ChatProviderClient::new(&config).await?;
-    let chat_engine = build_tool_aware_engine(&client, &config);
-    Ok(DefaultAiService::new(Box::new(client), chat_engine, config))
+    let llm = client.llm_service();
+    let agents = swebash_ai::core::agents::builtins::create_default_registry(llm, config.clone());
+    Ok(DefaultAiService::new(Box::new(client), agents, config))
 }
 
 /// Assert that `err` is the kind we expect when the provider cannot be
@@ -136,6 +91,8 @@ fn config_has_api_key_known_provider() {
         model: "gpt-4o".to_string(),
         history_size: 20,
         tools: ToolConfig::default(),
+        default_agent: "shell".to_string(),
+        agent_auto_detect: true,
     };
     assert!(config.has_api_key());
     std::env::remove_var("OPENAI_API_KEY");
@@ -151,6 +108,8 @@ fn config_has_api_key_missing() {
         model: "gpt-4o".to_string(),
         history_size: 20,
         tools: ToolConfig::default(),
+        default_agent: "shell".to_string(),
+        agent_auto_detect: true,
     };
     assert!(!config.has_api_key());
 }
@@ -163,6 +122,8 @@ fn config_has_api_key_unknown_provider() {
         model: "whatever".to_string(),
         history_size: 20,
         tools: ToolConfig::default(),
+        default_agent: "shell".to_string(),
+        agent_auto_detect: true,
     };
     assert!(!config.has_api_key());
 }
@@ -237,6 +198,8 @@ async fn service_status_model_matches_config() {
         model: expected_model.clone(),
         history_size: 20,
         tools: ToolConfig::default(),
+        default_agent: "shell".to_string(),
+        agent_auto_detect: true,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => assert_eq!(service.status().await.model, expected_model),
@@ -617,6 +580,8 @@ async fn chat_history_respects_capacity() {
             .unwrap_or_else(|_| "claude-sonnet-4-20250514".to_string()),
         history_size: 4,
         tools: ToolConfig::default(),
+        default_agent: "shell".to_string(),
+        agent_auto_detect: true,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -752,6 +717,8 @@ async fn service_disabled_rejects_requests() {
             .unwrap_or_else(|_| "claude-sonnet-4-20250514".to_string()),
         history_size: 20,
         tools: ToolConfig::default(),
+        default_agent: "shell".to_string(),
+        agent_auto_detect: true,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -782,6 +749,8 @@ async fn error_bad_api_key_propagates() {
         model: "claude-sonnet-4-20250514".to_string(),
         history_size: 20,
         tools: ToolConfig::default(),
+        default_agent: "shell".to_string(),
+        agent_auto_detect: true,
     };
 
     // The error may surface at client creation or at the first API call —
@@ -789,8 +758,9 @@ async fn error_bad_api_key_propagates() {
     let outcome = match ChatProviderClient::new(&config).await {
         Err(e) => Err(e),
         Ok(client) => {
-            let chat_engine = build_chat_engine(&client, &config);
-            let service = DefaultAiService::new(Box::new(client), chat_engine.clone(), config);
+            let llm = client.llm_service();
+            let agents = swebash_ai::core::agents::builtins::create_default_registry(llm, config.clone());
+            let service = DefaultAiService::new(Box::new(client), agents, config);
             service
                 .translate(TranslateRequest {
                     natural_language: "list files".to_string(),
@@ -821,6 +791,8 @@ async fn error_invalid_model_propagates() {
         model: "nonexistent-model-xyz-99".to_string(),
         history_size: 20,
         tools: ToolConfig::default(),
+        default_agent: "shell".to_string(),
+        agent_auto_detect: true,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -847,6 +819,8 @@ async fn error_disabled_service_propagates_through_chat() {
             .unwrap_or_else(|_| "claude-sonnet-4-20250514".to_string()),
         history_size: 20,
         tools: ToolConfig::default(),
+        default_agent: "shell".to_string(),
+        agent_auto_detect: true,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -977,9 +951,10 @@ async fn tool_aware_engine_creation() {
     match ChatProviderClient::new(&anthropic_config()).await {
         Ok(client) => {
             let config = anthropic_config();
-            let engine = build_tool_aware_engine(&client, &config);
-            // Verify engine was created successfully
-            assert!(std::sync::Arc::strong_count(&engine) == 1);
+            let llm = client.llm_service();
+            let registry = swebash_ai::core::agents::builtins::create_default_registry(llm, config);
+            // Verify registry was created with built-in agents
+            assert!(registry.get("shell").is_some());
         }
         Err(e) => assert_setup_error(&e),
     }
@@ -994,9 +969,10 @@ async fn tool_aware_engine_with_fs_only() {
 
     match ChatProviderClient::new(&config).await {
         Ok(client) => {
-            let engine = build_tool_aware_engine(&client, &config);
-            // Verify engine was created with only FS tools
-            assert!(std::sync::Arc::strong_count(&engine) == 1);
+            let llm = client.llm_service();
+            let registry = swebash_ai::core::agents::builtins::create_default_registry(llm, config);
+            // Verify review agent exists (it uses fs-only tools)
+            assert!(registry.get("review").is_some());
         }
         Err(e) => assert_setup_error(&e),
     }
@@ -1011,9 +987,10 @@ async fn tool_aware_engine_with_exec_only() {
 
     match ChatProviderClient::new(&config).await {
         Ok(client) => {
-            let engine = build_tool_aware_engine(&client, &config);
-            // Verify engine was created with only exec tools
-            assert!(std::sync::Arc::strong_count(&engine) == 1);
+            let llm = client.llm_service();
+            let registry = swebash_ai::core::agents::builtins::create_default_registry(llm, config);
+            // Verify git agent exists (it uses fs + exec tools)
+            assert!(registry.get("git").is_some());
         }
         Err(e) => assert_setup_error(&e),
     }
@@ -1161,6 +1138,8 @@ fn config_fs_only() -> AiConfig {
             fs_max_size: 1_048_576,
             exec_timeout: 30,
         },
+        default_agent: "shell".to_string(),
+        agent_auto_detect: true,
     }
 }
 
@@ -1182,6 +1161,8 @@ fn config_exec_only() -> AiConfig {
             fs_max_size: 1_048_576,
             exec_timeout: 30,
         },
+        default_agent: "shell".to_string(),
+        agent_auto_detect: true,
     }
 }
 
@@ -1384,4 +1365,185 @@ async fn tool_invocation_streaming_fs_read() {
     }
 
     std::fs::remove_file(&path).ok();
+}
+
+// ── Agent framework integration tests ──────────────────────────────────
+
+#[tokio::test]
+async fn agent_list_returns_all_builtins() {
+    match try_create_service().await {
+        Ok(service) => {
+            let agents = service.list_agents().await;
+            assert_eq!(agents.len(), 4, "should have 4 built-in agents");
+            let ids: Vec<&str> = agents.iter().map(|a| a.id.as_str()).collect();
+            assert!(ids.contains(&"shell"), "should contain shell agent");
+            assert!(ids.contains(&"review"), "should contain review agent");
+            assert!(ids.contains(&"devops"), "should contain devops agent");
+            assert!(ids.contains(&"git"), "should contain git agent");
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+async fn agent_default_is_shell() {
+    match try_create_service().await {
+        Ok(service) => {
+            let current = service.current_agent().await;
+            assert_eq!(current.id, "shell", "default agent should be shell");
+            assert!(current.active, "default agent should be active");
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+async fn agent_switch_and_current_round_trip() {
+    match try_create_service().await {
+        Ok(service) => {
+            assert_eq!(service.current_agent().await.id, "shell");
+
+            service.switch_agent("review").await.expect("switch to review should succeed");
+            let current = service.current_agent().await;
+            assert_eq!(current.id, "review");
+            assert_eq!(current.display_name, "Code Reviewer");
+            assert!(current.active);
+
+            service.switch_agent("git").await.expect("switch to git should succeed");
+            assert_eq!(service.current_agent().await.id, "git");
+
+            service.switch_agent("shell").await.expect("switch to shell should succeed");
+            assert_eq!(service.current_agent().await.id, "shell");
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+async fn agent_switch_unknown_returns_error() {
+    match try_create_service().await {
+        Ok(service) => {
+            let result = service.switch_agent("nonexistent").await;
+            assert!(result.is_err(), "switching to unknown agent should fail");
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+async fn agent_list_marks_active() {
+    match try_create_service().await {
+        Ok(service) => {
+            let agents = service.list_agents().await;
+            let active_count = agents.iter().filter(|a| a.active).count();
+            assert_eq!(active_count, 1, "exactly one agent should be active");
+            let active = agents.iter().find(|a| a.active).unwrap();
+            assert_eq!(active.id, "shell");
+
+            service.switch_agent("review").await.unwrap();
+            let agents = service.list_agents().await;
+            let active = agents.iter().find(|a| a.active).unwrap();
+            assert_eq!(active.id, "review", "active marker should follow switch");
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+async fn agent_auto_detect_git_keyword() {
+    match try_create_service().await {
+        Ok(service) => {
+            let switched = service.auto_detect_and_switch("git commit -m fix").await;
+            assert_eq!(switched, Some("git".to_string()), "should detect git agent");
+            assert_eq!(service.current_agent().await.id, "git");
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+async fn agent_auto_detect_docker_keyword() {
+    match try_create_service().await {
+        Ok(service) => {
+            let switched = service.auto_detect_and_switch("docker ps").await;
+            assert_eq!(switched, Some("devops".to_string()), "should detect devops agent");
+            assert_eq!(service.current_agent().await.id, "devops");
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+async fn agent_auto_detect_no_match_stays() {
+    match try_create_service().await {
+        Ok(service) => {
+            let switched = service.auto_detect_and_switch("list all files").await;
+            assert_eq!(switched, None, "should not detect any agent");
+            assert_eq!(service.current_agent().await.id, "shell", "should stay on shell");
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn agent_auto_detect_disabled() {
+    let mut config = anthropic_config();
+    config.agent_auto_detect = false;
+    match try_create_service_with_config(config).await {
+        Ok(service) => {
+            let switched = service.auto_detect_and_switch("git commit").await;
+            assert_eq!(switched, None, "auto-detect should be disabled");
+            assert_eq!(service.current_agent().await.id, "shell");
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+async fn agent_active_agent_id() {
+    match try_create_service().await {
+        Ok(service) => {
+            assert_eq!(service.active_agent_id().await, "shell");
+            service.switch_agent("review").await.unwrap();
+            assert_eq!(service.active_agent_id().await, "review");
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+async fn agent_engine_caching() {
+    match try_create_service().await {
+        Ok(service) => {
+            service.switch_agent("shell").await.unwrap();
+            let info1 = service.current_agent().await;
+            let info2 = service.current_agent().await;
+            assert_eq!(info1.id, info2.id, "engine should be cached and stable");
+
+            // Switch to review and back — shell should still work
+            service.switch_agent("review").await.unwrap();
+            service.switch_agent("shell").await.unwrap();
+            let info3 = service.current_agent().await;
+            assert_eq!(info3.id, "shell");
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn agent_default_config_override() {
+    let mut config = anthropic_config();
+    config.default_agent = "review".to_string();
+    match try_create_service_with_config(config).await {
+        Ok(service) => {
+            assert_eq!(
+                service.current_agent().await.id,
+                "review",
+                "service should start with the configured default agent"
+            );
+        }
+        Err(e) => assert_setup_error(&e),
+    }
 }

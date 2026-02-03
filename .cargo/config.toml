@@ -1,3 +1,7 @@
 # Local registry index is set via CARGO_REGISTRIES_LOCAL_INDEX env var
 # Toggle with: SWEBASH_PLATFORM=wsl|windows (see ~/.bashrc)
 [registries.local]
+
+# Build artifacts on native Linux filesystem to avoid WSL2 /mnt/c I/O errors
+[build]
+target-dir = "/tmp/swebash-target"

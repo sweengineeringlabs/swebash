@@ -127,6 +127,19 @@ pub struct AiStatus {
     pub description: String,
 }
 
+/// Information about a registered agent.
+#[derive(Debug, Clone)]
+pub struct AgentInfo {
+    /// Unique agent identifier (e.g. "shell", "review").
+    pub id: String,
+    /// Human-readable name (e.g. "Shell Assistant").
+    pub display_name: String,
+    /// Short description of the agent's purpose.
+    pub description: String,
+    /// Whether this agent is currently active.
+    pub active: bool,
+}
+
 /// Events emitted during a streaming chat response.
 #[derive(Debug, Clone)]
 pub enum ChatStreamEvent {

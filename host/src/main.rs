@@ -8,6 +8,7 @@ mod state;
 use anyhow::{Context, Result};
 use history::History;
 use readline::{Completer, Hinter, LineEditor, ReadlineConfig, ValidationResult, Validator};
+use swebash_ai::AiService;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -68,6 +69,7 @@ async fn main() -> Result<()> {
     let mut recent_commands: Vec<String> = Vec::new();
     let max_recent: usize = 10;
     let mut ai_mode = false; // Track if we're in AI mode
+    let mut ai_agent_id = String::from("shell"); // Track active agent for prompt
 
     let home_dir = dirs::home_dir();
 
@@ -97,7 +99,7 @@ async fn main() -> Result<()> {
         // Determine prompt based on AI mode and multi-line mode
         let prompt = if ai_mode {
             if multiline_buffer.is_empty() {
-                "\x1b[1;36m[AI Mode]\x1b[0m > ".to_string()
+                format!("\x1b[1;36m[AI:{}]\x1b[0m > ", ai_agent_id)
             } else {
                 "\x1b[1;36m...\x1b[0m> ".to_string()
             }
@@ -188,7 +190,26 @@ async fn main() -> Result<()> {
                     println!("Exited AI mode.");
                 }
                 _ => {
+                    // Auto-detect agent from input keywords before dispatch
+                    if let Some(svc) = &ai_service {
+                        if let Some(new_agent) = svc.auto_detect_and_switch(&cmd).await {
+                            ai_agent_id = new_agent.clone();
+                            let info = svc.current_agent().await;
+                            ai::output::ai_agent_switched(&info.id, &info.display_name);
+                        }
+                    }
+
+                    // Track agent switches for the prompt
+                    let is_switch = matches!(
+                        &ai_cmd,
+                        ai::commands::AiCommand::SwitchAgent(_)
+                    );
                     ai::handle_ai_command(&ai_service, ai_cmd, &recent_commands).await;
+                    if is_switch {
+                        if let Some(svc) = &ai_service {
+                            ai_agent_id = svc.active_agent_id().await;
+                        }
+                    }
                 }
             }
             continue;
@@ -198,6 +219,9 @@ async fn main() -> Result<()> {
                 let enter_ai_mode = ai::handle_ai_command(&ai_service, ai_cmd, &recent_commands).await;
                 if enter_ai_mode {
                     ai_mode = true;
+                    if let Some(svc) = &ai_service {
+                        ai_agent_id = svc.active_agent_id().await;
+                    }
                     println!("Entered AI mode. Type 'exit' or 'quit' to return to shell.");
                 }
                 continue;

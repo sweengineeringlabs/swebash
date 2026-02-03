@@ -44,6 +44,18 @@ pub async fn handle_ai_command(
             handle_clear(service).await;
             false
         }
+        AiCommand::ListAgents => {
+            handle_list_agents(service).await;
+            false
+        }
+        AiCommand::SwitchAgent(agent_id) => {
+            handle_switch_agent(service, &agent_id).await;
+            false
+        }
+        AiCommand::AgentChat { agent, text } => {
+            handle_agent_chat(service, &agent, &text).await;
+            false
+        }
         _ => {
             // All other commands require a configured service
             let Some(svc) = service else {
@@ -268,4 +280,64 @@ async fn handle_clear(service: &Option<DefaultAiService>) {
             output::ai_not_configured();
         }
     }
+}
+
+/// Handle `ai agents` — list all registered agents.
+async fn handle_list_agents(service: &Option<DefaultAiService>) {
+    match service {
+        Some(svc) => {
+            let agents = svc.list_agents().await;
+            output::ai_agent_list(&agents);
+        }
+        None => {
+            output::ai_not_configured();
+        }
+    }
+}
+
+/// Handle `@<agent>` — switch to a different agent.
+async fn handle_switch_agent(service: &Option<DefaultAiService>, agent_id: &str) {
+    match service {
+        Some(svc) => match svc.switch_agent(agent_id).await {
+            Ok(()) => {
+                let info = svc.current_agent().await;
+                output::ai_agent_switched(&info.id, &info.display_name);
+            }
+            Err(e) => {
+                output::ai_error(&e.to_string());
+            }
+        },
+        None => {
+            output::ai_not_configured();
+        }
+    }
+}
+
+/// Handle `ai @<agent> <text>` — one-shot chat with a specific agent.
+///
+/// Temporarily switches to the specified agent, sends the message,
+/// then switches back to the previous agent.
+async fn handle_agent_chat(service: &Option<DefaultAiService>, agent_id: &str, text: &str) {
+    let Some(svc) = service else {
+        output::ai_not_configured();
+        return;
+    };
+
+    // Remember current agent
+    let previous = svc.active_agent_id().await;
+
+    // Switch to requested agent
+    if let Err(e) = svc.switch_agent(agent_id).await {
+        output::ai_error(&e.to_string());
+        return;
+    }
+
+    let info = svc.current_agent().await;
+    output::ai_info(&format!("[{}] {}", info.id, info.display_name));
+
+    // Chat with the agent
+    handle_chat(svc, text).await;
+
+    // Switch back to previous agent
+    let _ = svc.switch_agent(&previous).await;
 }

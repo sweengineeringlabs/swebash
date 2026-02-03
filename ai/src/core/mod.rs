@@ -3,9 +3,10 @@
 /// Wires the SPI client to the API service trait, delegating
 /// to feature-specific modules for each operation.
 ///
-/// The chat feature uses a ChatEngine implementation (SimpleChatEngine
-/// or ToolAwareChatEngine) for conversation management with built-in memory.
+/// Chat is routed through the agent framework: each agent has its own
+/// `ChatEngine` instance with isolated memory, system prompt, and tool access.
 /// Stateless features (translate, explain, autocomplete) use the `AiClient` directly.
+pub mod agents;
 pub mod chat;
 pub mod complete;
 pub mod explain;
@@ -16,6 +17,7 @@ pub mod tools;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use tokio::sync::RwLock;
 
 use crate::api::error::{AiError, AiResult};
 use crate::api::types::*;
@@ -23,32 +25,43 @@ use crate::api::AiService;
 use crate::config::AiConfig;
 use crate::spi::AiClient;
 
-use chat_engine::ChatEngine;
+use agents::AgentRegistry;
 
 /// The default implementation of `AiService`.
 ///
-/// Holds the LLM client for stateless features and a `ChatEngine`
-/// implementation for conversational chat with memory management.
-/// The engine uses the provider pattern - can be SimpleChatEngine
-/// or ToolAwareChatEngine depending on configuration.
+/// Uses an `AgentRegistry` to manage purpose-built agents, each with
+/// its own `ChatEngine`, system prompt, and tool configuration.
+/// The `active_agent` tracks which agent handles chat messages.
 pub struct DefaultAiService {
     client: Box<dyn AiClient>,
     config: AiConfig,
-    chat_engine: Arc<dyn ChatEngine>,
+    agents: AgentRegistry,
+    active_agent: RwLock<String>,
 }
 
 impl DefaultAiService {
-    /// Create a new service with the given client, chat engine, and config.
+    /// Create a new service with the given client, agent registry, and config.
     pub fn new(
         client: Box<dyn AiClient>,
-        chat_engine: Arc<dyn ChatEngine>,
+        agents: AgentRegistry,
         config: AiConfig,
     ) -> Self {
+        let default_agent = config.default_agent.clone();
         Self {
             client,
             config,
-            chat_engine,
+            agents,
+            active_agent: RwLock::new(default_agent),
         }
+    }
+
+    /// Get the chat engine for the currently active agent.
+    async fn active_engine(&self) -> AiResult<Arc<dyn chat_engine::ChatEngine>> {
+        let agent_id = self.active_agent.read().await.clone();
+        self.agents
+            .engine_for(&agent_id)
+            .await
+            .ok_or_else(|| AiError::NotConfigured(format!("Agent '{}' not found", agent_id)))
     }
 }
 
@@ -66,7 +79,8 @@ impl AiService for DefaultAiService {
 
     async fn chat(&self, request: ChatRequest) -> AiResult<ChatResponse> {
         self.ensure_ready().await?;
-        chat::chat(self.chat_engine.as_ref(), request).await
+        let engine = self.active_engine().await?;
+        chat::chat(engine.as_ref(), request).await
     }
 
     async fn chat_streaming(
@@ -74,7 +88,8 @@ impl AiService for DefaultAiService {
         request: ChatRequest,
     ) -> AiResult<tokio::sync::mpsc::Receiver<ChatStreamEvent>> {
         self.ensure_ready().await?;
-        chat::chat_streaming(&self.chat_engine, request).await
+        let engine = self.active_engine().await?;
+        chat::chat_streaming(&engine, request).await
     }
 
     async fn autocomplete(&self, request: AutocompleteRequest) -> AiResult<AutocompleteResponse> {
@@ -95,6 +110,50 @@ impl AiService for DefaultAiService {
             description: self.client.description(),
         }
     }
+
+    async fn switch_agent(&self, agent_id: &str) -> AiResult<()> {
+        if self.agents.get(agent_id).is_none() {
+            return Err(AiError::NotConfigured(format!(
+                "Unknown agent '{}'. Use 'agents' to list available agents.",
+                agent_id
+            )));
+        }
+        let mut active = self.active_agent.write().await;
+        *active = agent_id.to_string();
+        Ok(())
+    }
+
+    async fn current_agent(&self) -> AgentInfo {
+        let agent_id = self.active_agent.read().await.clone();
+        match self.agents.get(&agent_id) {
+            Some(agent) => AgentInfo {
+                id: agent.id().to_string(),
+                display_name: agent.display_name().to_string(),
+                description: agent.description().to_string(),
+                active: true,
+            },
+            None => AgentInfo {
+                id: agent_id,
+                display_name: "Unknown".to_string(),
+                description: "Agent not found".to_string(),
+                active: true,
+            },
+        }
+    }
+
+    async fn list_agents(&self) -> Vec<AgentInfo> {
+        let active_id = self.active_agent.read().await.clone();
+        self.agents
+            .list()
+            .iter()
+            .map(|agent| AgentInfo {
+                id: agent.id().to_string(),
+                display_name: agent.display_name().to_string(),
+                description: agent.description().to_string(),
+                active: agent.id() == active_id,
+            })
+            .collect()
+    }
 }
 
 impl DefaultAiService {
@@ -110,10 +169,14 @@ impl DefaultAiService {
         Ok(())
     }
 
-    /// Get a formatted display of conversation history.
+    /// Get a formatted display of conversation history for the active agent.
     pub async fn format_history(&self) -> String {
-        let messages = self
-            .chat_engine
+        let engine = match self.active_engine().await {
+            Ok(e) => e,
+            Err(_) => return "(no active agent)".to_string(),
+        };
+
+        let messages = engine
             .memory()
             .get_all_messages()
             .await
@@ -134,8 +197,38 @@ impl DefaultAiService {
         output
     }
 
-    /// Clear conversation history.
+    /// Clear conversation history for the active agent.
     pub async fn clear_history(&self) {
-        let _ = self.chat_engine.new_conversation().await;
+        if let Ok(engine) = self.active_engine().await {
+            let _ = engine.new_conversation().await;
+        }
+    }
+
+    /// Clear conversation history for all agents.
+    pub async fn clear_all_history(&self) {
+        self.agents.clear_all().await;
+    }
+
+    /// Get the active agent ID.
+    pub async fn active_agent_id(&self) -> String {
+        self.active_agent.read().await.clone()
+    }
+
+    /// Auto-detect the best agent for the given input, if enabled.
+    ///
+    /// Returns `Some(agent_id)` if a better agent was detected and switched to.
+    pub async fn auto_detect_and_switch(&self, input: &str) -> Option<String> {
+        if !self.config.agent_auto_detect {
+            return None;
+        }
+        let current = self.active_agent.read().await.clone();
+        if let Some(detected) = self.agents.detect_agent(input) {
+            if detected != current {
+                let mut active = self.active_agent.write().await;
+                *active = detected.to_string();
+                return Some(detected.to_string());
+            }
+        }
+        None
     }
 }

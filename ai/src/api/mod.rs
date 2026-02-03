@@ -36,4 +36,13 @@ pub trait AiService: Send + Sync {
 
     /// Get the current status of the AI service.
     async fn status(&self) -> AiStatus;
+
+    /// Switch to a different agent by ID.
+    async fn switch_agent(&self, agent_id: &str) -> AiResult<()>;
+
+    /// Get information about the currently active agent.
+    async fn current_agent(&self) -> AgentInfo;
+
+    /// List all registered agents with their status.
+    async fn list_agents(&self) -> Vec<AgentInfo>;
 }

@@ -9,6 +9,12 @@ pub enum AiCommand {
     Explain(String),
     /// `ai chat <text>` — conversational assistant.
     Chat(String),
+    /// `ai @<agent> <text>` — chat with a specific agent (one-shot).
+    AgentChat { agent: String, text: String },
+    /// `ai agents` or `agents` in AI mode — list available agents.
+    ListAgents,
+    /// `@<agent>` in AI mode — switch to a different agent.
+    SwitchAgent(String),
     /// `ai suggest` — autocomplete suggestions.
     Suggest,
     /// `ai status` — show AI configuration status.
@@ -49,6 +55,30 @@ pub fn parse_ai_command(input: &str) -> Option<AiCommand> {
     // `ai <subcommand> [args...]`
     if let Some(rest) = trimmed.strip_prefix("ai ").or_else(|| trimmed.strip_prefix("ai\t")) {
         let rest = rest.trim();
+
+        // `ai @<agent> <text>` — one-shot agent chat
+        if let Some(agent_rest) = rest.strip_prefix('@') {
+            if let Some((agent, text)) = agent_rest.split_once(|c: char| c.is_whitespace()) {
+                let agent = agent.trim();
+                let text = text.trim();
+                if !agent.is_empty() && !text.is_empty() {
+                    return Some(AiCommand::AgentChat {
+                        agent: agent.to_string(),
+                        text: text.to_string(),
+                    });
+                }
+            }
+            // `ai @<agent>` with no text — switch agent and enter AI mode
+            let agent = agent_rest.trim();
+            if !agent.is_empty() {
+                return Some(AiCommand::SwitchAgent(agent.to_string()));
+            }
+        }
+
+        if rest == "agents" {
+            return Some(AiCommand::ListAgents);
+        }
+
         if let Some(text) = rest.strip_prefix("ask ").or_else(|| rest.strip_prefix("ask\t")) {
             let text = text.trim();
             if !text.is_empty() {
@@ -85,6 +115,7 @@ pub fn parse_ai_command(input: &str) -> Option<AiCommand> {
         "ai status" => return Some(AiCommand::Status),
         "ai history" => return Some(AiCommand::History),
         "ai clear" => return Some(AiCommand::Clear),
+        "ai agents" => return Some(AiCommand::ListAgents),
         "ai" => return Some(AiCommand::EnterMode),
         _ => {}
     }
@@ -100,8 +131,9 @@ pub fn parse_ai_command(input: &str) -> Option<AiCommand> {
 /// Priority:
 /// 1. Explicit subcommands (chat, ask, explain, etc.)
 /// 2. Exit commands (exit, quit)
-/// 3. Smart detection (command patterns, action verbs, questions)
-/// 4. Default to chat (conversational fallback)
+/// 3. Agent commands (@agent, agents)
+/// 4. Smart detection (command patterns, action verbs, questions)
+/// 5. Default to chat (conversational fallback)
 pub fn parse_ai_mode_command(input: &str) -> AiCommand {
     let trimmed = input.trim();
 
@@ -141,10 +173,30 @@ pub fn parse_ai_mode_command(input: &str) -> AiCommand {
         "status" => return AiCommand::Status,
         "history" => return AiCommand::History,
         "clear" => return AiCommand::Clear,
+        "agents" => return AiCommand::ListAgents,
         _ => {}
     }
 
-    // 3. Smart detection
+    // 3. Agent commands: `@<agent> [text]`
+    if let Some(agent_rest) = trimmed.strip_prefix('@') {
+        if let Some((agent, text)) = agent_rest.split_once(|c: char| c.is_whitespace()) {
+            let agent = agent.trim();
+            let text = text.trim();
+            if !agent.is_empty() && !text.is_empty() {
+                return AiCommand::AgentChat {
+                    agent: agent.to_string(),
+                    text: text.to_string(),
+                };
+            }
+        }
+        // `@<agent>` alone — switch agent
+        let agent = agent_rest.trim();
+        if !agent.is_empty() {
+            return AiCommand::SwitchAgent(agent.to_string());
+        }
+    }
+
+    // 4. Smart detection
     if looks_like_command(trimmed) {
         return AiCommand::Explain(trimmed.to_string());
     }
@@ -153,7 +205,7 @@ pub fn parse_ai_mode_command(input: &str) -> AiCommand {
         return AiCommand::Ask(trimmed.to_string());
     }
 
-    // 4. Default to chat (handles questions and everything else)
+    // 5. Default to chat (handles questions and everything else)
     AiCommand::Chat(trimmed.to_string())
 }
 
@@ -325,12 +377,12 @@ mod tests {
 
     #[test]
     fn test_smart_detection_command() {
-        // Known command → explain
+        // Known command -> explain
         assert!(matches!(
             parse_ai_mode_command("tar -xzf archive.tar.gz"),
             AiCommand::Explain(_)
         ));
-        // Pipe → explain
+        // Pipe -> explain
         assert!(matches!(
             parse_ai_mode_command("ps aux | grep node"),
             AiCommand::Explain(_)
@@ -339,7 +391,7 @@ mod tests {
 
     #[test]
     fn test_smart_detection_action() {
-        // Action verb → ask
+        // Action verb -> ask
         assert!(matches!(
             parse_ai_mode_command("find files larger than 100MB"),
             AiCommand::Ask(_)
@@ -352,17 +404,17 @@ mod tests {
 
     #[test]
     fn test_smart_detection_chat_fallback() {
-        // Question → chat
+        // Question -> chat
         assert!(matches!(
             parse_ai_mode_command("how do I compress a directory?"),
             AiCommand::Chat(_)
         ));
-        // Conversational → chat
+        // Conversational -> chat
         assert!(matches!(
             parse_ai_mode_command("that's helpful, thanks"),
             AiCommand::Chat(_)
         ));
-        // Unknown → chat
+        // Unknown -> chat
         assert!(matches!(
             parse_ai_mode_command("tell me about pipes"),
             AiCommand::Chat(_)
@@ -425,7 +477,7 @@ mod tests {
 
     #[test]
     fn test_action_verb_with_flags() {
-        // Action verb but has flags → command takes priority
+        // Action verb but has flags -> command takes priority
         assert!(matches!(
             parse_ai_mode_command("find . -name '*.log'"),
             AiCommand::Explain(_)
@@ -477,7 +529,7 @@ mod tests {
 
     #[test]
     fn test_ambiguous_natural_language() {
-        // Ambiguous commands without syntax → action request
+        // Ambiguous commands without syntax -> action request
         assert!(matches!(
             parse_ai_mode_command("find all large files"),
             AiCommand::Ask(_)
@@ -584,6 +636,70 @@ mod tests {
         assert!(matches!(
             parse_ai_mode_command("can you explain that again?"),
             AiCommand::Chat(_)
+        ));
+    }
+
+    // ── Agent command tests ──
+
+    #[test]
+    fn test_parse_agent_chat_shell_mode() {
+        // `ai @review check main.rs`
+        match parse_ai_command("ai @review check main.rs") {
+            Some(AiCommand::AgentChat { agent, text }) => {
+                assert_eq!(agent, "review");
+                assert_eq!(text, "check main.rs");
+            }
+            other => panic!("Expected AgentChat, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_switch_agent_shell_mode() {
+        // `ai @review` with no text
+        match parse_ai_command("ai @review") {
+            Some(AiCommand::SwitchAgent(agent)) => {
+                assert_eq!(agent, "review");
+            }
+            other => panic!("Expected SwitchAgent, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_list_agents_shell_mode() {
+        assert!(matches!(
+            parse_ai_command("ai agents"),
+            Some(AiCommand::ListAgents)
+        ));
+    }
+
+    #[test]
+    fn test_parse_agent_chat_ai_mode() {
+        // `@review check main.rs` in AI mode
+        match parse_ai_mode_command("@review check main.rs") {
+            AiCommand::AgentChat { agent, text } => {
+                assert_eq!(agent, "review");
+                assert_eq!(text, "check main.rs");
+            }
+            other => panic!("Expected AgentChat, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_switch_agent_ai_mode() {
+        // `@review` alone in AI mode
+        match parse_ai_mode_command("@review") {
+            AiCommand::SwitchAgent(agent) => {
+                assert_eq!(agent, "review");
+            }
+            other => panic!("Expected SwitchAgent, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_list_agents_ai_mode() {
+        assert!(matches!(
+            parse_ai_mode_command("agents"),
+            AiCommand::ListAgents
         ));
     }
 }

@@ -13,6 +13,10 @@ pub struct AiConfig {
     pub history_size: usize,
     /// Tool calling configuration.
     pub tools: ToolConfig,
+    /// Default agent ID to activate on startup (e.g. "shell").
+    pub default_agent: String,
+    /// Whether to auto-detect the best agent from input keywords.
+    pub agent_auto_detect: bool,
 }
 
 /// Tool calling configuration.
@@ -74,6 +78,8 @@ impl AiConfig {
     /// | `SWEBASH_AI_TOOLS_MAX_ITER` | `10` | Max tool loop iterations |
     /// | `SWEBASH_AI_FS_MAX_SIZE` | `1048576` | Max file read size (bytes) |
     /// | `SWEBASH_AI_EXEC_TIMEOUT` | `30` | Command timeout (seconds) |
+    /// | `SWEBASH_AI_DEFAULT_AGENT` | `shell` | Default agent on startup |
+    /// | `SWEBASH_AI_AGENT_AUTO_DETECT` | `true` | Auto-detect agent from keywords |
     pub fn from_env() -> Self {
         let enabled = std::env::var("SWEBASH_AI_ENABLED")
             .map(|v| v != "false" && v != "0")
@@ -118,12 +124,21 @@ impl AiConfig {
                 .unwrap_or(30),
         };
 
+        let default_agent = std::env::var("SWEBASH_AI_DEFAULT_AGENT")
+            .unwrap_or_else(|_| "shell".to_string());
+
+        let agent_auto_detect = std::env::var("SWEBASH_AI_AGENT_AUTO_DETECT")
+            .map(|v| v != "false" && v != "0")
+            .unwrap_or(true);
+
         Self {
             enabled,
             provider,
             model,
             history_size,
             tools,
+            default_agent,
+            agent_auto_detect,
         }
     }
 

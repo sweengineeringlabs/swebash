@@ -1,6 +1,8 @@
 /// Formatted AI output with colors.
 use std::io::{self, Write};
 
+use swebash_ai::AgentInfo;
+
 // ANSI color codes
 const CYAN: &str = "\x1b[36m";
 const GREEN: &str = "\x1b[32m";
@@ -144,4 +146,37 @@ pub fn ai_not_configured() {
         "  Then configure the provider: export LLM_PROVIDER=openai"
     );
     let _ = writeln!(io::stdout());
+}
+
+/// Print the list of registered agents.
+pub fn ai_agent_list(agents: &[AgentInfo]) {
+    let _ = writeln!(io::stdout(), "\n{}Agents:{}", BOLD, RESET);
+    for agent in agents {
+        let marker = if agent.active { "*" } else { " " };
+        let color = if agent.active { CYAN } else { "" };
+        let reset = if agent.active { RESET } else { "" };
+        let _ = writeln!(
+            io::stdout(),
+            "  {}{}{}{}{} {}— {}{}",
+            color,
+            marker,
+            agent.id,
+            reset,
+            " ".repeat(12_usize.saturating_sub(agent.id.len())),
+            DIM,
+            agent.description,
+            RESET,
+        );
+    }
+    let _ = writeln!(
+        io::stdout(),
+        "\n  {}Use @<agent> to switch, @<agent> <text> for one-shot.{}",
+        DIM, RESET
+    );
+    let _ = writeln!(io::stdout());
+}
+
+/// Print confirmation that the agent was switched.
+pub fn ai_agent_switched(id: &str, display_name: &str) {
+    ai_success(&format!("Switched to {} ({})", display_name, id));
 }

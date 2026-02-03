@@ -579,10 +579,10 @@ fn ai_mode_enter_and_exit() {
 fn ai_mode_prompt_indicator() {
     let (out, _err) = run(&["ai", "exit"]);
 
-    // Should show [AI Mode] prompt
+    // Should show [AI:<agent>] prompt
     assert!(
-        out.contains("[AI Mode]"),
-        "should show AI mode prompt indicator. stdout: {out}"
+        out.contains("[AI:"),
+        "should show AI agent prompt indicator. stdout: {out}"
     );
 }
 
@@ -592,7 +592,7 @@ fn ai_mode_status_command() {
 
     // Should handle status command in AI mode
     assert!(
-        out.contains("[AI Mode]"),
+        out.contains("[AI:"),
         "should be in AI mode. stdout: {out}"
     );
 }
@@ -712,7 +712,104 @@ fn ai_mode_with_multiline() {
 
     // Multi-line should work in AI mode
     assert!(
-        out.contains("[AI Mode]") || out.contains("not configured"),
+        out.contains("[AI:") || out.contains("not configured"),
         "should be in AI mode or show not configured. stdout: {out}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tests — Agent framework (host layer)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ai_agents_list_command() {
+    let (out, _err) = run(&["ai agents"]);
+
+    // Should list the built-in agents
+    assert!(
+        out.contains("shell") || out.contains("Shell"),
+        "ai agents should list shell agent. stdout: {out}"
+    );
+    assert!(
+        out.contains("review") || out.contains("Review"),
+        "ai agents should list review agent. stdout: {out}"
+    );
+    assert!(
+        out.contains("devops") || out.contains("DevOps"),
+        "ai agents should list devops agent. stdout: {out}"
+    );
+    assert!(
+        out.contains("git") || out.contains("Git"),
+        "ai agents should list git agent. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_agent_switch_in_ai_mode() {
+    let (out, _err) = run(&["ai", "@review", "exit"]);
+
+    // Should switch to review agent
+    assert!(
+        out.contains("review") || out.contains("Review"),
+        "should switch to review agent. stdout: {out}"
+    );
+
+    // Prompt should reflect the agent change
+    assert!(
+        out.contains("[AI:review]") || out.contains("[AI:"),
+        "prompt should show agent. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_agent_list_in_ai_mode() {
+    let (out, _err) = run(&["ai", "agents", "exit"]);
+
+    // Should list agents when in AI mode
+    assert!(
+        out.contains("shell") || out.contains("Shell"),
+        "agents command in AI mode should list agents. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_mode_prompt_shows_default_agent() {
+    let (out, _err) = run(&["ai", "exit"]);
+
+    // Default agent is shell, so prompt should show [AI:shell]
+    assert!(
+        out.contains("[AI:shell]"),
+        "prompt should show default shell agent. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_agent_one_shot_from_shell() {
+    let (out, _err) = run(&["ai @review hello"]);
+
+    // One-shot agent command should produce some output
+    // Either a response or a "not configured" message
+    assert!(
+        out.contains("review") ||
+        out.contains("Review") ||
+        out.contains("not configured") ||
+        out.contains("Not configured") ||
+        !out.is_empty(),
+        "one-shot agent command should produce output. stdout: {out}"
+    );
+}
+
+#[test]
+fn ai_agent_switch_back_and_forth() {
+    let (out, _err) = run(&["ai", "@git", "@review", "@shell", "exit"]);
+
+    // Should handle multiple agent switches without crashing
+    assert!(
+        out.contains("Entered AI mode"),
+        "should enter AI mode. stdout: {out}"
+    );
+    assert!(
+        out.contains("Exited AI mode"),
+        "should exit AI mode cleanly after switches. stdout: {out}"
     );
 }

@@ -124,15 +124,28 @@ cargo build --manifest-path host/Cargo.toml
 
 ## Running swebash
 
-### Development Build
+### Quick Start
 
 ```bash
-./target/debug/swebash
+cargo run
 ```
 
-### Release Build
+### With AI Features
 
 ```bash
+# Source .env (contains ANTHROPIC_API_KEY)
+set -a && source .env && set +a
+export LLM_PROVIDER=anthropic
+cargo run
+```
+
+### Running the Binary Directly
+
+```bash
+# Development build
+./target/debug/swebash
+
+# Release build
 ./target/release/swebash
 ```
 
@@ -169,22 +182,39 @@ cargo test --manifest-path ai/Cargo.toml
 
 ## API Configuration
 
-### Anthropic API Key
+### LLM Provider Setup
 
-The AI features require an Anthropic API key. Create a `.env` file in the project root:
+The AI features require an API key and a matching `LLM_PROVIDER` value.
+
+| Provider | API Key Variable | LLM_PROVIDER |
+|----------|-----------------|--------------|
+| Anthropic | `ANTHROPIC_API_KEY` | `anthropic` |
+| OpenAI | `OPENAI_API_KEY` | `openai` (default) |
+| Gemini | `GEMINI_API_KEY` | `gemini` |
+
+Create a `.env` file in the project root:
 
 ```bash
 cp .env.example .env
 # Edit .env and add your API key
 ```
 
-Or export it:
+Then source it before running:
+
+```bash
+set -a && source .env && set +a
+export LLM_PROVIDER=anthropic   # must match the key you set
+cargo run
+```
+
+Or export variables manually:
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-api03-..."
+export LLM_PROVIDER=anthropic
 ```
 
-The shell will work without AI features if the key is not configured.
+The shell will work without AI features if no key is configured.
 
 ## Common Issues and Troubleshooting
 
