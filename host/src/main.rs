@@ -52,7 +52,9 @@ async fn main() -> Result<()> {
     let config = ReadlineConfig::load();
 
     // Initialize history with file persistence
-    let history_path = dirs::home_dir()
+    let history_path = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(dirs::home_dir)
         .map(|h| h.join(".swebash_history"))
         .unwrap_or_else(|| std::path::PathBuf::from(".swebash_history"));
     let mut history = History::with_file(config.max_history_size, history_path);

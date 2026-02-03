@@ -87,7 +87,9 @@ impl Default for ColorConfig {
 impl ReadlineConfig {
     /// Load configuration from file
     pub fn load() -> Self {
-        let config_path = dirs::home_dir()
+        let config_path = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .or_else(dirs::home_dir)
             .map(|h| h.join(".swebashrc"))
             .unwrap_or_else(|| PathBuf::from(".swebashrc"));
 
