@@ -11,7 +11,7 @@ done
 PROFILE_LABEL="${BUILD_MODE:+release}"
 PROFILE_LABEL="${PROFILE_LABEL:-debug}"
 
-ensure_registry
+preflight
 
 echo "==> Building engine (wasm32, $PROFILE_LABEL)..."
 cargo build --manifest-path "$REPO_ROOT/features/shell/engine/Cargo.toml" \

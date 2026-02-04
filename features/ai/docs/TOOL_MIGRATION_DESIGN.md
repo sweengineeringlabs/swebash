@@ -8,7 +8,7 @@ This document outlines the plan to migrate swebash-ai's tool implementations to 
 
 ### swebash-ai Tool System
 
-**Location**: `/home/adentic/swebash/ai/src/core/tools/`
+**Location**: `features/ai/src/core/tools/`
 
 **Structure**:
 ```
@@ -40,7 +40,7 @@ pub trait ToolExecutor: Send + Sync {
 
 ### rustratify Tool Framework
 
-**Location**: `/home/adentic/rustratify/ai/llm/agent/tool/src/lib.rs`
+**Location**: `rustratify/ai/llm/agent/tool/src/lib.rs`
 
 **Structure**:
 ```

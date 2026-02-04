@@ -10,12 +10,12 @@
 
 ```bash
 # Without AI features
-cargo run
+./sbh run
 
 # With AI features (Anthropic)
 set -a && source .env && set +a
 export LLM_PROVIDER=anthropic
-cargo run
+./sbh run
 ```
 
 ## Test Checklist
@@ -24,7 +24,7 @@ cargo run
 
 | Test | Command | Expected |
 |------|---------|----------|
-| Startup banner | `cargo run` | Prints `wasm-shell v0.1.0` and prompt |
+| Startup banner | `./sbh run` | Prints `wasm-shell v0.1.0` and prompt |
 | Echo | `echo hello world` | Prints `hello world` |
 | PWD | `pwd` | Prints current working directory |
 | LS | `ls` | Lists files in current directory |
@@ -264,7 +264,17 @@ The `sbh` (and `sbh.ps1`) launcher is the primary entry point. These tests verif
 | AI only | `./sbh test ai` | Runs AI tests only |
 | Help text matches suites | `./sbh --help` | Test suite list includes `engine|host|readline|ai|all` |
 
-### 22. sbh build & run
+### 22. Cargo registry
+
+The project depends on a local Cargo registry for rustratify crates. The test scripts verify the registry is configured and reachable before running tests.
+
+| Test | Command | Expected |
+|------|---------|----------|
+| Registry set | `./sbh test engine` | First line prints `==> Registry: file:///...index (ok)` |
+| Registry missing | `CARGO_REGISTRIES_LOCAL_INDEX=file:///nonexistent ./sbh test engine` | Prints `ERROR: Local registry index not found`, exits 1 |
+| Registry unset | Unset `CARGO_REGISTRIES_LOCAL_INDEX` and remove from `.bashrc`, run `./sbh test engine` | `preflight` sets fallback path; verify it resolves |
+
+### 23. sbh build & run
 
 | Test | Command | Expected |
 |------|---------|----------|

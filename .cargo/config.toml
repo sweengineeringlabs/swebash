@@ -1,7 +1,8 @@
 # Local registry index is set via CARGO_REGISTRIES_LOCAL_INDEX env var
-# Toggle with: SWEBASH_PLATFORM=wsl|windows (see ~/.bashrc)
+# Configured by: ./sbh setup (persisted to ~/.bashrc)
 [registries.local]
 
-# Build artifacts on native Linux filesystem to avoid WSL2 /mnt/c I/O errors
+# WSL/Linux: build artifacts on native filesystem to avoid NTFS I/O overhead
+# Native Windows: this path is ignored; cargo uses default target/ directory
 [build]
 target-dir = "/tmp/swebash-target"

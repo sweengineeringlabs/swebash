@@ -4,32 +4,55 @@ source "$(cd "$(dirname "$0")/.." && pwd)/lib/common.sh"
 PLATFORM=$(detect_platform)
 echo "==> Detected platform: $PLATFORM"
 
+# ── Check prerequisites ──────────────────────────────────────────────
+echo "==> Checking prerequisites..."
+
+if ! command -v rustup &>/dev/null; then
+  echo "ERROR: rustup not found. Install from https://rustup.rs" >&2
+  exit 1
+fi
+
+if ! command -v cargo &>/dev/null; then
+  echo "ERROR: cargo not found. Install Rust via rustup." >&2
+  exit 1
+fi
+
+echo "  rustup: $(rustup --version 2>&1 | head -1)"
+echo "  cargo:  $(cargo --version)"
+
 # ── Install WASM target ─────────────────────────────────────────────
 echo "==> Installing wasm32-unknown-unknown target..."
 rustup target add wasm32-unknown-unknown
 
 # ── Verify / set up local registry ───────────────────────────────────
-REGISTRY_DIR="$HOME/.cargo/registry.local/index"
-
 if [ "$PLATFORM" = "wsl" ]; then
-  WIN_REGISTRY="/mnt/c/Users/elvis/.cargo/registry.local/index"
+  WIN_USER=$(cmd.exe /C "echo %USERNAME%" 2>/dev/null | tr -d '\r' || echo "")
+  if [ -z "$WIN_USER" ]; then
+    echo "ERROR: Could not detect Windows username" >&2
+    exit 1
+  fi
+  WIN_REGISTRY="/mnt/c/Users/$WIN_USER/.cargo/registry.local/index"
+  LINUX_REGISTRY="$HOME/.cargo/registry.local/index"
 
-  if [ ! -d "$REGISTRY_DIR" ] && [ -d "$WIN_REGISTRY" ]; then
+  if [ ! -d "$LINUX_REGISTRY" ] && [ -d "$WIN_REGISTRY" ]; then
     echo "==> Local registry not found in WSL home; copying from Windows..."
-    mkdir -p "$(dirname "$REGISTRY_DIR")"
-    cp -r "$WIN_REGISTRY" "$REGISTRY_DIR"
+    mkdir -p "$(dirname "$LINUX_REGISTRY")"
+    cp -r "$WIN_REGISTRY" "$LINUX_REGISTRY"
   fi
 
-  REGISTRY_URL="file:///home/adentic/.cargo/registry.local/index"
+  REGISTRY_DIR="$WIN_REGISTRY"
+  REGISTRY_URL="file://$WIN_REGISTRY"
 else
+  REGISTRY_DIR="$HOME/.cargo/registry.local/index"
   REGISTRY_URL="file://$HOME/.cargo/registry.local/index"
 fi
 
 if [ -d "$REGISTRY_DIR" ]; then
   echo "==> Local registry found at $REGISTRY_DIR"
 else
-  echo "!! WARNING: Local registry not found at $REGISTRY_DIR"
-  echo "   You may need to set up the rustratify registry manually."
+  echo "ERROR: Local registry not found at $REGISTRY_DIR" >&2
+  echo "  Set up the rustratify registry before running setup." >&2
+  exit 1
 fi
 
 # ── Persist CARGO_REGISTRIES_LOCAL_INDEX ─────────────────────────────
@@ -55,6 +78,10 @@ if [ ! -f "$REPO_ROOT/.env" ]; then
 else
   echo "==> .env already exists"
 fi
+
+# ── Verify setup ─────────────────────────────────────────────────────
+echo ""
+verify_registry
 
 # ── Summary ──────────────────────────────────────────────────────────
 echo ""

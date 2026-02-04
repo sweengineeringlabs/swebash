@@ -1,17 +1,35 @@
 # bin/setup.ps1 — One-time environment setup for swebash (Windows)
 . "$PSScriptRoot\..\lib\common.ps1"
 
+# ── Check prerequisites ──────────────────────────────────────────────
+Write-Host "==> Checking prerequisites..."
+
+if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
+    Write-Error "rustup not found. Install from https://rustup.rs"
+    exit 1
+}
+
+if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+    Write-Error "cargo not found. Install Rust via rustup."
+    exit 1
+}
+
+Write-Host "  rustup: $(rustup --version 2>&1 | Select-Object -First 1)"
+Write-Host "  cargo:  $(cargo --version)"
+
+# ── Install WASM target ─────────────────────────────────────────────
 Write-Host "==> Installing wasm32-unknown-unknown target..."
 rustup target add wasm32-unknown-unknown
 
 # ── Verify local registry ───────────────────────────────────────────
-$RegPath = "C:\Users\elvis\.cargo\registry.local\index"
+$RegPath = Join-Path $env:USERPROFILE ".cargo\registry.local\index"
 
 if (Test-Path $RegPath) {
     Write-Host "==> Local registry found at $RegPath"
 } else {
-    Write-Warning "Local registry not found at $RegPath"
-    Write-Warning "You may need to set up the rustratify registry manually."
+    Write-Error "Local registry not found at $RegPath"
+    Write-Error "Set up the rustratify registry before running setup."
+    exit 1
 }
 
 # ── Set CARGO_REGISTRIES_LOCAL_INDEX (user env var) ──────────────────
@@ -40,6 +58,10 @@ if (-not (Test-Path $EnvFile)) {
 } else {
     Write-Host "==> .env already exists"
 }
+
+# ── Verify setup ─────────────────────────────────────────────────────
+Write-Host ""
+Verify-Registry
 
 # ── Summary ──────────────────────────────────────────────────────────
 Write-Host ""

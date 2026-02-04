@@ -5,7 +5,21 @@
 - **Rust toolchain**: Install from [rustup.rs](https://rustup.rs)
 - **WASM target**: `rustup target add wasm32-unknown-unknown`
 - **Git**: For version control
-- **Linux/WSL**: Recommended environment (Windows support via WSL)
+- **Linux/WSL**: Recommended environment (Windows support via PowerShell)
+- **Local Cargo registry**: The rustratify registry must be set up before building
+
+## Quick Start
+
+```bash
+# One-time setup (installs WASM target, configures registry, creates .env)
+./sbh setup
+
+# Source the registry env var
+source ~/.bashrc
+
+# Build and run
+./sbh run
+```
 
 ## Environment Configuration
 
@@ -21,53 +35,58 @@ ls ~/.cargo/registry.local/index
 
 If this directory doesn't exist, you need to set up the local registry first (contact team for registry setup instructions).
 
-#### 2. Configure Environment Variables
+#### 2. Automated Setup
 
-The project requires `CARGO_REGISTRIES_LOCAL_INDEX` to point to your local registry. This is configured in `~/.bashrc`:
-
-```bash
-# Cargo local registry — toggle SWEBASH_PLATFORM to switch between environments
-# Values: "wsl" (default), "windows"
-export SWEBASH_PLATFORM="${SWEBASH_PLATFORM:-wsl}"
-case "$SWEBASH_PLATFORM" in
-  wsl)     export CARGO_REGISTRIES_LOCAL_INDEX="file:///home/adentic/.cargo/registry.local/index" ;;
-  windows) export CARGO_REGISTRIES_LOCAL_INDEX="file:///C:/Users/elvis/.cargo/registry.local/index" ;;
-esac
-```
-
-**Important**: If you're working in a new shell session, you must source your bashrc:
+The recommended approach is to use the setup script:
 
 ```bash
-source ~/.bashrc
+./sbh setup
 ```
 
-Or start a new shell:
+This will:
+- Check that `rustup` and `cargo` are installed
+- Install the `wasm32-unknown-unknown` target
+- Detect your platform (WSL or native Linux)
+- Locate the local Cargo registry (auto-detects Windows username on WSL)
+- Persist `CARGO_REGISTRIES_LOCAL_INDEX` to `~/.bashrc`
+- Copy `.env.example` to `.env` if needed
+- Verify the registry is reachable
+
+#### 3. Manual Setup (if needed)
+
+If the automated setup doesn't work for your environment:
 
 ```bash
-exec bash
+# Set the registry URL (replace with your actual path)
+export CARGO_REGISTRIES_LOCAL_INDEX="file://$HOME/.cargo/registry.local/index"
+
+# Persist to ~/.bashrc
+echo 'export CARGO_REGISTRIES_LOCAL_INDEX="file://$HOME/.cargo/registry.local/index"' >> ~/.bashrc
 ```
 
-#### 3. Verify Configuration
+On WSL, use the Windows path:
 
-Check that the environment variable is set:
+```bash
+export CARGO_REGISTRIES_LOCAL_INDEX="file:///mnt/c/Users/$USER/.cargo/registry.local/index"
+```
+
+#### 4. Verify Configuration
 
 ```bash
 echo $CARGO_REGISTRIES_LOCAL_INDEX
-# Should output: file:///home/adentic/.cargo/registry.local/index (or similar)
+# Should output: file:///.../.cargo/registry.local/index
 ```
 
-#### 4. Registry Configuration Files
+All `sbh` commands run a preflight check that verifies the registry is set and reachable before proceeding.
 
-The project has `.cargo/config.toml` files that reference the `local` registry:
+#### 5. Registry Configuration Files
 
-**swebash/.cargo/config.toml**:
+The project has `.cargo/config.toml` that references the `local` registry:
+
 ```toml
 # Local registry index is set via CARGO_REGISTRIES_LOCAL_INDEX env var
-# Toggle with: SWEBASH_PLATFORM=wsl|windows (see ~/.bashrc)
 [registries.local]
 ```
-
-**rustratify/.cargo/config.toml**: Same configuration
 
 The `[registries.local]` section is intentionally empty because the `index` field is provided via the environment variable.
 
@@ -75,59 +94,56 @@ The `[registries.local]` section is intentionally empty because the `index` fiel
 
 ```
 swebash/
-  ├── engine/       WASM shell engine (no_std, wasm32 target)
-  ├── host/         Native REPL, WASM runtime, host imports
-  ├── ai/           LLM integration (depends on rustratify)
-  └── docs/         Documentation
+├── features/
+│   ├── shell/              Umbrella feature
+│   │   ├── engine/         WASM shell engine (no_std, wasm32 target)
+│   │   ├── host/           Thin binary — REPL loop + composition
+│   │   └── readline/       Line editing + history
+│   └── ai/                 LLM integration (depends on rustratify)
+├── bin/                    Build/run/test scripts
+├── lib/                    Shared script helpers
+├── docs/                   Documentation
+├── sbh                     Launcher (bash)
+└── sbh.ps1                 Launcher (PowerShell)
 
 Dependencies:
-  └── rustratify/   (sibling workspace at ../rustratify)
+  └── rustratify/   (sibling workspace)
        └── Requires rustboot-* packages from local registry
 ```
 
 ## Building the Project
 
-### Step 1: Build the WASM Engine
+### Using sbh (Recommended)
 
 ```bash
-cargo build --manifest-path engine/Cargo.toml \
-  --target wasm32-unknown-unknown \
-  --release
+# Release build (default)
+./sbh build
+
+# Debug build
+./sbh build --debug
 ```
 
-This produces `target/wasm32-unknown-unknown/release/engine.wasm`.
-
-### Step 2: Build the Host Binary
+### Manual Build
 
 ```bash
-cargo build --manifest-path host/Cargo.toml
-```
-
-Or for release:
-
-```bash
-cargo build --manifest-path host/Cargo.toml --release
-```
-
-### Step 3: Build Everything
-
-From the root directory:
-
-```bash
-# Build engine first
-cargo build --manifest-path engine/Cargo.toml \
+# Step 1: Build the WASM engine
+cargo build --manifest-path features/shell/engine/Cargo.toml \
   --target wasm32-unknown-unknown --release
 
-# Then build host
-cargo build --manifest-path host/Cargo.toml
+# Step 2: Build the host binary
+cargo build --manifest-path features/shell/host/Cargo.toml
 ```
 
 ## Running swebash
 
-### Quick Start
+### Using sbh (Recommended)
 
 ```bash
-cargo run
+# Debug mode (default)
+./sbh run
+
+# Release mode
+./sbh run --release
 ```
 
 ### With AI Features
@@ -136,48 +152,33 @@ cargo run
 # Source .env (contains ANTHROPIC_API_KEY)
 set -a && source .env && set +a
 export LLM_PROVIDER=anthropic
-cargo run
-```
-
-### Running the Binary Directly
-
-```bash
-# Development build
-./target/debug/swebash
-
-# Release build
-./target/release/swebash
+./sbh run
 ```
 
 ## Running Tests
 
-### Engine Tests
+### Using sbh (Recommended)
 
 ```bash
-cargo test --manifest-path engine/Cargo.toml
+# All tests
+./sbh test
+
+# Individual suites
+./sbh test engine
+./sbh test readline
+./sbh test host
+./sbh test ai
 ```
 
-### Host Integration Tests
-
-**Important**: Integration tests require `engine.wasm` to exist first!
+### Manual Test Commands
 
 ```bash
-# Build engine.wasm first
-cargo build --manifest-path engine/Cargo.toml \
+# Build engine.wasm first (required for integration tests)
+cargo build --manifest-path features/shell/engine/Cargo.toml \
   --target wasm32-unknown-unknown --release
 
-# Run all integration tests
-cargo test --manifest-path host/Cargo.toml --test integration
-
-# Run specific test category
-cargo test --manifest-path host/Cargo.toml --test integration history
-cargo test --manifest-path host/Cargo.toml --test integration echo
-```
-
-### AI Module Tests
-
-```bash
-cargo test --manifest-path ai/Cargo.toml
+# Then run tests
+cargo test --workspace
 ```
 
 ## API Configuration
@@ -204,14 +205,7 @@ Then source it before running:
 ```bash
 set -a && source .env && set +a
 export LLM_PROVIDER=anthropic   # must match the key you set
-cargo run
-```
-
-Or export variables manually:
-
-```bash
-export ANTHROPIC_API_KEY="sk-ant-api03-..."
-export LLM_PROVIDER=anthropic
+./sbh run
 ```
 
 The shell will work without AI features if no key is configured.
@@ -220,57 +214,40 @@ The shell will work without AI features if no key is configured.
 
 ### Issue 1: "registry index was not found in any configuration: `local`"
 
-**Error Message**:
-```
-error: failed to get `dev-engineeringlabs-rustboot-config` as a dependency
-...
-Caused by:
-  registry index was not found in any configuration: `local`
-```
-
 **Cause**: `CARGO_REGISTRIES_LOCAL_INDEX` environment variable is not set.
 
 **Solution**:
 ```bash
-# Check if variable is set
+# Run setup
+./sbh setup
+
+# Or check/set manually
 echo $CARGO_REGISTRIES_LOCAL_INDEX
-
-# If empty, source your bashrc
 source ~/.bashrc
-
-# Or manually export
-export CARGO_REGISTRIES_LOCAL_INDEX="file:///home/adentic/.cargo/registry.local/index"
-
-# Then rebuild
-cargo build --manifest-path host/Cargo.toml
 ```
 
 ### Issue 2: "engine.wasm not found" during tests
-
-**Error Message**:
-```
-assertion failed: engine.wasm not found — build it first
-```
 
 **Cause**: Integration tests require the compiled WASM module.
 
 **Solution**:
 ```bash
-cargo build --manifest-path engine/Cargo.toml \
+# Use sbh (builds engine automatically before tests)
+./sbh test
+
+# Or build manually
+cargo build --manifest-path features/shell/engine/Cargo.toml \
   --target wasm32-unknown-unknown --release
 ```
 
 ### Issue 3: Escape sequences displayed (`^[[A`, `^[[B`) when pressing arrow keys
 
-**Cause**: Old build without rustyline support.
+**Cause**: Old build without readline support.
 
 **Solution**:
 ```bash
-# Rebuild host with updated dependencies
-cargo build --manifest-path host/Cargo.toml
-
-# Run the new binary
-./target/debug/swebash
+./sbh build
+./sbh run
 ```
 
 ### Issue 4: History not persisting across sessions
@@ -279,10 +256,7 @@ cargo build --manifest-path host/Cargo.toml
 
 **Solution**:
 ```bash
-# Check permissions
 ls -la ~/.swebash_history
-
-# Fix if needed
 chmod 644 ~/.swebash_history
 ```
 
@@ -291,9 +265,10 @@ chmod 644 ~/.swebash_history
 **Cause**: API key not configured or AI service failed to initialize.
 
 **Solution**:
-1. Check that `.env` file exists with `ANTHROPIC_API_KEY`
-2. Or export the variable: `export ANTHROPIC_API_KEY="sk-ant-..."`
-3. Verify in shell output - if AI fails to initialize, you'll see an error on startup
+1. Check that `.env` file exists with your API key
+2. Source it: `set -a && source .env && set +a`
+3. Set provider: `export LLM_PROVIDER=anthropic`
+4. The shell shows a warning on startup if AI is not configured
 
 ### Issue 6: Build fails on dependency updates
 
@@ -301,14 +276,8 @@ chmod 644 ~/.swebash_history
 
 **Solution**:
 ```bash
-# Update dependencies
 cargo update
-
-# Clean and rebuild
-cargo clean
-cargo build --manifest-path engine/Cargo.toml \
-  --target wasm32-unknown-unknown --release
-cargo build --manifest-path host/Cargo.toml
+./sbh build
 ```
 
 ## Development Workflow
@@ -316,46 +285,37 @@ cargo build --manifest-path host/Cargo.toml
 ### Making Changes to Engine (WASM)
 
 ```bash
-# Edit files in engine/src/
-# Rebuild WASM
-cargo build --manifest-path engine/Cargo.toml \
-  --target wasm32-unknown-unknown --release
-
-# Test (rebuilds host automatically)
-cargo build --manifest-path host/Cargo.toml
-./target/debug/swebash
+# Edit files in features/shell/engine/src/
+./sbh build
+./sbh test engine
+./sbh run
 ```
 
-### Making Changes to Host (Native REPL)
+### Making Changes to Host (REPL)
 
 ```bash
-# Edit files in host/src/
-# Rebuild host
-cargo build --manifest-path host/Cargo.toml
+# Edit files in features/shell/host/src/
+./sbh build --debug
+./sbh test host
+./sbh run
+```
 
-# Run
-./target/debug/swebash
+### Making Changes to Readline
+
+```bash
+# Edit files in features/shell/readline/src/
+./sbh test readline
+./sbh build --debug
+./sbh run
 ```
 
 ### Making Changes to AI Module
 
 ```bash
-# Edit files in ai/src/
-# Run tests
-cargo test --manifest-path ai/Cargo.toml
-
-# Rebuild host (which depends on ai)
-cargo build --manifest-path host/Cargo.toml
-```
-
-### Running with Debug Logs
-
-```bash
-# Enable tracing logs
-RUST_LOG=debug ./target/debug/swebash
-
-# Or specific modules
-RUST_LOG=swebash=debug,swebash_ai=trace ./target/debug/swebash
+# Edit files in features/ai/src/
+./sbh test ai
+./sbh build --debug
+./sbh run
 ```
 
 ## IDE Setup
@@ -376,85 +336,17 @@ Add to `.vscode/settings.json`:
 }
 ```
 
-### CLion / IntelliJ IDEA
-
-- Install Rust plugin
-- Configure toolchain: Settings → Languages & Frameworks → Rust
-- Add run configuration for `swebash` binary
-
-## Git Workflow
-
-### Branch Strategy
-
-- `main`: Stable releases
-- `dev`: Active development
-- Feature branches: `feature/description`
-- Bug fixes: `fix/description`
-
-### Committing Changes
-
-```bash
-# Stage changes
-git add .
-
-# Commit with descriptive message
-git commit -m "feat(host): add command history with rustyline"
-
-# Push to remote
-git push origin dev
-```
-
-## Performance Tips
-
-### Faster Builds
-
-1. **Use release mode for WASM** (already recommended above)
-2. **Use `cargo check` for quick validation**:
-   ```bash
-   cargo check --manifest-path host/Cargo.toml
-   ```
-
-3. **Incremental compilation** (enabled by default in dev builds)
-
-4. **Parallel compilation**:
-   ```bash
-   # Use all CPU cores
-   cargo build -j $(nproc)
-   ```
-
-### Reducing Binary Size
-
-The release profile in `Cargo.toml` is already optimized:
-```toml
-[profile.release]
-opt-level = "s"      # Optimize for size
-lto = true           # Link-time optimization
-strip = true         # Strip symbols
-```
-
-## Getting Help
-
-- **Documentation**: See `docs/` directory
-- **Architecture**: `docs/architecture.md`
-- **AI Integration**: `docs/ai-integration.md`
-- **Command Design**: `docs/command-design.md`
-- **History Feature**: `docs/history-feature.md`
-
 ## Quick Reference
 
 ```bash
-# Full build from scratch
-cargo build --manifest-path engine/Cargo.toml --target wasm32-unknown-unknown --release
-cargo build --manifest-path host/Cargo.toml
+# One-time setup
+./sbh setup && source ~/.bashrc
 
-# Run shell
-./target/debug/swebash
-
-# Run all tests
-cargo build --manifest-path engine/Cargo.toml --target wasm32-unknown-unknown --release
-cargo test --manifest-path host/Cargo.toml --test integration
+# Build, test, run
+./sbh build
+./sbh test
+./sbh run
 
 # Check environment
 echo $CARGO_REGISTRIES_LOCAL_INDEX
-echo $ANTHROPIC_API_KEY
 ```

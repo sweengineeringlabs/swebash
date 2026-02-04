@@ -1,24 +1,17 @@
 #!/usr/bin/env bash
 source "$(cd "$(dirname "$0")/.." && pwd)/lib/common.sh"
 
+preflight
 load_env
 
-BUILD_MODE="--debug"
 PROFILE_DIR="debug"
+CARGO_BUILD_FLAG=""
 for arg in "$@"; do
   case "$arg" in
-    --release) BUILD_MODE="--release"; PROFILE_DIR="release" ;;
-    --debug)   BUILD_MODE="--debug";   PROFILE_DIR="debug" ;;
+    --release) PROFILE_DIR="release"; CARGO_BUILD_FLAG="--release" ;;
+    --debug)   PROFILE_DIR="debug";   CARGO_BUILD_FLAG="" ;;
   esac
 done
-
-if [ "$BUILD_MODE" = "--debug" ]; then
-  CARGO_BUILD_FLAG=""
-else
-  CARGO_BUILD_FLAG="--release"
-fi
-
-ensure_registry
 
 WASM_BIN="$TARGET_DIR/wasm32-unknown-unknown/$PROFILE_DIR/engine.wasm"
 HOST_BIN="$TARGET_DIR/$PROFILE_DIR/swebash"

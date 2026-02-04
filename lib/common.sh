@@ -14,6 +14,12 @@ detect_platform() {
   fi
 }
 
+# ── Preflight checks ──────────────────────────────────────────────────
+preflight() {
+  ensure_registry
+  verify_registry
+}
+
 # ── Registry setup ───────────────────────────────────────────────────
 ensure_registry() {
   if [ -z "${CARGO_REGISTRIES_LOCAL_INDEX:-}" ]; then
@@ -23,11 +29,36 @@ ensure_registry() {
     local platform
     platform=$(detect_platform)
     if [ "$platform" = "wsl" ]; then
-      export CARGO_REGISTRIES_LOCAL_INDEX="file:///home/adentic/.cargo/registry.local/index"
+      # WSL: Windows home may differ from Linux home
+      local win_user
+      win_user=$(cmd.exe /C "echo %USERNAME%" 2>/dev/null | tr -d '\r' || echo "")
+      if [ -n "$win_user" ]; then
+        export CARGO_REGISTRIES_LOCAL_INDEX="file:///mnt/c/Users/$win_user/.cargo/registry.local/index"
+      else
+        export CARGO_REGISTRIES_LOCAL_INDEX="file://$HOME/.cargo/registry.local/index"
+      fi
     else
       export CARGO_REGISTRIES_LOCAL_INDEX="file://$HOME/.cargo/registry.local/index"
     fi
   fi
+}
+
+# ── Registry verification ─────────────────────────────────────────────
+verify_registry() {
+  if [ -z "${CARGO_REGISTRIES_LOCAL_INDEX:-}" ]; then
+    echo "ERROR: CARGO_REGISTRIES_LOCAL_INDEX is not set" >&2
+    exit 1
+  fi
+
+  # Strip file:// prefix to get the filesystem path
+  local index_path="${CARGO_REGISTRIES_LOCAL_INDEX#file://}"
+  if [ ! -d "$index_path" ]; then
+    echo "ERROR: Local registry index not found at $index_path" >&2
+    echo "  CARGO_REGISTRIES_LOCAL_INDEX=$CARGO_REGISTRIES_LOCAL_INDEX" >&2
+    exit 1
+  fi
+
+  echo "==> Registry: $CARGO_REGISTRIES_LOCAL_INDEX (ok)"
 }
 
 # ── Load .env ────────────────────────────────────────────────────────

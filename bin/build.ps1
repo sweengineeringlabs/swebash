@@ -4,7 +4,7 @@ param(
 )
 
 . "$PSScriptRoot\..\lib\common.ps1"
-Ensure-Registry
+Invoke-Preflight
 
 if ($Debug) {
     $BuildFlag = @()

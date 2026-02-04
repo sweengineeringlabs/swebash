@@ -5,7 +5,7 @@ param(
 )
 
 . "$PSScriptRoot\..\lib\common.ps1"
-Ensure-Registry
+Invoke-Preflight
 
 Write-Host "==> Building engine WASM (required for tests)..."
 cargo build --manifest-path "$RepoRoot\features\shell\engine\Cargo.toml" `
