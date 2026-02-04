@@ -15,7 +15,7 @@ usage() {
   echo "    --release      Run release build"
   echo "    --debug        Run debug build (default)"
   echo "  test [suite]   Build and run tests"
-  echo "    engine|host|ai|all (default: all)"
+  echo "    engine|host|readline|ai|all (default: all)"
 }
 
 CMD="${1:-}"
@@ -26,7 +26,7 @@ case "$CMD" in
   build) exec "$REPO_ROOT/bin/build.sh" "$@" ;;
   run)   exec "$REPO_ROOT/bin/run.sh"   "$@" ;;
   test)  exec "$REPO_ROOT/bin/test.sh"  "$@" ;;
-  -h|--help|help) usage ;;
+  -h|--help|help|"") usage ;;
   *)
     usage
     exit 1

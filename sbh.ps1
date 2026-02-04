@@ -20,7 +20,7 @@ function Show-Usage {
     Write-Host "    -Release       Run release build"
     Write-Host "    -Debug         Run debug build (default)"
     Write-Host "  test [suite]   Build and run tests"
-    Write-Host "    -Suite engine|host|ai|all (default: all)"
+    Write-Host "    -Suite engine|host|readline|ai|all (default: all)"
 }
 
 switch ($Command) {

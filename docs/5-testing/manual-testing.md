@@ -240,13 +240,47 @@ agents:
 
 ---
 
+## sbh Launcher
+
+The `sbh` (and `sbh.ps1`) launcher is the primary entry point. These tests verify it delegates correctly.
+
+### 20. sbh help
+
+| Test | Command | Expected |
+|------|---------|----------|
+| Help flag | `./sbh --help` | Prints usage with all commands: setup, build, run, test |
+| Help command | `./sbh help` | Same output as `--help` |
+| No args | `./sbh` | Prints usage and exits with code 1 |
+| Unknown command | `./sbh foo` | Prints usage and exits with code 1 |
+
+### 21. sbh test
+
+| Test | Command | Expected |
+|------|---------|----------|
+| All suites | `./sbh test` | Runs engine, readline, host, ai tests in order; all pass |
+| Engine only | `./sbh test engine` | Runs engine tests only |
+| Host only | `./sbh test host` | Runs host tests only |
+| Readline only | `./sbh test readline` | Runs readline tests only |
+| AI only | `./sbh test ai` | Runs AI tests only |
+| Help text matches suites | `./sbh --help` | Test suite list includes `engine|host|readline|ai|all` |
+
+### 22. sbh build & run
+
+| Test | Command | Expected |
+|------|---------|----------|
+| Release build | `./sbh build` | Builds engine WASM (release) and host (release) without errors |
+| Debug build | `./sbh build --debug` | Builds engine WASM (release) and host (debug) without errors |
+| Run | `./sbh run` | Launches shell, shows banner and prompt |
+
+---
+
 ## Automated Test Suites
 
 For reference, the automated tests cover these areas:
 
 ```bash
 # Unit + integration tests (no API key needed)
-cargo test
+cargo test --workspace
 
 # Full integration tests against real API
 set -a && source .env && set +a
@@ -255,12 +289,13 @@ cargo test -p swebash-ai -p swebash
 
 | Suite | Location | Count |
 |-------|----------|-------|
-| Host unit tests | `host/src/` | 100 |
-| Host integration | `host/tests/integration.rs` | 54 |
-| Readline integration | `host/tests/readline_tests.rs` | 19 |
-| AI unit tests | `ai/src/` | 19 |
-| AI integration | `ai/tests/integration.rs` | 98 |
-| **Total** | | **290** |
+| Engine unit tests | `features/shell/engine/src/` | 20 |
+| Readline unit tests | `features/shell/readline/src/` | 54 |
+| Host integration | `features/shell/host/tests/integration.rs` | 54 |
+| Host readline tests | `features/shell/host/tests/readline_tests.rs` | 19 |
+| AI unit tests | `features/ai/src/` | 65 |
+| AI integration | `features/ai/tests/integration.rs` | 98 |
+| **Total** | | **310** |
 
 ### Agent-Specific Automated Tests
 
