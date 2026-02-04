@@ -30,7 +30,7 @@ dependencies = [
 name = "agent-controller"
 version = "0.1.0"
 source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
-checksum = "2ebd72aa3e90a059065948fcdb8f64fbbe10ea2ff2f08b3fae443ae95bfc919e"
+checksum = "5a3c4da71e5840353f67c2f1d39556a238ea11f880dcf45ac79bdd9d873912ed"
 dependencies = [
  "serde",
 ]
@@ -1396,7 +1396,7 @@ checksum = "6373607a59f0be73a39b6fe456b8192fcc3585f602af20751600e974dd455e77"
 name = "llm-provider"
 version = "0.1.0"
 source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
-checksum = "00ba32982e2569378096f069b058942e8236eb67e438aa8f3d54b2970c7817a7"
+checksum = "50e64465c1f0d1dc23401c3cf88ca18d4998182febf43582a302eb0c237528a4"
 dependencies = [
  "async-stream",
  "async-trait",

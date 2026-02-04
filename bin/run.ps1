@@ -16,7 +16,6 @@ if ($Release) {
     $ProfileDir = "debug"
 }
 
-$TargetDir = Join-Path $RepoRoot "target"
 $WasmBin = Join-Path $TargetDir "wasm32-unknown-unknown\$ProfileDir\engine.wasm"
 $HostBin = Join-Path $TargetDir "$ProfileDir\swebash.exe"
 

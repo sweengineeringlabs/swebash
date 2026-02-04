@@ -3,6 +3,9 @@
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
+# ── Target directory (matches .cargo/config.toml) ────────────────────
+$TargetDir = "C:\tmp\swebash-target"
+
 # ── Preflight checks ──────────────────────────────────────────────────
 function Invoke-Preflight {
     Load-EnvFile
