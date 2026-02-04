@@ -139,6 +139,52 @@
 - [ ] 12.11 Create example .swebashrc file
 - [ ] 12.12 Document configuration in setup guide
 
+## Phase 13: Agent Infrastructure — Delegate to Rustratify (SRP)
+
+**Problem**: `AgentRegistry` in `ai/src/core/agents/mod.rs` bundles two responsibilities:
+1. **Agent metadata** — register, get, list, detect, suggest (pure data operations)
+2. **Engine lifecycle** — lazy `ChatEngine` creation/caching with `LlmService` dependency
+
+This forces `MockLlm` boilerplate in every test that only needs metadata operations. The coupling is a swebash design choice — rustratify's `agent-controller` crate doesn't provide an `AgentRegistry`, so swebash built its own.
+
+**Goal**: swebash should only define its agents (via YAML) and delegate registry infrastructure to rustratify. After rustratify ships AG-1 through AG-4 (see rustratify backlog), swebash refactors to consume them.
+
+**Depends on**: Rustratify AG-1, AG-2, AG-3, AG-4
+
+- [ ] 13.1 Replace swebash `Agent` trait with rustratify's `AgentDescriptor` trait
+  - `ConfigAgent` implements `AgentDescriptor` instead of the local `Agent` trait
+  - `ToolFilter` enum moves to rustratify or aligns with rustratify's definition
+  - Remove local `Agent` trait from `ai/src/core/agents/mod.rs`
+
+- [ ] 13.2 Replace swebash `AgentRegistry` with rustratify's `AgentRegistry<D>`
+  - Delete `AgentRegistry` struct from `ai/src/core/agents/mod.rs`
+  - Use `agent_controller::AgentRegistry<ConfigAgent>` instead
+  - Constructor no longer requires `Arc<dyn LlmService>` — metadata-only
+  - `detect_agent()`, `suggest_agent()`, `list()`, `get()` delegated to rustratify
+
+- [ ] 13.3 Use rustratify's `EngineCache` for engine lifecycle
+  - Replace inline `engines: RwLock<HashMap<...>>` + `create_engine()` with `EngineCache`
+  - `EngineCache` takes `LlmService` — engine coupling isolated from metadata
+  - `engine_for()`, `clear_agent()`, `clear_all()` delegated to rustratify
+
+- [ ] 13.4 Update `builtins.rs` to compose registry + cache
+  - `create_default_registry()` returns `(AgentRegistry<ConfigAgent>, EngineCache)` or a composed wrapper
+  - YAML loading (`register_from_yaml`) remains in swebash — agent definitions are swebash's concern
+  - User config overlay logic unchanged
+
+- [ ] 13.5 Replace `MockLlm` with rustratify's testing infrastructure
+  - Remove `MockLlm` from `ai/src/core/agents/mod.rs` tests
+  - Remove `MockLlm` from `ai/src/core/agents/builtins.rs` tests
+  - Remove `MockLlm` from `ai/tests/integration.rs`
+  - Use `agent_controller::testing::MockLlmService` and `TestAgentBuilder` instead
+  - Tests that only need metadata should construct `AgentRegistry` without any LLM dependency
+
+- [ ] 13.6 Update integration tests for new architecture
+  - Registry integration tests use rustratify's `AgentRegistry` directly
+  - Engine lifecycle tests use `EngineCache` composition
+  - User config overlay tests unchanged (YAML loading stays in swebash)
+  - Verify all 117 tests (19 unit + 98 integration) pass with new infrastructure
+
 ## Future Work
 - Evaluate Loom (tokio-rs/loom) for exhaustive concurrency testing of async task coordination
 - Evaluate Shuttle (awslabs/shuttle) for randomized concurrency testing of async/tokio code
