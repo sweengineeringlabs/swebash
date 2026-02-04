@@ -25,25 +25,25 @@ use crate::api::AiService;
 use crate::spi::config::AiConfig;
 use crate::spi::AiClient;
 
-use agents::AgentRegistry;
+use agents::{AgentDescriptor, AgentManager};
 
 /// The default implementation of `AiService`.
 ///
-/// Uses an `AgentRegistry` to manage purpose-built agents, each with
+/// Uses an `AgentManager` to manage purpose-built agents, each with
 /// its own `ChatEngine`, system prompt, and tool configuration.
 /// The `active_agent` tracks which agent handles chat messages.
 pub struct DefaultAiService {
     client: Box<dyn AiClient>,
     config: AiConfig,
-    agents: AgentRegistry,
+    agents: AgentManager,
     active_agent: RwLock<String>,
 }
 
 impl DefaultAiService {
-    /// Create a new service with the given client, agent registry, and config.
+    /// Create a new service with the given client, agent manager, and config.
     pub fn new(
         client: Box<dyn AiClient>,
-        agents: AgentRegistry,
+        agents: AgentManager,
         config: AiConfig,
     ) -> Self {
         let default_agent = config.default_agent.clone();
@@ -60,7 +60,6 @@ impl DefaultAiService {
         let agent_id = self.active_agent.read().await.clone();
         self.agents
             .engine_for(&agent_id)
-            .await
             .ok_or_else(|| AiError::NotConfigured(format!("Agent '{}' not found", agent_id)))
     }
 }
@@ -214,7 +213,7 @@ impl DefaultAiService {
 
     /// Clear conversation history for all agents.
     pub async fn clear_all_history(&self) {
-        self.agents.clear_all().await;
+        self.agents.clear_all();
     }
 
     /// Get the active agent ID.

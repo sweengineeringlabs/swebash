@@ -1,10 +1,10 @@
 /// YAML-configurable agent definitions.
 ///
 /// Provides serde types for parsing agent YAML files and a `ConfigAgent`
-/// that implements the `Agent` trait from parsed configuration.
+/// that implements the `AgentDescriptor` trait from parsed configuration.
 use serde::Deserialize;
 
-use super::{Agent, ToolFilter};
+use agent_controller::{AgentDescriptor, ToolFilter};
 
 // ── YAML schema types ──────────────────────────────────────────────
 
@@ -98,7 +98,7 @@ impl AgentsYaml {
     }
 }
 
-// ── ConfigAgent — Agent trait implementation ───────────────────────
+// ── ConfigAgent — AgentDescriptor implementation ────────────────────
 
 /// An agent built from YAML configuration.
 pub struct ConfigAgent {
@@ -118,14 +118,18 @@ impl ConfigAgent {
         let tools = entry.tools.as_ref().unwrap_or(&defaults.tools);
         let tool_filter = if tools.fs && tools.exec && tools.web {
             ToolFilter::All
-        } else if !tools.fs && !tools.exec && !tools.web {
-            ToolFilter::None
         } else {
-            ToolFilter::Only {
-                fs: tools.fs,
-                exec: tools.exec,
-                web: tools.web,
+            let mut cats = Vec::new();
+            if tools.fs {
+                cats.push("fs".to_string());
             }
+            if tools.exec {
+                cats.push("exec".to_string());
+            }
+            if tools.web {
+                cats.push("web".to_string());
+            }
+            ToolFilter::Categories(cats)
         };
 
         Self {
@@ -141,7 +145,7 @@ impl ConfigAgent {
     }
 }
 
-impl Agent for ConfigAgent {
+impl AgentDescriptor for ConfigAgent {
     fn id(&self) -> &str {
         &self.id
     }
@@ -154,8 +158,8 @@ impl Agent for ConfigAgent {
         &self.description
     }
 
-    fn system_prompt(&self) -> String {
-        self.system_prompt.clone()
+    fn system_prompt(&self) -> &str {
+        &self.system_prompt
     }
 
     fn tool_filter(&self) -> ToolFilter {
@@ -170,8 +174,8 @@ impl Agent for ConfigAgent {
         Some(self.max_tokens)
     }
 
-    fn trigger_keywords(&self) -> Vec<&str> {
-        self.trigger_keywords.iter().map(|s| s.as_str()).collect()
+    fn trigger_keywords(&self) -> &[String] {
+        &self.trigger_keywords
     }
 }
 
@@ -270,25 +274,25 @@ agents:
         assert_eq!(alpha.max_tokens(), Some(2048)); // inherits default
         // alpha has no tools override, so inherits defaults (fs=true, exec=true, web=false)
         match alpha.tool_filter() {
-            ToolFilter::Only { fs, exec, web } => {
-                assert!(fs);
-                assert!(exec);
-                assert!(!web);
+            ToolFilter::Categories(cats) => {
+                assert!(cats.contains(&"fs".to_string()));
+                assert!(cats.contains(&"exec".to_string()));
+                assert!(!cats.contains(&"web".to_string()));
             }
-            _ => panic!("Expected ToolFilter::Only for alpha"),
+            _ => panic!("Expected ToolFilter::Categories for alpha"),
         }
-        assert_eq!(alpha.trigger_keywords(), vec!["alpha", "first"]);
+        assert_eq!(alpha.trigger_keywords(), &["alpha".to_string(), "first".to_string()]);
 
         let beta = ConfigAgent::from_entry(agents.next().unwrap(), defaults);
         assert_eq!(beta.temperature(), Some(0.3)); // overridden
         assert_eq!(beta.max_tokens(), Some(512)); // overridden
         match beta.tool_filter() {
-            ToolFilter::Only { fs, exec, web } => {
-                assert!(fs);
-                assert!(!exec);
-                assert!(!web);
+            ToolFilter::Categories(cats) => {
+                assert!(cats.contains(&"fs".to_string()));
+                assert!(!cats.contains(&"exec".to_string()));
+                assert!(!cats.contains(&"web".to_string()));
             }
-            _ => panic!("Expected ToolFilter::Only for beta"),
+            _ => panic!("Expected ToolFilter::Categories for beta"),
         }
     }
 
@@ -329,12 +333,212 @@ agents:
             trigger_keywords: vec![],
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
-        assert!(matches!(agent.tool_filter(), ToolFilter::None));
+        match agent.tool_filter() {
+            ToolFilter::Categories(cats) => assert!(cats.is_empty()),
+            _ => panic!("Expected ToolFilter::Categories(empty) for none"),
+        }
     }
 
     #[test]
     fn test_invalid_yaml() {
         let result = AgentsYaml::from_yaml("not: valid: yaml: [");
         assert!(result.is_err());
+    }
+
+    // ── AgentDescriptor return-type tests ────────────────────────────
+
+    #[test]
+    fn test_descriptor_system_prompt_returns_borrowed_str() {
+        let entry = AgentEntry {
+            id: "sp".into(),
+            name: "SP".into(),
+            description: "desc".into(),
+            temperature: None,
+            max_tokens: None,
+            system_prompt: "Multiline\nprompt\nhere.".into(),
+            tools: None,
+            trigger_keywords: vec![],
+        };
+        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        // system_prompt() returns &str — borrow from owned field
+        let prompt: &str = agent.system_prompt();
+        assert_eq!(prompt, "Multiline\nprompt\nhere.");
+    }
+
+    #[test]
+    fn test_descriptor_trigger_keywords_returns_borrowed_slice() {
+        let entry = AgentEntry {
+            id: "kw".into(),
+            name: "KW".into(),
+            description: "desc".into(),
+            temperature: None,
+            max_tokens: None,
+            system_prompt: "prompt".into(),
+            tools: None,
+            trigger_keywords: vec!["a".into(), "b".into(), "c".into()],
+        };
+        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        // trigger_keywords() returns &[String] — borrow from owned Vec
+        let kw: &[String] = agent.trigger_keywords();
+        assert_eq!(kw.len(), 3);
+        assert_eq!(kw[0], "a");
+        assert_eq!(kw[2], "c");
+    }
+
+    // ── ToolFilter::Categories mapping completeness ─────────────────
+
+    #[test]
+    fn test_categories_single_exec() {
+        let entry = AgentEntry {
+            id: "exec-only".into(),
+            name: "Exec".into(),
+            description: "Exec only".into(),
+            temperature: None,
+            max_tokens: None,
+            system_prompt: "prompt".into(),
+            tools: Some(ToolsConfig { fs: false, exec: true, web: false }),
+            trigger_keywords: vec![],
+        };
+        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        match agent.tool_filter() {
+            ToolFilter::Categories(cats) => {
+                assert_eq!(cats, vec!["exec".to_string()]);
+            }
+            _ => panic!("Expected Categories"),
+        }
+    }
+
+    #[test]
+    fn test_categories_single_web() {
+        let entry = AgentEntry {
+            id: "web-only".into(),
+            name: "Web".into(),
+            description: "Web only".into(),
+            temperature: None,
+            max_tokens: None,
+            system_prompt: "prompt".into(),
+            tools: Some(ToolsConfig { fs: false, exec: false, web: true }),
+            trigger_keywords: vec![],
+        };
+        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        match agent.tool_filter() {
+            ToolFilter::Categories(cats) => {
+                assert_eq!(cats, vec!["web".to_string()]);
+            }
+            _ => panic!("Expected Categories"),
+        }
+    }
+
+    #[test]
+    fn test_categories_fs_and_web() {
+        let entry = AgentEntry {
+            id: "fw".into(),
+            name: "FW".into(),
+            description: "FS + Web".into(),
+            temperature: None,
+            max_tokens: None,
+            system_prompt: "prompt".into(),
+            tools: Some(ToolsConfig { fs: true, exec: false, web: true }),
+            trigger_keywords: vec![],
+        };
+        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        match agent.tool_filter() {
+            ToolFilter::Categories(cats) => {
+                assert_eq!(cats.len(), 2);
+                assert_eq!(cats[0], "fs");
+                assert_eq!(cats[1], "web");
+            }
+            _ => panic!("Expected Categories"),
+        }
+    }
+
+    #[test]
+    fn test_categories_exec_and_web() {
+        let entry = AgentEntry {
+            id: "ew".into(),
+            name: "EW".into(),
+            description: "Exec + Web".into(),
+            temperature: None,
+            max_tokens: None,
+            system_prompt: "prompt".into(),
+            tools: Some(ToolsConfig { fs: false, exec: true, web: true }),
+            trigger_keywords: vec![],
+        };
+        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        match agent.tool_filter() {
+            ToolFilter::Categories(cats) => {
+                assert_eq!(cats.len(), 2);
+                assert_eq!(cats[0], "exec");
+                assert_eq!(cats[1], "web");
+            }
+            _ => panic!("Expected Categories"),
+        }
+    }
+
+    // ── Edge cases ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_empty_system_prompt() {
+        let entry = AgentEntry {
+            id: "empty-prompt".into(),
+            name: "Empty".into(),
+            description: "desc".into(),
+            temperature: None,
+            max_tokens: None,
+            system_prompt: String::new(),
+            tools: None,
+            trigger_keywords: vec![],
+        };
+        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        assert_eq!(agent.system_prompt(), "");
+    }
+
+    #[test]
+    fn test_many_trigger_keywords() {
+        let kws: Vec<String> = (0..20).map(|i| format!("kw{i}")).collect();
+        let entry = AgentEntry {
+            id: "many-kw".into(),
+            name: "Many".into(),
+            description: "desc".into(),
+            temperature: None,
+            max_tokens: None,
+            system_prompt: "prompt".into(),
+            tools: None,
+            trigger_keywords: kws.clone(),
+        };
+        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        assert_eq!(agent.trigger_keywords().len(), 20);
+        assert_eq!(agent.trigger_keywords(), kws.as_slice());
+    }
+
+    #[test]
+    fn test_register_overwrites_same_id() {
+        let defaults = AgentDefaults::default();
+        let entry1 = AgentEntry {
+            id: "dup".into(),
+            name: "Original".into(),
+            description: "First version".into(),
+            temperature: None,
+            max_tokens: None,
+            system_prompt: "p1".into(),
+            tools: None,
+            trigger_keywords: vec![],
+        };
+        let entry2 = AgentEntry {
+            id: "dup".into(),
+            name: "Replacement".into(),
+            description: "Second version".into(),
+            temperature: Some(0.9),
+            max_tokens: None,
+            system_prompt: "p2".into(),
+            tools: None,
+            trigger_keywords: vec!["new".into()],
+        };
+        let a1 = ConfigAgent::from_entry(entry1, &defaults);
+        let a2 = ConfigAgent::from_entry(entry2, &defaults);
+        assert_eq!(a1.display_name(), "Original");
+        assert_eq!(a2.display_name(), "Replacement");
+        assert_eq!(a2.temperature(), Some(0.9));
+        assert_eq!(a2.trigger_keywords(), &["new".to_string()]);
     }
 }

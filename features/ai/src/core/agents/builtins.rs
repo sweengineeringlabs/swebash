@@ -13,7 +13,7 @@ use llm_provider::LlmService;
 use crate::spi::config::AiConfig;
 
 use super::config::{AgentsYaml, ConfigAgent};
-use super::AgentRegistry;
+use super::AgentManager;
 
 /// Embedded default agents YAML, compiled into the binary.
 const DEFAULT_AGENTS_YAML: &str = include_str!("default_agents.yaml");
@@ -22,18 +22,18 @@ const DEFAULT_AGENTS_YAML: &str = include_str!("default_agents.yaml");
 ///
 /// Loads embedded defaults first, then optionally overlays user-defined
 /// agents from a config file (whole-agent replacement by ID).
-pub fn create_default_registry(llm: Arc<dyn LlmService>, config: AiConfig) -> AgentRegistry {
-    let mut registry = AgentRegistry::new(llm, config);
+pub fn create_default_registry(llm: Arc<dyn LlmService>, config: AiConfig) -> AgentManager {
+    let mut manager = AgentManager::new(llm, config);
 
     // 1. Parse and register embedded default agents
-    register_from_yaml(&mut registry, DEFAULT_AGENTS_YAML, "built-in");
+    register_from_yaml(&mut manager, DEFAULT_AGENTS_YAML, "built-in");
 
     // 2. Look for user config file and overlay
     if let Some(path) = find_user_agents_config() {
         match std::fs::read_to_string(&path) {
             Ok(contents) => {
                 tracing::info!("Loading user agents from {}", path.display());
-                register_from_yaml(&mut registry, &contents, &path.display().to_string());
+                register_from_yaml(&mut manager, &contents, &path.display().to_string());
             }
             Err(e) => {
                 tracing::warn!("Failed to read user agents file {}: {e}", path.display());
@@ -41,20 +41,20 @@ pub fn create_default_registry(llm: Arc<dyn LlmService>, config: AiConfig) -> Ag
         }
     }
 
-    registry
+    manager
 }
 
-/// Parse a YAML string and register all agents into the registry.
+/// Parse a YAML string and register all agents into the manager.
 ///
 /// On parse failure, logs a warning and continues with whatever agents
 /// are already registered.
-fn register_from_yaml(registry: &mut AgentRegistry, yaml: &str, source: &str) {
+fn register_from_yaml(manager: &mut AgentManager, yaml: &str, source: &str) {
     match AgentsYaml::from_yaml(yaml) {
         Ok(parsed) => {
             let defaults = parsed.defaults;
             for entry in parsed.agents {
                 let agent = ConfigAgent::from_entry(entry, &defaults);
-                registry.register(Box::new(agent));
+                manager.register(agent);
             }
         }
         Err(e) => {
@@ -105,7 +105,8 @@ fn home_dir() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::{Agent, ToolFilter};
+    use super::super::{AgentDescriptor, ToolFilter};
+    use llm_provider::MockLlmService;
 
     #[test]
     fn test_embedded_yaml_parses() {
@@ -142,15 +143,15 @@ mod tests {
         let agent = ConfigAgent::from_entry(entry, &defaults);
 
         assert_eq!(agent.id(), "review");
-        assert!(agent.trigger_keywords().contains(&"review"));
-        assert!(agent.trigger_keywords().contains(&"audit"));
+        assert!(agent.trigger_keywords().contains(&"review".to_string()));
+        assert!(agent.trigger_keywords().contains(&"audit".to_string()));
         match agent.tool_filter() {
-            ToolFilter::Only { fs, exec, web } => {
-                assert!(fs);
-                assert!(!exec);
-                assert!(!web);
+            ToolFilter::Categories(cats) => {
+                assert!(cats.contains(&"fs".to_string()));
+                assert!(!cats.contains(&"exec".to_string()));
+                assert!(!cats.contains(&"web".to_string()));
             }
-            _ => panic!("Expected ToolFilter::Only"),
+            _ => panic!("Expected ToolFilter::Categories"),
         }
     }
 
@@ -162,8 +163,8 @@ mod tests {
         let agent = ConfigAgent::from_entry(entry, &defaults);
 
         assert_eq!(agent.id(), "devops");
-        assert!(agent.trigger_keywords().contains(&"docker"));
-        assert!(agent.trigger_keywords().contains(&"k8s"));
+        assert!(agent.trigger_keywords().contains(&"docker".to_string()));
+        assert!(agent.trigger_keywords().contains(&"k8s".to_string()));
         assert!(matches!(agent.tool_filter(), ToolFilter::All));
     }
 
@@ -175,15 +176,15 @@ mod tests {
         let agent = ConfigAgent::from_entry(entry, &defaults);
 
         assert_eq!(agent.id(), "git");
-        assert!(agent.trigger_keywords().contains(&"git"));
-        assert!(agent.trigger_keywords().contains(&"commit"));
+        assert!(agent.trigger_keywords().contains(&"git".to_string()));
+        assert!(agent.trigger_keywords().contains(&"commit".to_string()));
         match agent.tool_filter() {
-            ToolFilter::Only { fs, exec, web } => {
-                assert!(fs);
-                assert!(exec);
-                assert!(!web);
+            ToolFilter::Categories(cats) => {
+                assert!(cats.contains(&"fs".to_string()));
+                assert!(cats.contains(&"exec".to_string()));
+                assert!(!cats.contains(&"web".to_string()));
             }
-            _ => panic!("Expected ToolFilter::Only"),
+            _ => panic!("Expected ToolFilter::Categories"),
         }
     }
 
@@ -212,19 +213,19 @@ agents:
             tools: crate::spi::config::ToolConfig::default(),
         };
 
-        let mut registry = AgentRegistry::new(Arc::new(MockLlm), config);
-        register_from_yaml(&mut registry, DEFAULT_AGENTS_YAML, "defaults");
-        register_from_yaml(&mut registry, user_yaml, "user");
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        register_from_yaml(&mut manager, DEFAULT_AGENTS_YAML, "defaults");
+        register_from_yaml(&mut manager, user_yaml, "user");
 
         // User override should replace the default shell agent
-        let shell = registry.get("shell").unwrap();
+        let shell = manager.get("shell").unwrap();
         assert_eq!(shell.display_name(), "Custom Shell");
         assert_eq!(shell.description(), "My custom shell agent");
 
         // Other agents should still exist
-        assert!(registry.get("review").is_some());
-        assert!(registry.get("devops").is_some());
-        assert!(registry.get("git").is_some());
+        assert!(manager.get("review").is_some());
+        assert!(manager.get("devops").is_some());
+        assert!(manager.get("git").is_some());
     }
 
     #[test]
@@ -253,13 +254,13 @@ agents:
             tools: crate::spi::config::ToolConfig::default(),
         };
 
-        let mut registry = AgentRegistry::new(Arc::new(MockLlm), config);
-        register_from_yaml(&mut registry, DEFAULT_AGENTS_YAML, "defaults");
-        register_from_yaml(&mut registry, user_yaml, "user");
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        register_from_yaml(&mut manager, DEFAULT_AGENTS_YAML, "defaults");
+        register_from_yaml(&mut manager, user_yaml, "user");
 
         // New agent should be added alongside defaults
-        assert_eq!(registry.list().len(), 5);
-        let security = registry.get("security").unwrap();
+        assert_eq!(manager.list().len(), 5);
+        let security = manager.get("security").unwrap();
         assert_eq!(security.display_name(), "Security Scanner");
     }
 
@@ -275,65 +276,11 @@ agents:
             tools: crate::spi::config::ToolConfig::default(),
         };
 
-        let mut registry = AgentRegistry::new(Arc::new(MockLlm), config);
-        register_from_yaml(&mut registry, DEFAULT_AGENTS_YAML, "defaults");
-        register_from_yaml(&mut registry, "not: valid: yaml: [", "bad-user-file");
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        register_from_yaml(&mut manager, DEFAULT_AGENTS_YAML, "defaults");
+        register_from_yaml(&mut manager, "not: valid: yaml: [", "bad-user-file");
 
         // Defaults should still be present
-        assert_eq!(registry.list().len(), 4);
-    }
-
-    /// Minimal mock LLM for unit tests (never actually called).
-    struct MockLlm;
-
-    #[async_trait::async_trait]
-    impl LlmService for MockLlm {
-        async fn providers(&self) -> Vec<String> {
-            vec!["mock".into()]
-        }
-
-        async fn complete(
-            &self,
-            _request: llm_provider::CompletionRequest,
-        ) -> Result<llm_provider::CompletionResponse, llm_provider::LlmError> {
-            Ok(llm_provider::CompletionResponse {
-                id: "mock-id".into(),
-                content: Some("mock".into()),
-                model: "mock".into(),
-                tool_calls: vec![],
-                usage: llm_provider::TokenUsage {
-                    prompt_tokens: 0,
-                    completion_tokens: 0,
-                    total_tokens: 0,
-                    cache_read_input_tokens: 0,
-                    cache_creation_input_tokens: 0,
-                },
-                finish_reason: llm_provider::FinishReason::Stop,
-            })
-        }
-
-        async fn complete_stream(
-            &self,
-            _request: llm_provider::CompletionRequest,
-        ) -> Result<
-            std::pin::Pin<
-                Box<dyn futures::Stream<Item = Result<llm_provider::StreamChunk, llm_provider::LlmError>> + Send>,
-            >,
-            llm_provider::LlmError,
-        > {
-            Ok(Box::pin(futures::stream::empty()))
-        }
-
-        async fn list_models(&self) -> Result<Vec<llm_provider::ModelInfo>, llm_provider::LlmError> {
-            Ok(vec![])
-        }
-
-        async fn model_info(&self, _model: &str) -> Result<llm_provider::ModelInfo, llm_provider::LlmError> {
-            Err(llm_provider::LlmError::Configuration("mock".into()))
-        }
-
-        async fn is_model_available(&self, _model: &str) -> bool {
-            false
-        }
+        assert_eq!(manager.list().len(), 4);
     }
 }
