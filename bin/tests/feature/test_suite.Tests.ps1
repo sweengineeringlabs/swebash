@@ -48,6 +48,14 @@ Describe "test.ps1" {
         $content | Should Match "function Test-Ai"
     }
 
+    It "has no parse errors" {
+        $errors = $null
+        [System.Management.Automation.PSParser]::Tokenize(
+            (Get-Content "$RepoRoot\bin\test.ps1" -Raw), [ref]$errors
+        ) | Out-Null
+        $errors.Count | Should Be 0
+    }
+
     It "scripts suite invokes Pester before preflight" {
         # Verify that 'scripts' appears before Invoke-Preflight in the file
         $content = Get-Content "$RepoRoot\bin\test.ps1" -Raw

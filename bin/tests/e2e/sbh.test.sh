@@ -72,7 +72,7 @@ STUB
   chmod +x "$stub_dir/bin/build.sh"
 
   # Patch the sbh copy: set REPO_ROOT and replace exec with source
-  # (exec in bash -c doesn't propagate stdout on MINGW)
+  # so the test can capture stdout from the dispatched stub
   sed -i "s|REPO_ROOT=.*|REPO_ROOT=\"$stub_dir\"|" "$stub_dir/sbh"
   sed -i 's|exec "$REPO_ROOT/bin/build.sh"|source "$REPO_ROOT/bin/build.sh"|' "$stub_dir/sbh"
 

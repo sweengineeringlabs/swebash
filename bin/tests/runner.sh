@@ -83,25 +83,13 @@ skip_test() {
   exit 77
 }
 
-# -- Platform detection ------------------------------------------------
-# MINGW bash swallows stdout from `bash script.sh`; source workaround needed.
-if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* ]]; then
-  _RUNNER_MINGW=1
-else
-  _RUNNER_MINGW=0
-fi
-
 # -- Invoke helper (low-level) -----------------------------------------
 # Usage: run_bash <script> [args...]
 # Runs a bash script with stdout/stderr inherited.  Tests that need raw
 # invocation (e.g. with custom env vars or redirects) use this instead of
 # run_script.
 run_bash() {
-  if [ "$_RUNNER_MINGW" -eq 1 ]; then
-    bash -c '. "$0" "$@"' "$@"
-  else
-    bash "$@"
-  fi
+  bash "$@"
 }
 
 # -- Script runner helper ----------------------------------------------

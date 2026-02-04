@@ -185,6 +185,16 @@ This forces `MockLlm` boilerplate in every test that only needs metadata operati
   - User config overlay tests unchanged (YAML loading stays in swebash)
   - Verify all 117 tests (19 unit + 98 integration) pass with new infrastructure
 
+## Backlog: Migrate bash tests from Git Bash to WSL/Linux
+
+**Problem**: Bash test suite (`bin/tests/runner.sh`) currently runs under Git Bash (MSYS2) on Windows. Tests should run on WSL or native Linux only — Git Bash is not a target platform.
+
+- [ ] Update `runner.sh` to detect and refuse to run under MSYS2/Git Bash
+- [ ] Add WSL invocation path so PowerShell scripts can dispatch bash tests to WSL
+- [ ] Audit existing `.test.sh` files for MSYS2-specific behavior (path formats, `grep -P` support)
+- [ ] Ensure CI runs bash tests on Linux or WSL, not Git Bash
+- [ ] Document supported test platforms (PowerShell on Windows, bash on WSL/Linux)
+
 ## Future Work
 - Evaluate Loom (tokio-rs/loom) for exhaustive concurrency testing of async task coordination
 - Evaluate Shuttle (awslabs/shuttle) for randomized concurrency testing of async/tokio code

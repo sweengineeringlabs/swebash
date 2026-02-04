@@ -54,6 +54,89 @@ Describe "Ensure-Registry" {
             { Ensure-Registry } | Should Throw
         }
     }
+
+    It "syncs Cargo.lock when registry path is stale" {
+        $tmpDir = Join-Path $env:TEMP "pester-cargolock-$(Get-Random)"
+        New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+        $cargoLock = Join-Path $tmpDir "Cargo.lock"
+        [System.IO.File]::WriteAllText($cargoLock, @"
+[[package]]
+name = "some-crate"
+version = "0.1.0"
+source = "registry+file:///mnt/c/Users/olduser/.cargo/registry.local/index"
+
+[[package]]
+name = "another-crate"
+version = "0.2.0"
+source = "registry+file:///mnt/c/Users/olduser/.cargo/registry.local/index"
+"@)
+        $env:CARGO_REGISTRIES_LOCAL_INDEX = "file:///C:/Users/newuser/.cargo/registry.local/index"
+        $savedRepoRoot = $RepoRoot
+        $script:RepoRoot = $tmpDir
+        Ensure-Registry
+        $script:RepoRoot = $savedRepoRoot
+        $content = [System.IO.File]::ReadAllText($cargoLock)
+        $content | Should Match "registry\+file:///C:/Users/newuser/.cargo/registry\.local/index"
+        $content | Should Not Match "registry\+file:///mnt/c/Users/olduser"
+        Remove-Item -Recurse -Force $tmpDir
+    }
+
+    It "skips Cargo.lock when registry path already matches" {
+        $tmpDir = Join-Path $env:TEMP "pester-cargolock-$(Get-Random)"
+        New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+        $cargoLock = Join-Path $tmpDir "Cargo.lock"
+        [System.IO.File]::WriteAllText($cargoLock, @"
+[[package]]
+name = "some-crate"
+version = "0.1.0"
+source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+"@)
+        $env:CARGO_REGISTRIES_LOCAL_INDEX = "file:///C:/Users/elvis/.cargo/registry.local/index"
+        $savedRepoRoot = $RepoRoot
+        $script:RepoRoot = $tmpDir
+        $output = Ensure-Registry 4>&1 6>&1 | Out-String
+        $script:RepoRoot = $savedRepoRoot
+        $output | Should Not Match "synced registry paths"
+        Remove-Item -Recurse -Force $tmpDir
+    }
+
+    It "no-ops when Cargo.lock is missing" {
+        $tmpDir = Join-Path $env:TEMP "pester-cargolock-$(Get-Random)"
+        New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+        # No Cargo.lock created
+        $env:CARGO_REGISTRIES_LOCAL_INDEX = "file:///C:/Users/elvis/.cargo/registry.local/index"
+        $savedRepoRoot = $RepoRoot
+        $script:RepoRoot = $tmpDir
+        { Ensure-Registry } | Should Not Throw
+        $script:RepoRoot = $savedRepoRoot
+        Remove-Item -Recurse -Force $tmpDir
+    }
+
+    It "preserves crates.io entries in Cargo.lock" {
+        $tmpDir = Join-Path $env:TEMP "pester-cargolock-$(Get-Random)"
+        New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+        $cargoLock = Join-Path $tmpDir "Cargo.lock"
+        [System.IO.File]::WriteAllText($cargoLock, @"
+[[package]]
+name = "serde"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "local-crate"
+version = "0.1.0"
+source = "registry+file:///mnt/c/Users/old/.cargo/registry.local/index"
+"@)
+        $env:CARGO_REGISTRIES_LOCAL_INDEX = "file:///C:/Users/new/.cargo/registry.local/index"
+        $savedRepoRoot = $RepoRoot
+        $script:RepoRoot = $tmpDir
+        Ensure-Registry
+        $script:RepoRoot = $savedRepoRoot
+        $content = [System.IO.File]::ReadAllText($cargoLock)
+        $content | Should Match "registry\+https://github\.com/rust-lang/crates\.io-index"
+        $content | Should Match "registry\+file:///C:/Users/new/.cargo/registry\.local/index"
+        Remove-Item -Recurse -Force $tmpDir
+    }
 }
 
 Describe "Load-EnvFile" {

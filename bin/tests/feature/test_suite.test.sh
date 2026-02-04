@@ -70,16 +70,33 @@ test_scripts_suite_dispatches_to_runner() {
     "scripts suite should appear before preflight"
 }
 
-test_run_functions_defined() {
+test_defines_run_engine_tests() {
+  local content
+  content=$(cat "$REPO_ROOT/bin/test.sh")
+  assert_contains "$content" "run_engine_tests" "should define run_engine_tests"
+}
+
+test_defines_run_host_tests() {
+  local content
+  content=$(cat "$REPO_ROOT/bin/test.sh")
+  assert_contains "$content" "run_host_tests" "should define run_host_tests"
+}
+
+test_defines_run_readline_tests() {
+  local content
+  content=$(cat "$REPO_ROOT/bin/test.sh")
+  assert_contains "$content" "run_readline_tests" "should define run_readline_tests"
+}
+
+test_defines_run_ai_tests() {
+  local content
+  content=$(cat "$REPO_ROOT/bin/test.sh")
+  assert_contains "$content" "run_ai_tests" "should define run_ai_tests"
+}
+
+test_no_parse_errors() {
   local out
   out=$(bash -n "$REPO_ROOT/bin/test.sh" 2>&1)
   local ec=$?
   assert_exit_code 0 "$ec" "test.sh should have no parse errors"
-
-  local content
-  content=$(cat "$REPO_ROOT/bin/test.sh")
-  assert_contains "$content" "run_engine_tests" "should define run_engine_tests"
-  assert_contains "$content" "run_host_tests" "should define run_host_tests"
-  assert_contains "$content" "run_readline_tests" "should define run_readline_tests"
-  assert_contains "$content" "run_ai_tests" "should define run_ai_tests"
 }

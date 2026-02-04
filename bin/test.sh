@@ -4,13 +4,7 @@ source "$(cd "$(dirname "$0")/.." && pwd)/lib/common.sh"
 SUITE="${1:-all}"
 
 if [ "$SUITE" = "scripts" ]; then
-  if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* ]]; then
-    # MINGW: exec/bash swallows stdout; source workaround
-    source "$REPO_ROOT/bin/tests/runner.sh"
-    exit $?
-  else
-    exec bash "$REPO_ROOT/bin/tests/runner.sh"
-  fi
+  exec bash "$REPO_ROOT/bin/tests/runner.sh"
 fi
 
 preflight
