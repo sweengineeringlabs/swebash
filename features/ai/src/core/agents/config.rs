@@ -30,6 +30,8 @@ pub struct AgentDefaults {
     pub think_first: bool,
     #[serde(default, rename = "bypassConfirmation")]
     pub bypass_confirmation: bool,
+    #[serde(default, rename = "maxIterations")]
+    pub max_iterations: Option<usize>,
 }
 
 impl Default for AgentDefaults {
@@ -40,6 +42,7 @@ impl Default for AgentDefaults {
             tools: ToolsConfig::default(),
             think_first: false,
             bypass_confirmation: false,
+            max_iterations: None,
         }
     }
 }
@@ -83,6 +86,8 @@ pub struct AgentEntry {
     pub think_first: Option<bool>,
     #[serde(default, rename = "bypassConfirmation")]
     pub bypass_confirmation: Option<bool>,
+    #[serde(default, rename = "maxIterations")]
+    pub max_iterations: Option<usize>,
 }
 
 // ── Defaults helpers ───────────────────────────────────────────────
@@ -121,6 +126,7 @@ pub struct ConfigAgent {
     max_tokens: u32,
     trigger_keywords: Vec<String>,
     bypass_confirmation: bool,
+    max_iterations: Option<usize>,
 }
 
 impl ConfigAgent {
@@ -166,12 +172,18 @@ impl ConfigAgent {
             bypass_confirmation: entry
                 .bypass_confirmation
                 .unwrap_or(defaults.bypass_confirmation),
+            max_iterations: entry.max_iterations.or(defaults.max_iterations),
         }
     }
 
     /// Whether this agent bypasses tool confirmation prompts.
     pub fn bypass_confirmation(&self) -> bool {
         self.bypass_confirmation
+    }
+
+    /// Per-agent tool iteration limit override, if set.
+    pub fn max_iterations(&self) -> Option<usize> {
+        self.max_iterations
     }
 }
 
@@ -343,6 +355,7 @@ agents:
             trigger_keywords: vec![],
             think_first: None,
             bypass_confirmation: None,
+            max_iterations: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         assert!(matches!(agent.tool_filter(), ToolFilter::All));
@@ -365,6 +378,7 @@ agents:
             trigger_keywords: vec![],
             think_first: None,
             bypass_confirmation: None,
+            max_iterations: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -394,6 +408,7 @@ agents:
             trigger_keywords: vec![],
             think_first: None,
             bypass_confirmation: None,
+            max_iterations: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         // system_prompt() returns &str — borrow from owned field
@@ -414,6 +429,7 @@ agents:
             trigger_keywords: vec!["a".into(), "b".into(), "c".into()],
             think_first: None,
             bypass_confirmation: None,
+            max_iterations: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         // trigger_keywords() returns &[String] — borrow from owned Vec
@@ -438,6 +454,7 @@ agents:
             trigger_keywords: vec![],
             think_first: None,
             bypass_confirmation: None,
+            max_iterations: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -461,6 +478,7 @@ agents:
             trigger_keywords: vec![],
             think_first: None,
             bypass_confirmation: None,
+            max_iterations: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -484,6 +502,7 @@ agents:
             trigger_keywords: vec![],
             think_first: None,
             bypass_confirmation: None,
+            max_iterations: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -509,6 +528,7 @@ agents:
             trigger_keywords: vec![],
             think_first: None,
             bypass_confirmation: None,
+            max_iterations: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -536,6 +556,7 @@ agents:
             trigger_keywords: vec![],
             think_first: None,
             bypass_confirmation: None,
+            max_iterations: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         assert_eq!(agent.system_prompt(), "");
@@ -555,6 +576,7 @@ agents:
             trigger_keywords: kws.clone(),
             think_first: None,
             bypass_confirmation: None,
+            max_iterations: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         assert_eq!(agent.trigger_keywords().len(), 20);
@@ -575,6 +597,7 @@ agents:
             trigger_keywords: vec![],
             think_first: None,
             bypass_confirmation: None,
+            max_iterations: None,
         };
         let entry2 = AgentEntry {
             id: "dup".into(),
@@ -587,6 +610,7 @@ agents:
             trigger_keywords: vec!["new".into()],
             think_first: None,
             bypass_confirmation: None,
+            max_iterations: None,
         };
         let a1 = ConfigAgent::from_entry(entry1, &defaults);
         let a2 = ConfigAgent::from_entry(entry2, &defaults);

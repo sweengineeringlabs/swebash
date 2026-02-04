@@ -91,7 +91,7 @@ impl EngineFactory<ConfigAgent> for SwebashEngineFactory {
                 self.llm.clone(),
                 chat_config,
                 Arc::new(registry),
-            ).with_max_iterations(effective_tools.max_iterations)))
+            ).with_max_iterations(descriptor.max_iterations().unwrap_or(effective_tools.max_iterations))))
         } else {
             Some(Arc::new(SimpleChatEngine::new(self.llm.clone(), chat_config)))
         }
@@ -198,6 +198,7 @@ mod tests {
                 trigger_keywords: keywords,
                 think_first: None,
                 bypass_confirmation: None,
+            max_iterations: None,
             },
             &AgentDefaults::default(),
         )
@@ -538,6 +539,7 @@ mod tests {
                 trigger_keywords: vec![],
                 think_first: None,
                 bypass_confirmation: None,
+            max_iterations: None,
             },
             &AgentDefaults::default(),
         ));
@@ -553,6 +555,7 @@ mod tests {
                 trigger_keywords: vec![],
                 think_first: None,
                 bypass_confirmation: None,
+            max_iterations: None,
             },
             &AgentDefaults::default(),
         ));
@@ -785,6 +788,7 @@ mod tests {
                 trigger_keywords: vec![],
                 think_first: None,
                 bypass_confirmation: None,
+            max_iterations: None,
             },
             &AgentDefaults::default(),
         );
