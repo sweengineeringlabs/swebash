@@ -1,6 +1,11 @@
 [workspace]
-members = ["engine", "host", "ai"]
-default-members = ["host"]
+members = [
+  "features/shell/engine",
+  "features/shell/host",
+  "features/shell/readline",
+  "features/ai",
+]
+default-members = ["features/shell/host"]
 resolver = "2"
 
 [profile.release]

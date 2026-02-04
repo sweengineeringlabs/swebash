@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# sbh — swebash quickstart entrypoint
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+usage() {
+  echo "Usage: ./sbh <command> [options]"
+  echo ""
+  echo "Commands:"
+  echo "  setup          One-time environment setup"
+  echo "  build          Build engine (WASM) and host"
+  echo "    --debug        Build in debug mode (default: release)"
+  echo "  run            Build if needed and launch swebash"
+  echo "    --release      Run release build"
+  echo "    --debug        Run debug build (default)"
+  echo "  test [suite]   Build and run tests"
+  echo "    engine|host|ai|all (default: all)"
+}
+
+CMD="${1:-}"
+[ -n "$CMD" ] && shift
+
+case "$CMD" in
+  setup) exec "$REPO_ROOT/bin/setup.sh" "$@" ;;
+  build) exec "$REPO_ROOT/bin/build.sh" "$@" ;;
+  run)   exec "$REPO_ROOT/bin/run.sh"   "$@" ;;
+  test)  exec "$REPO_ROOT/bin/test.sh"  "$@" ;;
+  -h|--help|help) usage ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac

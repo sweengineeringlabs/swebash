@@ -1,0 +1,13 @@
+[package]
+name = "swebash"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wasmtime = "29"
+anyhow = "1"
+dirs = "5"
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
+swebash-ai = { path = "../../ai" }
+swebash-readline = { path = "../readline" }
+dotenvy = "0.15"

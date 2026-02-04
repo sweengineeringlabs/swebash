@@ -2274,13 +2274,11 @@ name = "swebash"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "crossterm",
  "dirs",
  "dotenvy",
- "serde",
  "swebash-ai",
+ "swebash-readline",
  "tokio",
- "toml",
  "wasmtime",
 ]
 
@@ -2304,6 +2302,17 @@ dependencies = [
  "tool",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "swebash-readline"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "dirs",
+ "serde",
+ "toml",
 ]
 
 [[package]]
