@@ -12,7 +12,7 @@ function Show-Usage {
     Write-Host "    -Release       Run release build"
     Write-Host "    -Debug         Run debug build (default)"
     Write-Host "  test [suite]   Build and run tests"
-    Write-Host "    engine|host|readline|ai|all (default: all)"
+    Write-Host "    engine|host|readline|ai|scripts|all (default: all)"
 }
 
 $Command = if ($args.Count -gt 0) { $args[0] } else { "" }

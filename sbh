@@ -15,7 +15,7 @@ usage() {
   echo "    --release      Run release build"
   echo "    --debug        Run debug build (default)"
   echo "  test [suite]   Build and run tests"
-  echo "    engine|host|readline|ai|all (default: all)"
+  echo "    engine|host|readline|ai|scripts|all (default: all)"
 }
 
 CMD="${1:-}"

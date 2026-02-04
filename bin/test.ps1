@@ -1,10 +1,17 @@
 # bin/test.ps1 — Build and test swebash (Windows)
 param(
-    [ValidateSet("engine", "host", "readline", "ai", "all")]
+    [ValidateSet("engine", "host", "readline", "ai", "scripts", "all")]
     [string]$Suite = "all"
 )
 
 . "$PSScriptRoot\..\lib\common.ps1"
+
+if ($Suite -eq "scripts") {
+    Write-Host "==> Testing scripts (Pester)..."
+    Invoke-Pester -Script "$RepoRoot\bin\tests\feature","$RepoRoot\bin\tests\e2e" -EnableExit
+    return
+}
+
 Invoke-Preflight
 
 Write-Host "==> Building engine WASM (required for tests)..."

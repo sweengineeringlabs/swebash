@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
 source "$(cd "$(dirname "$0")/.." && pwd)/lib/common.sh"
 
-preflight
-
 SUITE="${1:-all}"
+
+if [ "$SUITE" = "scripts" ]; then
+  if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* ]]; then
+    # MINGW: exec/bash swallows stdout; source workaround
+    source "$REPO_ROOT/bin/tests/runner.sh"
+    exit $?
+  else
+    exec bash "$REPO_ROOT/bin/tests/runner.sh"
+  fi
+fi
+
+preflight
 
 echo "==> Building engine WASM (required for tests)..."
 cargo build --manifest-path "$REPO_ROOT/features/shell/engine/Cargo.toml" \
@@ -41,7 +51,7 @@ case "$SUITE" in
     run_ai_tests
     ;;
   *)
-    echo "Usage: ./sbh test [engine|host|readline|ai|all]"
+    echo "Usage: ./sbh test [engine|host|readline|ai|scripts|all]"
     exit 1
     ;;
 esac
