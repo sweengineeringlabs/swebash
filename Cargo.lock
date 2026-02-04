@@ -2297,6 +2297,7 @@ dependencies = [
  "react",
  "serde",
  "serde_json",
+ "serde_yaml",
  "serial_test",
  "thiserror 2.0.18",
  "tokio",

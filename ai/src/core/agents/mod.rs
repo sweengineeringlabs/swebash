@@ -4,6 +4,7 @@
 /// and tool filter. The `AgentRegistry` manages agent lifecycle and provides
 /// engine access by agent ID.
 pub mod builtins;
+pub mod config;
 
 use std::collections::HashMap;
 use std::sync::Arc;

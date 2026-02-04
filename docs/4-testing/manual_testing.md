@@ -187,7 +187,46 @@ Auto-detection switches the active agent based on keywords in the input.
 | Isolated history | `ai` → chat with shell → `@review` → chat with review → `@shell` | Returning to shell still has shell's conversation context, review has its own |
 | Clear history | `clear` then `history` | Shows "(no chat history)" for active agent only |
 
-### 18. DevOps Agent (Docker-specific)
+### 18. User-Configurable Agents (YAML)
+
+Agents are loaded from an embedded YAML file compiled into the binary. Users can add or override agents via a config file.
+
+**Config file lookup order:**
+1. `$SWEBASH_AGENTS_CONFIG` (env var, highest priority)
+2. `~/.config/swebash/agents.yaml`
+3. `~/.swebash/agents.yaml`
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| Add custom agent | Create `~/.config/swebash/agents.yaml` with a new agent (e.g. `id: security`), restart shell | `ai agents` lists 5 agents (4 defaults + custom) |
+| Switch to custom agent | `@security` | Prints "Switched to Security Scanner (security)", prompt shows `[AI:security] >` |
+| Custom trigger keywords | Add `triggerKeywords: [scan, cve]` to custom agent, restart, enter AI mode | Typing `scan this file` auto-detects the custom agent |
+| Override built-in agent | Add `id: shell` entry with custom `name` and `description` to user YAML, restart | `ai agents` shows custom name/description for shell agent; still 4 agents total |
+| Invalid user YAML | Write broken YAML to the config file, restart | Shell starts normally with 4 default agents (invalid file silently ignored) |
+| Env var override | `export SWEBASH_AGENTS_CONFIG=/path/to/agents.yaml`, restart shell | Agents from the specified file are loaded |
+| No config file | Ensure no user YAML exists anywhere, restart | Shell starts normally with 4 default agents |
+
+<details>
+<summary>Example user agents.yaml</summary>
+
+```yaml
+version: 1
+agents:
+  - id: security
+    name: Security Scanner
+    description: Scans code for vulnerabilities
+    systemPrompt: |
+      You are a security scanner...
+    triggerKeywords: [security, scan, cve]
+    tools:
+      fs: true
+      exec: true
+      web: false
+```
+
+</details>
+
+### 19. DevOps Agent (Docker-specific)
 
 > Requires Docker installed (`docker --version`). Permission errors are expected if user is not in the `docker` group.
 
@@ -219,9 +258,9 @@ cargo test -p swebash-ai -p swebash
 | Host unit tests | `host/src/` | 100 |
 | Host integration | `host/tests/integration.rs` | 54 |
 | Readline integration | `host/tests/readline_tests.rs` | 19 |
-| AI unit tests | `ai/src/` | 7 |
-| AI integration | `ai/tests/integration.rs` | 64 |
-| **Total** | | **244** |
+| AI unit tests | `ai/src/` | 19 |
+| AI integration | `ai/tests/integration.rs` | 98 |
+| **Total** | | **290** |
 
 ### Agent-Specific Automated Tests
 
@@ -260,3 +299,34 @@ cargo test -p swebash-ai -p swebash
 | `ai_agent_switch_from_shell_exit_returns_to_shell` | Host integration | Exit after `@devops` returns to working shell |
 | `ai_agent_switch_from_shell_all_agents` | Host integration | All `@agent` shorthands enter AI mode |
 | `ai_agent_switch_from_shell_with_ai_prefix` | Host integration | `ai @devops` enters AI mode |
+| `yaml_parse_embedded_defaults` | AI integration | Embedded YAML parses with 4 agents |
+| `yaml_parse_defaults_section` | AI integration | Defaults (temperature, maxTokens, tools) correct |
+| `yaml_parse_agent_ids_match_originals` | AI integration | shell/review/devops/git IDs present |
+| `yaml_parse_trigger_keywords_preserved` | AI integration | All keywords match original structs |
+| `yaml_parse_tool_overrides` | AI integration | Tool configs per agent correct |
+| `yaml_parse_system_prompts_non_empty` | AI integration | Every agent has a system prompt |
+| `yaml_parse_rejects_malformed_input` | AI integration | Broken YAML returns error |
+| `config_agent_inherits_defaults` | AI integration | ConfigAgent uses default temp/tokens/tools |
+| `config_agent_overrides_temperature_and_tokens` | AI integration | Explicit values override defaults |
+| `config_agent_tool_filter_only` | AI integration | Partial tools → ToolFilter::Only |
+| `config_agent_tool_filter_none` | AI integration | All false → ToolFilter::None |
+| `config_agent_tool_filter_all` | AI integration | All true → ToolFilter::All |
+| `config_agent_trigger_keywords` | AI integration | Keywords passed through correctly |
+| `config_agent_system_prompt_preserved` | AI integration | Multiline prompts preserved |
+| `config_agent_inherits_custom_defaults` | AI integration | Non-default defaults section works |
+| `yaml_registry_loads_all_default_agents` | AI integration | 4 agents via create_default_registry |
+| `yaml_registry_{shell,review,devops,git}_agent_properties` | AI integration | Properties match originals |
+| `yaml_registry_detect_agent_from_keywords` | AI integration | Keyword detection from YAML |
+| `yaml_registry_suggest_agent_from_keywords` | AI integration | Suggestion from YAML keywords |
+| `yaml_registry_system_prompts_contain_key_content` | AI integration | Prompts contain expected terms |
+| `yaml_registry_agents_sorted_by_id` | AI integration | list() returns sorted order |
+| `yaml_user_config_env_var_loads_custom_agent` | AI integration | SWEBASH_AGENTS_CONFIG adds agent |
+| `yaml_user_config_overrides_builtin_agent` | AI integration | User YAML replaces agent by ID |
+| `yaml_user_config_invalid_file_ignored` | AI integration | Bad YAML falls back to defaults |
+| `yaml_user_config_nonexistent_path_ignored` | AI integration | Missing file falls back to defaults |
+| `yaml_user_config_adds_multiple_agents` | AI integration | Multiple user agents + custom defaults |
+| `yaml_user_config_detect_agent_includes_user_keywords` | AI integration | User keywords in detect/suggest |
+| `yaml_service_list_agents_returns_correct_info` | AI integration | Display names from YAML in API |
+| `yaml_service_switch_to_yaml_loaded_agent` | AI integration | Switch through all YAML agents |
+| `yaml_service_auto_detect_uses_yaml_keywords` | AI integration | YAML keywords drive auto-detection |
+| `yaml_service_with_user_override_reflects_in_api` | AI integration | User override visible through service |

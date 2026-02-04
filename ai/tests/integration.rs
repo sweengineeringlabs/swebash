@@ -12,6 +12,7 @@
 /// ```
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serial_test::serial;
 use swebash_ai::api::error::{AiError, AiResult};
@@ -20,6 +21,9 @@ use swebash_ai::api::types::{
 };
 use swebash_ai::api::AiService;
 use swebash_ai::config::{AiConfig, ToolConfig};
+use swebash_ai::core::agents::builtins::create_default_registry;
+use swebash_ai::core::agents::config::{AgentDefaults, AgentEntry, AgentsYaml, ConfigAgent, ToolsConfig};
+use swebash_ai::core::agents::{Agent, ToolFilter};
 use swebash_ai::core::DefaultAiService;
 use swebash_ai::spi::chat_provider::ChatProviderClient;
 
@@ -1544,4 +1548,816 @@ async fn agent_default_config_override() {
         }
         Err(e) => assert_setup_error(&e),
     }
+}
+
+// ── YAML config: parsing tests (7) ──────────────────────────────────────
+
+#[test]
+fn yaml_parse_embedded_defaults() {
+    let yaml = include_str!("../src/core/agents/default_agents.yaml");
+    let parsed = AgentsYaml::from_yaml(yaml).expect("embedded YAML should parse");
+    assert_eq!(parsed.version, 1);
+    assert_eq!(parsed.agents.len(), 4);
+}
+
+#[test]
+fn yaml_parse_defaults_section() {
+    let yaml = include_str!("../src/core/agents/default_agents.yaml");
+    let parsed = AgentsYaml::from_yaml(yaml).unwrap();
+    assert!((parsed.defaults.temperature - 0.5).abs() < f32::EPSILON);
+    assert_eq!(parsed.defaults.max_tokens, 1024);
+    assert!(parsed.defaults.tools.fs);
+    assert!(parsed.defaults.tools.exec);
+    assert!(parsed.defaults.tools.web);
+}
+
+#[test]
+fn yaml_parse_agent_ids_match_originals() {
+    let yaml = include_str!("../src/core/agents/default_agents.yaml");
+    let parsed = AgentsYaml::from_yaml(yaml).unwrap();
+    let ids: Vec<&str> = parsed.agents.iter().map(|a| a.id.as_str()).collect();
+    assert!(ids.contains(&"shell"));
+    assert!(ids.contains(&"review"));
+    assert!(ids.contains(&"devops"));
+    assert!(ids.contains(&"git"));
+}
+
+#[test]
+fn yaml_parse_trigger_keywords_preserved() {
+    let yaml = include_str!("../src/core/agents/default_agents.yaml");
+    let parsed = AgentsYaml::from_yaml(yaml).unwrap();
+
+    let review = parsed.agents.iter().find(|a| a.id == "review").unwrap();
+    assert_eq!(review.trigger_keywords, vec!["review", "audit"]);
+
+    let devops = parsed.agents.iter().find(|a| a.id == "devops").unwrap();
+    assert!(devops.trigger_keywords.contains(&"docker".to_string()));
+    assert!(devops.trigger_keywords.contains(&"k8s".to_string()));
+    assert!(devops.trigger_keywords.contains(&"terraform".to_string()));
+
+    let git = parsed.agents.iter().find(|a| a.id == "git").unwrap();
+    assert!(git.trigger_keywords.contains(&"git".to_string()));
+    assert!(git.trigger_keywords.contains(&"commit".to_string()));
+    assert!(git.trigger_keywords.contains(&"rebase".to_string()));
+
+    let shell = parsed.agents.iter().find(|a| a.id == "shell").unwrap();
+    assert!(shell.trigger_keywords.is_empty());
+}
+
+#[test]
+fn yaml_parse_tool_overrides() {
+    let yaml = include_str!("../src/core/agents/default_agents.yaml");
+    let parsed = AgentsYaml::from_yaml(yaml).unwrap();
+
+    // review: fs=true, exec=false, web=false
+    let review = parsed.agents.iter().find(|a| a.id == "review").unwrap();
+    let review_tools = review.tools.as_ref().expect("review should have tools override");
+    assert!(review_tools.fs);
+    assert!(!review_tools.exec);
+    assert!(!review_tools.web);
+
+    // git: fs=true, exec=true, web=false
+    let git = parsed.agents.iter().find(|a| a.id == "git").unwrap();
+    let git_tools = git.tools.as_ref().expect("git should have tools override");
+    assert!(git_tools.fs);
+    assert!(git_tools.exec);
+    assert!(!git_tools.web);
+
+    // shell: no tools override (inherits defaults)
+    let shell = parsed.agents.iter().find(|a| a.id == "shell").unwrap();
+    assert!(shell.tools.is_none());
+
+    // devops: no tools override (inherits defaults)
+    let devops = parsed.agents.iter().find(|a| a.id == "devops").unwrap();
+    assert!(devops.tools.is_none());
+}
+
+#[test]
+fn yaml_parse_system_prompts_non_empty() {
+    let yaml = include_str!("../src/core/agents/default_agents.yaml");
+    let parsed = AgentsYaml::from_yaml(yaml).unwrap();
+
+    for entry in &parsed.agents {
+        assert!(
+            !entry.system_prompt.is_empty(),
+            "Agent '{}' should have a non-empty system prompt",
+            entry.id
+        );
+    }
+}
+
+#[test]
+fn yaml_parse_rejects_malformed_input() {
+    assert!(AgentsYaml::from_yaml("").is_err());
+    assert!(AgentsYaml::from_yaml("not yaml at all [[[").is_err());
+    assert!(AgentsYaml::from_yaml("version: 1\n").is_err()); // missing agents
+}
+
+// ── YAML config: ConfigAgent trait tests (8) ────────────────────────────
+
+#[test]
+fn config_agent_inherits_defaults() {
+    let defaults = AgentDefaults::default();
+    let entry = AgentEntry {
+        id: "test".into(),
+        name: "Test".into(),
+        description: "A test agent".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: "You are a test.".into(),
+        tools: None,
+        trigger_keywords: vec![],
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+
+    assert_eq!(agent.temperature(), Some(0.5));
+    assert_eq!(agent.max_tokens(), Some(1024));
+    assert!(matches!(agent.tool_filter(), ToolFilter::All));
+}
+
+#[test]
+fn config_agent_overrides_temperature_and_tokens() {
+    let defaults = AgentDefaults::default();
+    let entry = AgentEntry {
+        id: "custom".into(),
+        name: "Custom".into(),
+        description: "Custom agent".into(),
+        temperature: Some(0.9),
+        max_tokens: Some(4096),
+        system_prompt: "Custom prompt.".into(),
+        tools: None,
+        trigger_keywords: vec![],
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+
+    assert_eq!(agent.temperature(), Some(0.9));
+    assert_eq!(agent.max_tokens(), Some(4096));
+}
+
+#[test]
+fn config_agent_tool_filter_only() {
+    let defaults = AgentDefaults::default();
+    let entry = AgentEntry {
+        id: "restricted".into(),
+        name: "Restricted".into(),
+        description: "Restricted tools".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: "Restricted.".into(),
+        tools: Some(ToolsConfig { fs: true, exec: false, web: false }),
+        trigger_keywords: vec![],
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+
+    match agent.tool_filter() {
+        ToolFilter::Only { fs, exec, web } => {
+            assert!(fs);
+            assert!(!exec);
+            assert!(!web);
+        }
+        other => panic!("Expected ToolFilter::Only, got: {:?}", other),
+    }
+}
+
+#[test]
+fn config_agent_tool_filter_none() {
+    let defaults = AgentDefaults::default();
+    let entry = AgentEntry {
+        id: "chat-only".into(),
+        name: "Chat Only".into(),
+        description: "No tools".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: "Chat only.".into(),
+        tools: Some(ToolsConfig { fs: false, exec: false, web: false }),
+        trigger_keywords: vec![],
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+
+    assert!(matches!(agent.tool_filter(), ToolFilter::None));
+}
+
+#[test]
+fn config_agent_tool_filter_all() {
+    let defaults = AgentDefaults::default();
+    let entry = AgentEntry {
+        id: "full".into(),
+        name: "Full".into(),
+        description: "All tools".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: "Full.".into(),
+        tools: Some(ToolsConfig { fs: true, exec: true, web: true }),
+        trigger_keywords: vec![],
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+
+    assert!(matches!(agent.tool_filter(), ToolFilter::All));
+}
+
+#[test]
+fn config_agent_trigger_keywords() {
+    let defaults = AgentDefaults::default();
+    let entry = AgentEntry {
+        id: "kw-test".into(),
+        name: "KW".into(),
+        description: "Keyword test".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: "Prompt.".into(),
+        tools: None,
+        trigger_keywords: vec!["alpha".into(), "beta".into(), "gamma".into()],
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+
+    let kw = agent.trigger_keywords();
+    assert_eq!(kw, vec!["alpha", "beta", "gamma"]);
+}
+
+#[test]
+fn config_agent_system_prompt_preserved() {
+    let defaults = AgentDefaults::default();
+    let prompt = "You are a specialized agent.\nLine 2.\nLine 3.";
+    let entry = AgentEntry {
+        id: "prompt-test".into(),
+        name: "Prompt Test".into(),
+        description: "Tests prompt preservation".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: prompt.into(),
+        tools: None,
+        trigger_keywords: vec![],
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+
+    assert_eq!(agent.system_prompt(), prompt);
+}
+
+#[test]
+fn config_agent_inherits_custom_defaults() {
+    let defaults = AgentDefaults {
+        temperature: 0.8,
+        max_tokens: 2048,
+        tools: ToolsConfig { fs: true, exec: false, web: true },
+    };
+    let entry = AgentEntry {
+        id: "inheritor".into(),
+        name: "Inheritor".into(),
+        description: "Inherits custom defaults".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: "Prompt.".into(),
+        tools: None,
+        trigger_keywords: vec![],
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+
+    assert_eq!(agent.temperature(), Some(0.8));
+    assert_eq!(agent.max_tokens(), Some(2048));
+    match agent.tool_filter() {
+        ToolFilter::Only { fs, exec, web } => {
+            assert!(fs);
+            assert!(!exec);
+            assert!(web);
+        }
+        other => panic!("Expected ToolFilter::Only, got: {:?}", other),
+    }
+}
+
+// ── YAML config: registry integration tests (9) ────────────────────────
+
+/// Mock LLM for registry tests (never called).
+struct MockLlm;
+
+#[async_trait::async_trait]
+impl llm_provider::LlmService for MockLlm {
+    async fn providers(&self) -> Vec<String> {
+        vec!["mock".into()]
+    }
+    async fn complete(
+        &self,
+        _request: llm_provider::CompletionRequest,
+    ) -> Result<llm_provider::CompletionResponse, llm_provider::LlmError> {
+        Ok(llm_provider::CompletionResponse {
+            id: "mock".into(),
+            content: Some("mock".into()),
+            model: "mock".into(),
+            tool_calls: vec![],
+            usage: llm_provider::TokenUsage {
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_tokens: 0,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+            },
+            finish_reason: llm_provider::FinishReason::Stop,
+        })
+    }
+    async fn complete_stream(
+        &self,
+        _request: llm_provider::CompletionRequest,
+    ) -> Result<
+        std::pin::Pin<
+            Box<dyn futures::Stream<Item = Result<llm_provider::StreamChunk, llm_provider::LlmError>> + Send>,
+        >,
+        llm_provider::LlmError,
+    > {
+        Ok(Box::pin(futures::stream::empty()))
+    }
+    async fn list_models(&self) -> Result<Vec<llm_provider::ModelInfo>, llm_provider::LlmError> {
+        Ok(vec![])
+    }
+    async fn model_info(&self, _model: &str) -> Result<llm_provider::ModelInfo, llm_provider::LlmError> {
+        Err(llm_provider::LlmError::Configuration("mock".into()))
+    }
+    async fn is_model_available(&self, _model: &str) -> bool {
+        false
+    }
+}
+
+fn mock_config() -> AiConfig {
+    AiConfig {
+        enabled: true,
+        provider: "mock".into(),
+        model: "mock".into(),
+        history_size: 20,
+        default_agent: "shell".into(),
+        agent_auto_detect: true,
+        tools: ToolConfig::default(),
+    }
+}
+
+#[test]
+fn yaml_registry_loads_all_default_agents() {
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+    let agents = registry.list();
+    assert_eq!(agents.len(), 4);
+    let ids: Vec<&str> = agents.iter().map(|a| a.id()).collect();
+    assert!(ids.contains(&"shell"));
+    assert!(ids.contains(&"review"));
+    assert!(ids.contains(&"devops"));
+    assert!(ids.contains(&"git"));
+}
+
+#[test]
+fn yaml_registry_shell_agent_properties() {
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+    let shell = registry.get("shell").unwrap();
+    assert_eq!(shell.display_name(), "Shell Assistant");
+    assert_eq!(shell.description(), "General-purpose shell assistant with full tool access");
+    assert!(shell.trigger_keywords().is_empty());
+    assert!(matches!(shell.tool_filter(), ToolFilter::All));
+}
+
+#[test]
+fn yaml_registry_review_agent_properties() {
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+    let review = registry.get("review").unwrap();
+    assert_eq!(review.display_name(), "Code Reviewer");
+    assert!(review.trigger_keywords().contains(&"review"));
+    assert!(review.trigger_keywords().contains(&"audit"));
+    match review.tool_filter() {
+        ToolFilter::Only { fs, exec, web } => {
+            assert!(fs);
+            assert!(!exec);
+            assert!(!web);
+        }
+        _ => panic!("Expected ToolFilter::Only for review"),
+    }
+}
+
+#[test]
+fn yaml_registry_devops_agent_properties() {
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+    let devops = registry.get("devops").unwrap();
+    assert_eq!(devops.display_name(), "DevOps Assistant");
+    assert!(devops.trigger_keywords().contains(&"docker"));
+    assert!(devops.trigger_keywords().contains(&"k8s"));
+    assert!(devops.trigger_keywords().contains(&"terraform"));
+    assert!(devops.trigger_keywords().contains(&"deploy"));
+    assert!(devops.trigger_keywords().contains(&"pipeline"));
+    assert!(matches!(devops.tool_filter(), ToolFilter::All));
+}
+
+#[test]
+fn yaml_registry_git_agent_properties() {
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+    let git = registry.get("git").unwrap();
+    assert_eq!(git.display_name(), "Git Assistant");
+    assert!(git.trigger_keywords().contains(&"git"));
+    assert!(git.trigger_keywords().contains(&"commit"));
+    assert!(git.trigger_keywords().contains(&"branch"));
+    assert!(git.trigger_keywords().contains(&"merge"));
+    assert!(git.trigger_keywords().contains(&"rebase"));
+    match git.tool_filter() {
+        ToolFilter::Only { fs, exec, web } => {
+            assert!(fs);
+            assert!(exec);
+            assert!(!web);
+        }
+        _ => panic!("Expected ToolFilter::Only for git"),
+    }
+}
+
+#[test]
+fn yaml_registry_detect_agent_from_keywords() {
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+    assert_eq!(registry.detect_agent("git commit -m fix"), Some("git"));
+    assert_eq!(registry.detect_agent("docker ps"), Some("devops"));
+    assert_eq!(registry.detect_agent("review this code"), Some("review"));
+    assert_eq!(registry.detect_agent("list files"), None);
+}
+
+#[test]
+fn yaml_registry_suggest_agent_from_keywords() {
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+    assert_eq!(registry.suggest_agent("docker"), Some("devops"));
+    assert_eq!(registry.suggest_agent("k8s"), Some("devops"));
+    assert_eq!(registry.suggest_agent("terraform"), Some("devops"));
+    assert_eq!(registry.suggest_agent("commit"), Some("git"));
+    assert_eq!(registry.suggest_agent("audit"), Some("review"));
+    assert_eq!(registry.suggest_agent("unknown"), None);
+}
+
+#[test]
+fn yaml_registry_system_prompts_contain_key_content() {
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+
+    let shell = registry.get("shell").unwrap();
+    assert!(shell.system_prompt().contains("swebash"));
+    assert!(shell.system_prompt().contains("shell"));
+
+    let review = registry.get("review").unwrap();
+    assert!(review.system_prompt().contains("code review"));
+    assert!(review.system_prompt().to_lowercase().contains("security"));
+
+    let devops = registry.get("devops").unwrap();
+    assert!(devops.system_prompt().contains("Docker"));
+    assert!(devops.system_prompt().contains("Kubernetes"));
+
+    let git = registry.get("git").unwrap();
+    assert!(git.system_prompt().contains("Git"));
+    assert!(git.system_prompt().contains("rebase"));
+}
+
+#[test]
+fn yaml_registry_agents_sorted_by_id() {
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+    let agents = registry.list();
+    let ids: Vec<&str> = agents.iter().map(|a| a.id()).collect();
+    // AgentRegistry.list() sorts by ID
+    let mut sorted = ids.clone();
+    sorted.sort();
+    assert_eq!(ids, sorted);
+}
+
+// ── YAML config: user config overlay tests (6) ─────────────────────────
+
+#[test]
+#[serial]
+fn yaml_user_config_env_var_loads_custom_agent() {
+    let dir = std::env::temp_dir().join("swebash_yaml_test_env");
+    std::fs::create_dir_all(&dir).ok();
+    let config_path = dir.join("agents.yaml");
+    std::fs::write(
+        &config_path,
+        r#"
+version: 1
+agents:
+  - id: custom-from-env
+    name: Custom From Env
+    description: Loaded via SWEBASH_AGENTS_CONFIG
+    systemPrompt: Custom prompt.
+    triggerKeywords: [custom, env]
+"#,
+    )
+    .unwrap();
+
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", config_path.to_str().unwrap());
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
+
+    // Should have 4 defaults + 1 custom = 5
+    assert_eq!(registry.list().len(), 5);
+    let custom = registry.get("custom-from-env").unwrap();
+    assert_eq!(custom.display_name(), "Custom From Env");
+    assert!(custom.trigger_keywords().contains(&"custom"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+#[serial]
+fn yaml_user_config_overrides_builtin_agent() {
+    let dir = std::env::temp_dir().join("swebash_yaml_test_override");
+    std::fs::create_dir_all(&dir).ok();
+    let config_path = dir.join("agents.yaml");
+    std::fs::write(
+        &config_path,
+        r#"
+version: 1
+agents:
+  - id: shell
+    name: My Custom Shell
+    description: Overridden shell agent
+    systemPrompt: Custom shell prompt.
+    tools:
+      fs: true
+      exec: false
+      web: false
+"#,
+    )
+    .unwrap();
+
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", config_path.to_str().unwrap());
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
+
+    // Still 4 agents (override doesn't add, it replaces)
+    assert_eq!(registry.list().len(), 4);
+
+    let shell = registry.get("shell").unwrap();
+    assert_eq!(shell.display_name(), "My Custom Shell");
+    assert_eq!(shell.description(), "Overridden shell agent");
+    match shell.tool_filter() {
+        ToolFilter::Only { fs, exec, web } => {
+            assert!(fs);
+            assert!(!exec);
+            assert!(!web);
+        }
+        _ => panic!("Expected ToolFilter::Only for overridden shell"),
+    }
+
+    // Other agents still intact
+    assert!(registry.get("review").is_some());
+    assert!(registry.get("devops").is_some());
+    assert!(registry.get("git").is_some());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+#[serial]
+fn yaml_user_config_invalid_file_ignored() {
+    let dir = std::env::temp_dir().join("swebash_yaml_test_invalid");
+    std::fs::create_dir_all(&dir).ok();
+    let config_path = dir.join("agents.yaml");
+    std::fs::write(&config_path, "this is not valid yaml [[[").unwrap();
+
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", config_path.to_str().unwrap());
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
+
+    // Should still have all 4 defaults despite invalid user file
+    assert_eq!(registry.list().len(), 4);
+    assert!(registry.get("shell").is_some());
+    assert!(registry.get("review").is_some());
+    assert!(registry.get("devops").is_some());
+    assert!(registry.get("git").is_some());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+#[serial]
+fn yaml_user_config_nonexistent_path_ignored() {
+    std::env::set_var(
+        "SWEBASH_AGENTS_CONFIG",
+        "/tmp/swebash_nonexistent_agents.yaml",
+    );
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
+
+    // All defaults should load fine
+    assert_eq!(registry.list().len(), 4);
+}
+
+#[test]
+#[serial]
+fn yaml_user_config_adds_multiple_agents() {
+    let dir = std::env::temp_dir().join("swebash_yaml_test_multi");
+    std::fs::create_dir_all(&dir).ok();
+    let config_path = dir.join("agents.yaml");
+    std::fs::write(
+        &config_path,
+        r#"
+version: 1
+defaults:
+  temperature: 0.3
+  maxTokens: 512
+agents:
+  - id: security
+    name: Security Scanner
+    description: Scans for vulnerabilities
+    systemPrompt: You are a security scanner.
+    triggerKeywords: [security, scan, vuln]
+  - id: docs
+    name: Documentation Writer
+    description: Writes documentation
+    systemPrompt: You are a documentation writer.
+    triggerKeywords: [docs, document]
+    tools:
+      fs: true
+      exec: false
+      web: true
+"#,
+    )
+    .unwrap();
+
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", config_path.to_str().unwrap());
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
+
+    // 4 defaults + 2 new = 6
+    assert_eq!(registry.list().len(), 6);
+
+    let security = registry.get("security").unwrap();
+    assert_eq!(security.display_name(), "Security Scanner");
+    assert!(security.trigger_keywords().contains(&"scan"));
+    // User agents with all defaults true should get ToolFilter::All
+    assert!(matches!(security.tool_filter(), ToolFilter::All));
+
+    let docs = registry.get("docs").unwrap();
+    assert_eq!(docs.display_name(), "Documentation Writer");
+    assert!(docs.trigger_keywords().contains(&"docs"));
+    match docs.tool_filter() {
+        ToolFilter::Only { fs, exec, web } => {
+            assert!(fs);
+            assert!(!exec);
+            assert!(web);
+        }
+        _ => panic!("Expected ToolFilter::Only for docs"),
+    }
+
+    // Verify user defaults applied to agents without overrides
+    assert_eq!(security.temperature(), Some(0.3));
+    assert_eq!(security.max_tokens(), Some(512));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+#[serial]
+fn yaml_user_config_detect_agent_includes_user_keywords() {
+    let dir = std::env::temp_dir().join("swebash_yaml_test_detect");
+    std::fs::create_dir_all(&dir).ok();
+    let config_path = dir.join("agents.yaml");
+    std::fs::write(
+        &config_path,
+        r#"
+version: 1
+agents:
+  - id: security
+    name: Security Scanner
+    description: Scans for vulnerabilities
+    systemPrompt: You scan for vulns.
+    triggerKeywords: [security, scan, cve]
+"#,
+    )
+    .unwrap();
+
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", config_path.to_str().unwrap());
+    let registry = create_default_registry(Arc::new(MockLlm), mock_config());
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
+
+    // User agent keywords should work in detect_agent
+    assert_eq!(registry.detect_agent("scan this file"), Some("security"));
+    assert_eq!(registry.detect_agent("check for cve issues"), Some("security"));
+
+    // Built-in keywords should still work
+    assert_eq!(registry.detect_agent("docker ps"), Some("devops"));
+    assert_eq!(registry.detect_agent("git status"), Some("git"));
+
+    // suggest_agent should also work for user keywords
+    assert_eq!(registry.suggest_agent("scan"), Some("security"));
+    assert_eq!(registry.suggest_agent("cve"), Some("security"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+// ── YAML config: full service layer integration (4) ────────────────────
+
+#[tokio::test]
+#[serial]
+async fn yaml_service_list_agents_returns_correct_info() {
+    match try_create_service().await {
+        Ok(service) => {
+            let agents = service.list_agents().await;
+            assert_eq!(agents.len(), 4);
+
+            // Verify all agents have correct display names from YAML
+            let shell = agents.iter().find(|a| a.id == "shell").unwrap();
+            assert_eq!(shell.display_name, "Shell Assistant");
+
+            let review = agents.iter().find(|a| a.id == "review").unwrap();
+            assert_eq!(review.display_name, "Code Reviewer");
+
+            let devops = agents.iter().find(|a| a.id == "devops").unwrap();
+            assert_eq!(devops.display_name, "DevOps Assistant");
+
+            let git = agents.iter().find(|a| a.id == "git").unwrap();
+            assert_eq!(git.display_name, "Git Assistant");
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn yaml_service_switch_to_yaml_loaded_agent() {
+    match try_create_service().await {
+        Ok(service) => {
+            // Start at shell (default)
+            assert_eq!(service.current_agent().await.id, "shell");
+
+            // Switch through all YAML-loaded agents
+            for agent_id in &["review", "devops", "git", "shell"] {
+                service.switch_agent(agent_id).await
+                    .unwrap_or_else(|_| panic!("should switch to {agent_id}"));
+                let current = service.current_agent().await;
+                assert_eq!(current.id, *agent_id);
+                assert!(current.active);
+            }
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn yaml_service_auto_detect_uses_yaml_keywords() {
+    match try_create_service().await {
+        Ok(service) => {
+            // Verify keywords from YAML drive auto-detection
+            let switched = service.auto_detect_and_switch("docker build .").await;
+            assert_eq!(switched, Some("devops".to_string()));
+
+            // Reset to shell
+            service.switch_agent("shell").await.unwrap();
+
+            let switched = service.auto_detect_and_switch("audit the code").await;
+            assert_eq!(switched, Some("review".to_string()));
+
+            // Reset to shell
+            service.switch_agent("shell").await.unwrap();
+
+            let switched = service.auto_detect_and_switch("rebase onto main").await;
+            assert_eq!(switched, Some("git".to_string()));
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn yaml_service_with_user_override_reflects_in_api() {
+    let dir = std::env::temp_dir().join("swebash_yaml_test_service");
+    std::fs::create_dir_all(&dir).ok();
+    let config_path = dir.join("agents.yaml");
+    std::fs::write(
+        &config_path,
+        r#"
+version: 1
+agents:
+  - id: shell
+    name: My Shell
+    description: Custom shell
+    systemPrompt: Custom prompt.
+  - id: custom
+    name: Custom Agent
+    description: A user-defined agent
+    systemPrompt: Custom agent prompt.
+    triggerKeywords: [custom, mine]
+"#,
+    )
+    .unwrap();
+
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", config_path.to_str().unwrap());
+    let result = try_create_service().await;
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
+
+    match result {
+        Ok(service) => {
+            let agents = service.list_agents().await;
+            // 4 defaults + 1 custom (shell is overridden, not added)
+            assert_eq!(agents.len(), 5);
+
+            // Shell should show overridden name
+            let shell = agents.iter().find(|a| a.id == "shell").unwrap();
+            assert_eq!(shell.display_name, "My Shell");
+
+            // Custom agent should be switchable
+            service.switch_agent("custom").await.expect("should switch to custom");
+            assert_eq!(service.current_agent().await.id, "custom");
+            assert_eq!(service.current_agent().await.display_name, "Custom Agent");
+
+            // Auto-detect should find custom agent keywords
+            service.switch_agent("shell").await.unwrap();
+            let switched = service.auto_detect_and_switch("custom task").await;
+            assert_eq!(switched, Some("custom".to_string()));
+        }
+        Err(e) => assert_setup_error(&e),
+    }
+
+    std::fs::remove_dir_all(&dir).ok();
 }
