@@ -26,6 +26,8 @@ pub struct AgentDefaults {
     pub max_tokens: u32,
     #[serde(default)]
     pub tools: ToolsConfig,
+    #[serde(default, rename = "thinkFirst")]
+    pub think_first: bool,
 }
 
 impl Default for AgentDefaults {
@@ -34,6 +36,7 @@ impl Default for AgentDefaults {
             temperature: default_temperature(),
             max_tokens: default_max_tokens(),
             tools: ToolsConfig::default(),
+            think_first: false,
         }
     }
 }
@@ -73,6 +76,8 @@ pub struct AgentEntry {
     pub tools: Option<ToolsConfig>,
     #[serde(default, rename = "triggerKeywords")]
     pub trigger_keywords: Vec<String>,
+    #[serde(default, rename = "thinkFirst")]
+    pub think_first: Option<bool>,
 }
 
 // ── Defaults helpers ───────────────────────────────────────────────
@@ -132,11 +137,22 @@ impl ConfigAgent {
             ToolFilter::Categories(cats)
         };
 
+        let think_first = entry.think_first.unwrap_or(defaults.think_first);
+        let system_prompt = if think_first && !entry.system_prompt.is_empty() {
+            format!(
+                "{}\nAlways explain your reasoning and what you plan to do before calling any tools.\n\
+                 Provide a brief explanation of your approach first, then use tools to execute it.",
+                entry.system_prompt.trim_end()
+            )
+        } else {
+            entry.system_prompt
+        };
+
         Self {
             id: entry.id,
             name: entry.name,
             description: entry.description,
-            system_prompt: entry.system_prompt,
+            system_prompt,
             tool_filter,
             temperature: entry.temperature.unwrap_or(defaults.temperature),
             max_tokens: entry.max_tokens.unwrap_or(defaults.max_tokens),
@@ -311,6 +327,7 @@ agents:
                 web: true,
             }),
             trigger_keywords: vec![],
+            think_first: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         assert!(matches!(agent.tool_filter(), ToolFilter::All));
@@ -331,6 +348,7 @@ agents:
                 web: false,
             }),
             trigger_keywords: vec![],
+            think_first: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -358,6 +376,7 @@ agents:
             system_prompt: "Multiline\nprompt\nhere.".into(),
             tools: None,
             trigger_keywords: vec![],
+            think_first: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         // system_prompt() returns &str — borrow from owned field
@@ -376,6 +395,7 @@ agents:
             system_prompt: "prompt".into(),
             tools: None,
             trigger_keywords: vec!["a".into(), "b".into(), "c".into()],
+            think_first: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         // trigger_keywords() returns &[String] — borrow from owned Vec
@@ -398,6 +418,7 @@ agents:
             system_prompt: "prompt".into(),
             tools: Some(ToolsConfig { fs: false, exec: true, web: false }),
             trigger_keywords: vec![],
+            think_first: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -419,6 +440,7 @@ agents:
             system_prompt: "prompt".into(),
             tools: Some(ToolsConfig { fs: false, exec: false, web: true }),
             trigger_keywords: vec![],
+            think_first: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -440,6 +462,7 @@ agents:
             system_prompt: "prompt".into(),
             tools: Some(ToolsConfig { fs: true, exec: false, web: true }),
             trigger_keywords: vec![],
+            think_first: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -463,6 +486,7 @@ agents:
             system_prompt: "prompt".into(),
             tools: Some(ToolsConfig { fs: false, exec: true, web: true }),
             trigger_keywords: vec![],
+            think_first: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -488,6 +512,7 @@ agents:
             system_prompt: String::new(),
             tools: None,
             trigger_keywords: vec![],
+            think_first: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         assert_eq!(agent.system_prompt(), "");
@@ -505,6 +530,7 @@ agents:
             system_prompt: "prompt".into(),
             tools: None,
             trigger_keywords: kws.clone(),
+            think_first: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         assert_eq!(agent.trigger_keywords().len(), 20);
@@ -523,6 +549,7 @@ agents:
             system_prompt: "p1".into(),
             tools: None,
             trigger_keywords: vec![],
+            think_first: None,
         };
         let entry2 = AgentEntry {
             id: "dup".into(),
@@ -533,6 +560,7 @@ agents:
             system_prompt: "p2".into(),
             tools: None,
             trigger_keywords: vec!["new".into()],
+            think_first: None,
         };
         let a1 = ConfigAgent::from_entry(entry1, &defaults);
         let a2 = ConfigAgent::from_entry(entry2, &defaults);

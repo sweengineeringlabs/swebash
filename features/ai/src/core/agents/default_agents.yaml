@@ -3,6 +3,7 @@ version: 1
 defaults:
   temperature: 0.5
   maxTokens: 1024
+  thinkFirst: true
   tools:
     fs: true
     exec: true

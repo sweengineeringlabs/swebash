@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use futures::stream::{self, StreamExt};
+use futures::stream::StreamExt;
 use serde::Serialize;
 
 use llm_provider::{
@@ -97,12 +97,11 @@ impl LlmService for LoggingLlmService {
                     chunk_result
                 });
 
-                // When the stream ends (or is dropped), log the accumulated chunks.
-                let finalizer = stream::once(async { None });
-                let combined = stream::select(mapped.map(Some), finalizer);
-
+                // StreamLogger wraps the mapped stream directly.
+                // The Drop impl flushes accumulated chunks when the stream
+                // is fully consumed or dropped early.
                 let stream = StreamLogger {
-                    inner: Box::pin(combined),
+                    inner: Box::pin(mapped),
                     chunks,
                     log_dir,
                     id: id_clone,
@@ -153,7 +152,7 @@ impl LlmService for LoggingLlmService {
 
 /// A stream wrapper that accumulates chunks and logs on completion/drop.
 struct StreamLogger {
-    inner: std::pin::Pin<Box<dyn futures::Stream<Item = Option<LlmResult<StreamChunk>>> + Send>>,
+    inner: std::pin::Pin<Box<dyn futures::Stream<Item = LlmResult<StreamChunk>> + Send>>,
     chunks: Arc<parking_lot::Mutex<Vec<StreamChunk>>>,
     log_dir: PathBuf,
     id: String,
@@ -173,8 +172,8 @@ impl futures::Stream for StreamLogger {
         use std::task::Poll;
 
         match self.inner.as_mut().poll_next(cx) {
-            Poll::Ready(Some(Some(item))) => Poll::Ready(Some(item)),
-            Poll::Ready(Some(None)) | Poll::Ready(None) => {
+            Poll::Ready(Some(item)) => Poll::Ready(Some(item)),
+            Poll::Ready(None) => {
                 // Stream ended — flush log
                 if !self.finished {
                     self.finished = true;

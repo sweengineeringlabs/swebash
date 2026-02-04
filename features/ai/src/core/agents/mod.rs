@@ -192,6 +192,7 @@ mod tests {
                 system_prompt: "You are a test agent.".into(),
                 tools: None,
                 trigger_keywords: keywords,
+                think_first: None,
             },
             &AgentDefaults::default(),
         )
@@ -530,6 +531,7 @@ mod tests {
                 system_prompt: "p1".into(),
                 tools: None,
                 trigger_keywords: vec![],
+                think_first: None,
             },
             &AgentDefaults::default(),
         ));
@@ -543,6 +545,7 @@ mod tests {
                 system_prompt: "p2".into(),
                 tools: None,
                 trigger_keywords: vec![],
+                think_first: None,
             },
             &AgentDefaults::default(),
         ));
@@ -773,6 +776,7 @@ mod tests {
                 system_prompt: "You are custom.".into(),
                 tools: None,
                 trigger_keywords: vec![],
+                think_first: None,
             },
             &AgentDefaults::default(),
         );

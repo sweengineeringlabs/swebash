@@ -1817,6 +1817,7 @@ fn config_agent_inherits_defaults() {
         system_prompt: "You are a test.".into(),
         tools: None,
         trigger_keywords: vec![],
+        think_first: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1837,6 +1838,7 @@ fn config_agent_overrides_temperature_and_tokens() {
         system_prompt: "Custom prompt.".into(),
         tools: None,
         trigger_keywords: vec![],
+        think_first: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1856,6 +1858,7 @@ fn config_agent_tool_filter_only() {
         system_prompt: "Restricted.".into(),
         tools: Some(ToolsConfig { fs: true, exec: false, web: false }),
         trigger_keywords: vec![],
+        think_first: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1881,6 +1884,7 @@ fn config_agent_tool_filter_none() {
         system_prompt: "Chat only.".into(),
         tools: Some(ToolsConfig { fs: false, exec: false, web: false }),
         trigger_keywords: vec![],
+        think_first: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1902,6 +1906,7 @@ fn config_agent_tool_filter_all() {
         system_prompt: "Full.".into(),
         tools: Some(ToolsConfig { fs: true, exec: true, web: true }),
         trigger_keywords: vec![],
+        think_first: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1920,6 +1925,7 @@ fn config_agent_trigger_keywords() {
         system_prompt: "Prompt.".into(),
         tools: None,
         trigger_keywords: vec!["alpha".into(), "beta".into(), "gamma".into()],
+        think_first: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1940,6 +1946,7 @@ fn config_agent_system_prompt_preserved() {
         system_prompt: prompt.into(),
         tools: None,
         trigger_keywords: vec![],
+        think_first: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1952,6 +1959,7 @@ fn config_agent_inherits_custom_defaults() {
         temperature: 0.8,
         max_tokens: 2048,
         tools: ToolsConfig { fs: true, exec: false, web: true },
+        think_first: false,
     };
     let entry = AgentEntry {
         id: "inheritor".into(),
@@ -1962,6 +1970,7 @@ fn config_agent_inherits_custom_defaults() {
         system_prompt: "Prompt.".into(),
         tools: None,
         trigger_keywords: vec![],
+        think_first: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -2743,6 +2752,7 @@ fn delegate_register_overwrite_and_cache_coherence() {
             system_prompt: "Custom prompt.".into(),
             tools: Some(ToolsConfig { fs: false, exec: false, web: false }),
             trigger_keywords: vec!["custom".into()],
+            think_first: None,
         },
         &AgentDefaults::default(),
     );
@@ -3012,4 +3022,243 @@ async fn logging_disabled_when_no_dir() {
         .filter_map(|e| e.ok())
         .collect();
     assert_eq!(files.len(), 0, "No files should be written when log_dir is None");
+}
+
+#[tokio::test]
+async fn logging_stream_preserves_all_chunks() {
+    use futures::StreamExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let inner: Arc<dyn LlmService> = Arc::new(
+        MockLlmService::new().with_behaviour(MockBehaviour::Fixed("hello world".into())),
+    );
+    let wrapped = LoggingLlmService::wrap(inner, Some(dir.path().to_path_buf()));
+
+    let request = llm_provider::CompletionRequest {
+        model: "mock-model".into(),
+        messages: vec![llm_provider::Message {
+            role: llm_provider::Role::User,
+            content: llm_provider::MessageContent::Text("hi".into()),
+            name: None,
+            tool_call_id: None,
+            tool_calls: vec![],
+            cache_control: None,
+        }],
+        temperature: None,
+        max_tokens: None,
+        top_p: None,
+        stop: None,
+        tools: None,
+        tool_choice: None,
+    };
+
+    let stream = wrapped.complete_stream(request).await.unwrap();
+    let chunks: Vec<_> = stream.collect().await;
+
+    // MockLlmService yields exactly 1 chunk for complete_stream
+    assert!(!chunks.is_empty(), "Stream should yield at least one chunk");
+    assert!(chunks.iter().all(|c| c.is_ok()), "All chunks should be Ok");
+
+    let first = chunks[0].as_ref().unwrap();
+    assert_eq!(
+        first.delta.content.as_deref(),
+        Some("hello world"),
+        "Stream content should pass through unmodified"
+    );
+
+    // Give spawn_blocking time to flush the log
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let files: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
+        .collect();
+
+    assert_eq!(files.len(), 1, "Expected one log file for streamed response");
+
+    let content = std::fs::read_to_string(files[0].path()).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(json["kind"], "complete_stream");
+    assert_eq!(json["result"]["status"], "success");
+    assert_eq!(
+        json["result"]["response"]["chunk_count"],
+        1,
+        "Log should record all chunks"
+    );
+}
+
+// ── thinkFirst config tests ──────────────────────────────────────────────
+
+#[test]
+fn think_first_appends_prompt_when_enabled() {
+    let defaults = AgentDefaults {
+        temperature: 0.5,
+        max_tokens: 1024,
+        tools: ToolsConfig::default(),
+        think_first: true,
+    };
+    let entry = AgentEntry {
+        id: "thinker".into(),
+        name: "Thinker".into(),
+        description: "Thinks first".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: "You are helpful.".into(),
+        tools: None,
+        trigger_keywords: vec![],
+        think_first: None, // inherits true from defaults
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+
+    assert!(
+        agent.system_prompt().contains("Always explain your reasoning"),
+        "thinkFirst=true should append reasoning instruction, got: {}",
+        agent.system_prompt()
+    );
+    assert!(
+        agent.system_prompt().starts_with("You are helpful."),
+        "Original prompt should be preserved at the start"
+    );
+}
+
+#[test]
+fn think_first_does_not_append_when_disabled() {
+    let defaults = AgentDefaults::default(); // think_first defaults to false
+    let entry = AgentEntry {
+        id: "no-think".into(),
+        name: "NoThink".into(),
+        description: "Does not think first".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: "You are helpful.".into(),
+        tools: None,
+        trigger_keywords: vec![],
+        think_first: None, // inherits false from defaults
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+
+    assert_eq!(
+        agent.system_prompt(),
+        "You are helpful.",
+        "thinkFirst=false should not modify the prompt"
+    );
+}
+
+#[test]
+fn think_first_agent_override_disables_default() {
+    let defaults = AgentDefaults {
+        temperature: 0.5,
+        max_tokens: 1024,
+        tools: ToolsConfig::default(),
+        think_first: true, // globally enabled
+    };
+    let entry = AgentEntry {
+        id: "override".into(),
+        name: "Override".into(),
+        description: "Overrides thinkFirst".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: "You are an agent.".into(),
+        tools: None,
+        trigger_keywords: vec![],
+        think_first: Some(false), // agent-level override disables it
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+
+    assert_eq!(
+        agent.system_prompt(),
+        "You are an agent.",
+        "Agent-level thinkFirst=false should override global true"
+    );
+}
+
+#[test]
+fn think_first_agent_override_enables() {
+    let defaults = AgentDefaults::default(); // think_first: false
+    let entry = AgentEntry {
+        id: "force-think".into(),
+        name: "ForceThink".into(),
+        description: "Forces thinkFirst".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: "You are precise.".into(),
+        tools: None,
+        trigger_keywords: vec![],
+        think_first: Some(true), // agent-level override enables it
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+
+    assert!(
+        agent.system_prompt().contains("Always explain your reasoning"),
+        "Agent-level thinkFirst=true should append reasoning instruction"
+    );
+}
+
+#[test]
+fn think_first_skipped_on_empty_prompt() {
+    let defaults = AgentDefaults {
+        temperature: 0.5,
+        max_tokens: 1024,
+        tools: ToolsConfig::default(),
+        think_first: true,
+    };
+    let entry = AgentEntry {
+        id: "empty".into(),
+        name: "Empty".into(),
+        description: "Empty prompt".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: String::new(),
+        tools: None,
+        trigger_keywords: vec![],
+        think_first: None,
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+
+    assert_eq!(
+        agent.system_prompt(),
+        "",
+        "thinkFirst should not append to empty prompts"
+    );
+}
+
+#[test]
+fn think_first_yaml_parsing() {
+    let yaml = r#"
+version: 1
+defaults:
+  thinkFirst: true
+agents:
+  - id: thinker
+    name: Thinker
+    description: Thinks
+    systemPrompt: Base prompt.
+  - id: nonthinker
+    name: NonThinker
+    description: Doesn't think
+    thinkFirst: false
+    systemPrompt: Base prompt.
+"#;
+    let parsed = AgentsYaml::from_yaml(yaml).unwrap();
+    assert!(parsed.defaults.think_first);
+
+    let agents: Vec<_> = parsed
+        .agents
+        .into_iter()
+        .map(|e| ConfigAgent::from_entry(e, &parsed.defaults))
+        .collect();
+
+    // First agent inherits thinkFirst: true
+    assert!(
+        agents[0].system_prompt().contains("Always explain your reasoning"),
+        "Agent inheriting thinkFirst=true should have reasoning prompt"
+    );
+
+    // Second agent explicitly disables thinkFirst
+    assert_eq!(
+        agents[1].system_prompt(),
+        "Base prompt.",
+        "Agent with thinkFirst=false should not have reasoning prompt"
+    );
 }
