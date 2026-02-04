@@ -149,6 +149,21 @@ impl AgentRegistry {
         None
     }
 
+    /// Suggest an agent for an unknown name by matching against trigger keywords.
+    ///
+    /// Returns the agent ID if the name matches one of its keywords, `None` otherwise.
+    pub fn suggest_agent(&self, name: &str) -> Option<&str> {
+        let name_lower = name.to_lowercase();
+        for agent in self.agents.values() {
+            for keyword in agent.trigger_keywords() {
+                if keyword.to_lowercase() == name_lower {
+                    return Some(agent.id());
+                }
+            }
+        }
+        None
+    }
+
     /// Clear the cached engine for a specific agent (resets its memory).
     pub async fn clear_agent(&self, agent_id: &str) {
         let mut engines = self.engines.write().await;
@@ -308,6 +323,38 @@ mod tests {
         assert_eq!(registry.detect_agent("git commit -m fix"), Some("git"));
         assert_eq!(registry.detect_agent("docker ps"), Some("devops"));
         assert_eq!(registry.detect_agent("list files"), None);
+    }
+
+    #[test]
+    fn test_suggest_agent() {
+        let config = AiConfig {
+            enabled: true,
+            provider: "openai".into(),
+            model: "gpt-4o".into(),
+            history_size: 20,
+            default_agent: "shell".into(),
+            agent_auto_detect: true,
+            tools: ToolConfig::default(),
+        };
+
+        let mut registry = AgentRegistry::new(Arc::new(MockLlm), config);
+        registry.register(Box::new(TestAgent {
+            id: "devops".into(),
+            keywords: vec!["docker".into(), "k8s".into(), "terraform".into()],
+        }));
+        registry.register(Box::new(TestAgent {
+            id: "git".into(),
+            keywords: vec!["git".into(), "commit".into()],
+        }));
+
+        // "docker" is a keyword of "devops"
+        assert_eq!(registry.suggest_agent("docker"), Some("devops"));
+        assert_eq!(registry.suggest_agent("k8s"), Some("devops"));
+        assert_eq!(registry.suggest_agent("Docker"), Some("devops"));
+        // "git" is an exact agent ID, but also a keyword — suggest still works
+        assert_eq!(registry.suggest_agent("commit"), Some("git"));
+        // No match
+        assert_eq!(registry.suggest_agent("unknown"), None);
     }
 
     #[test]

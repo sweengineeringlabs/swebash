@@ -113,10 +113,18 @@ impl AiService for DefaultAiService {
 
     async fn switch_agent(&self, agent_id: &str) -> AiResult<()> {
         if self.agents.get(agent_id).is_none() {
-            return Err(AiError::NotConfigured(format!(
-                "Unknown agent '{}'. Use 'agents' to list available agents.",
-                agent_id
-            )));
+            let hint = if let Some(suggested) = self.agents.suggest_agent(agent_id) {
+                format!(
+                    "Unknown agent '{}'. Did you mean '@{}'? Use 'agents' to list available agents.",
+                    agent_id, suggested
+                )
+            } else {
+                format!(
+                    "Unknown agent '{}'. Use 'agents' to list available agents.",
+                    agent_id
+                )
+            };
+            return Err(AiError::NotConfigured(hint));
         }
         let mut active = self.active_agent.write().await;
         *active = agent_id.to_string();
