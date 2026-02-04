@@ -207,6 +207,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -238,6 +239,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -259,6 +261,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -285,6 +288,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -309,6 +313,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -329,6 +334,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -347,6 +353,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -366,6 +373,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -382,6 +390,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -403,6 +412,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -426,6 +436,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -448,6 +459,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -474,6 +486,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -503,6 +516,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -555,6 +569,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools,
+            log_dir: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -578,6 +593,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -611,6 +627,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools,
+            log_dir: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -652,6 +669,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools,
+            log_dir: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -680,6 +698,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -707,6 +726,7 @@ mod tests {
                 enable_web: false,
                 ..ToolConfig::default()
             },
+            log_dir: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -734,6 +754,7 @@ mod tests {
                 enable_web: false,
                 ..ToolConfig::default()
             },
+            log_dir: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -773,6 +794,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -793,6 +815,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -811,6 +834,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -829,6 +853,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -853,6 +878,7 @@ mod tests {
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: ToolConfig::default(),
+            log_dir: None,
         };
 
         let manager = AgentManager::new(Arc::new(MockLlmService::new()), config);

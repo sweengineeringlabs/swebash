@@ -5,6 +5,7 @@
 /// dependency isolated.
 pub mod chat_provider;
 pub mod config;
+pub mod logging;
 
 use async_trait::async_trait;
 

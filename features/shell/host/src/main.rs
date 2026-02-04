@@ -17,6 +17,17 @@ async fn main() -> Result<()> {
     }
     let _ = dotenvy::dotenv();
 
+    // Initialize tracing subscriber. Honors RUST_LOG env var for filtering.
+    // Default: warnings only. Example: RUST_LOG=swebash_ai=debug
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
+        )
+        .with_target(true)
+        .with_writer(std::io::stderr)
+        .init();
+
     // Set initial workspace directory from SWEBASH_WORKSPACE env var.
     // If unset or empty, defaults to home directory (~).
     // Use SWEBASH_WORKSPACE=. to stay in the inherited working directory.

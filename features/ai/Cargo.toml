@@ -46,3 +46,4 @@ futures = "0.3"
 agent-controller = { version = "0.1.0", registry = "local", features = ["testing"] }
 llm-provider = { version = "0.1.0", registry = "local", features = ["testing"] }
 serial_test = "3"
+tempfile = "3"

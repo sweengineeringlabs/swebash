@@ -14,6 +14,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use llm_provider::{LlmService, MockLlmService, MockBehaviour};
 use serial_test::serial;
 use swebash_ai::api::error::{AiError, AiResult};
 use swebash_ai::api::types::{
@@ -40,6 +41,7 @@ fn anthropic_config() -> AiConfig {
         tools: ToolConfig::default(),
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
+        log_dir: None,
     }
 }
 
@@ -97,6 +99,7 @@ fn config_has_api_key_known_provider() {
         tools: ToolConfig::default(),
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
+        log_dir: None,
     };
     assert!(config.has_api_key());
     std::env::remove_var("OPENAI_API_KEY");
@@ -114,6 +117,7 @@ fn config_has_api_key_missing() {
         tools: ToolConfig::default(),
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
+        log_dir: None,
     };
     assert!(!config.has_api_key());
 }
@@ -128,6 +132,7 @@ fn config_has_api_key_unknown_provider() {
         tools: ToolConfig::default(),
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
+        log_dir: None,
     };
     assert!(!config.has_api_key());
 }
@@ -204,6 +209,7 @@ async fn service_status_model_matches_config() {
         tools: ToolConfig::default(),
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
+        log_dir: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => assert_eq!(service.status().await.model, expected_model),
@@ -586,6 +592,7 @@ async fn chat_history_respects_capacity() {
         tools: ToolConfig::default(),
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
+        log_dir: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -710,6 +717,143 @@ async fn chat_streaming_multi_turn_preserves_history() {
     }
 }
 
+// ── Streaming duplication regression tests (mock-based, no API key) ──────
+//
+// These tests verify the fix for the response duplication bug where
+// the Done event's content was printed in addition to the already-streamed
+// Delta content, causing every AI reply to appear twice.
+//
+// Invariant: concatenated Delta content == Done content.
+// A consumer must print EITHER the deltas OR the Done text, never both.
+
+/// Mock AiClient for tests that need a DefaultAiService without a real API key.
+struct MockAiClient;
+
+#[async_trait::async_trait]
+impl swebash_ai::spi::AiClient for MockAiClient {
+    async fn complete(
+        &self,
+        _messages: Vec<swebash_ai::api::types::AiMessage>,
+        _options: swebash_ai::api::types::CompletionOptions,
+    ) -> AiResult<swebash_ai::api::types::AiResponse> {
+        Ok(swebash_ai::api::types::AiResponse {
+            content: "mock".into(),
+            model: "mock".into(),
+        })
+    }
+    async fn is_ready(&self) -> bool { true }
+    fn description(&self) -> String { "mock".into() }
+    fn provider_name(&self) -> String { "mock".into() }
+    fn model_name(&self) -> String { "mock".into() }
+}
+
+/// Build a DefaultAiService backed by MockLlmService (no API key required).
+fn create_mock_service() -> DefaultAiService {
+    let config = mock_config();
+    let llm: Arc<dyn LlmService> = Arc::new(MockLlmService::new());
+    let agents = create_default_registry(llm, config.clone());
+    DefaultAiService::new(Box::new(MockAiClient), agents, config)
+}
+
+/// Build a mock service with a fixed LLM response.
+fn create_mock_service_fixed(response: &str) -> DefaultAiService {
+    let config = mock_config();
+    let llm: Arc<dyn LlmService> = Arc::new(
+        MockLlmService::new().with_behaviour(MockBehaviour::Fixed(response.to_string())),
+    );
+    let agents = create_default_registry(llm, config.clone());
+    DefaultAiService::new(Box::new(MockAiClient), agents, config)
+}
+
+/// The concatenated Delta content must equal the Done content.
+/// If a consumer printed both, the text would appear twice — the original bug.
+#[tokio::test]
+async fn chat_streaming_deltas_equal_done_no_duplication() {
+    let service = create_mock_service_fixed("Hello from the mock");
+    let request = ChatRequest {
+        message: "Hi".to_string(),
+    };
+
+    let mut rx = service.chat_streaming(request).await.expect("stream should start");
+
+    let mut delta_concat = String::new();
+    let mut done_text = String::new();
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            ChatStreamEvent::Delta(d) => delta_concat.push_str(&d),
+            ChatStreamEvent::Done(d) => {
+                done_text = d;
+                break;
+            }
+        }
+    }
+
+    assert!(!done_text.is_empty(), "Done event should carry the full reply");
+    assert_eq!(
+        delta_concat.trim(),
+        done_text.trim(),
+        "Concatenated deltas must equal Done content; printing both would duplicate the response"
+    );
+}
+
+/// With the echo mock, the reply should echo the user message.
+/// Verify no duplication for the echo behaviour as well.
+#[tokio::test]
+async fn chat_streaming_echo_no_duplication() {
+    let service = create_mock_service();
+    let request = ChatRequest {
+        message: "parrot this back".to_string(),
+    };
+
+    let mut rx = service.chat_streaming(request).await.expect("stream should start");
+
+    let mut delta_concat = String::new();
+    let mut done_text = String::new();
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            ChatStreamEvent::Delta(d) => delta_concat.push_str(&d),
+            ChatStreamEvent::Done(d) => {
+                done_text = d;
+                break;
+            }
+        }
+    }
+
+    assert!(!done_text.is_empty(), "Done event should carry the full reply");
+    assert_eq!(
+        delta_concat.trim(),
+        done_text.trim(),
+        "Concatenated deltas must equal Done content; printing both would duplicate the response"
+    );
+}
+
+/// Streaming should emit at least one Delta before Done.
+/// This ensures a consumer relying solely on Deltas still sees the full reply.
+#[tokio::test]
+async fn chat_streaming_emits_at_least_one_delta() {
+    let service = create_mock_service_fixed("non-empty response");
+    let request = ChatRequest {
+        message: "test".to_string(),
+    };
+
+    let mut rx = service.chat_streaming(request).await.expect("stream should start");
+
+    let mut delta_count = 0u32;
+    while let Some(event) = rx.recv().await {
+        match event {
+            ChatStreamEvent::Delta(_) => delta_count += 1,
+            ChatStreamEvent::Done(_) => break,
+        }
+    }
+
+    assert!(
+        delta_count > 0,
+        "Expected at least one Delta event so streamed output is not empty"
+    );
+}
+
 // ── Service-level error tests (3) ────────────────────────────────────────
 
 #[tokio::test]
@@ -723,6 +867,7 @@ async fn service_disabled_rejects_requests() {
         tools: ToolConfig::default(),
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
+        log_dir: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -755,6 +900,7 @@ async fn error_bad_api_key_propagates() {
         tools: ToolConfig::default(),
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
+        log_dir: None,
     };
 
     // The error may surface at client creation or at the first API call —
@@ -797,6 +943,7 @@ async fn error_invalid_model_propagates() {
         tools: ToolConfig::default(),
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
+        log_dir: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -825,6 +972,7 @@ async fn error_disabled_service_propagates_through_chat() {
         tools: ToolConfig::default(),
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
+        log_dir: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -1144,6 +1292,7 @@ fn config_fs_only() -> AiConfig {
         },
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
+        log_dir: None,
     }
 }
 
@@ -1167,6 +1316,7 @@ fn config_exec_only() -> AiConfig {
         },
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
+        log_dir: None,
     }
 }
 
@@ -1829,8 +1979,6 @@ fn config_agent_inherits_custom_defaults() {
 
 // ── YAML config: registry integration tests (9) ────────────────────────
 
-use llm_provider::MockLlmService;
-
 fn mock_config() -> AiConfig {
     AiConfig {
         enabled: true,
@@ -1840,6 +1988,7 @@ fn mock_config() -> AiConfig {
         default_agent: "shell".into(),
         agent_auto_detect: true,
         tools: ToolConfig::default(),
+        log_dir: None,
     }
 }
 
@@ -2714,4 +2863,153 @@ async fn delegate_e2e_service_layer_round_trip() {
         }
         Err(e) => assert_setup_error(&e),
     }
+}
+
+// ── Logging integration tests ────────────────────────────────────────────
+
+use swebash_ai::spi::logging::LoggingLlmService;
+
+#[tokio::test]
+async fn logging_writes_file_on_complete() {
+    let dir = tempfile::tempdir().unwrap();
+    let inner: Arc<dyn LlmService> = Arc::new(MockLlmService::new());
+    let wrapped = LoggingLlmService::wrap(inner, Some(dir.path().to_path_buf()));
+
+    let request = llm_provider::CompletionRequest {
+        model: "mock-model".into(),
+        messages: vec![llm_provider::Message {
+            role: llm_provider::Role::User,
+            content: llm_provider::MessageContent::Text("hello".into()),
+            name: None,
+            tool_call_id: None,
+            tool_calls: vec![],
+            cache_control: None,
+        }],
+        temperature: None,
+        max_tokens: None,
+        top_p: None,
+        stop: None,
+        tools: None,
+        tool_choice: None,
+    };
+
+    let result = wrapped.complete(request).await;
+    assert!(result.is_ok());
+
+    // Give the spawn_blocking task time to write
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let files: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
+        .collect();
+
+    assert_eq!(files.len(), 1, "Expected exactly one log file, found {}", files.len());
+
+    let content = std::fs::read_to_string(files[0].path()).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(json["kind"], "complete");
+    assert_eq!(json["result"]["status"], "success");
+}
+
+#[tokio::test]
+async fn logging_writes_file_on_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let inner: Arc<dyn LlmService> = Arc::new(
+        MockLlmService::new().with_behaviour(MockBehaviour::Error("test error".into())),
+    );
+    let wrapped = LoggingLlmService::wrap(inner, Some(dir.path().to_path_buf()));
+
+    let request = llm_provider::CompletionRequest {
+        model: "mock-model".into(),
+        messages: vec![],
+        temperature: None,
+        max_tokens: None,
+        top_p: None,
+        stop: None,
+        tools: None,
+        tool_choice: None,
+    };
+
+    let result = wrapped.complete(request).await;
+    assert!(result.is_err());
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let files: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
+        .collect();
+
+    assert_eq!(files.len(), 1);
+
+    let content = std::fs::read_to_string(files[0].path()).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(json["result"]["status"], "error");
+    assert!(json["result"]["error"].as_str().unwrap().contains("test error"));
+}
+
+#[tokio::test]
+async fn logging_creates_directory_if_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let nested = dir.path().join("sub").join("dir");
+    // nested doesn't exist yet
+    assert!(!nested.exists());
+
+    let inner: Arc<dyn LlmService> = Arc::new(MockLlmService::new());
+    let wrapped = LoggingLlmService::wrap(inner, Some(nested.clone()));
+
+    let request = llm_provider::CompletionRequest {
+        model: "mock-model".into(),
+        messages: vec![],
+        temperature: None,
+        max_tokens: None,
+        top_p: None,
+        stop: None,
+        tools: None,
+        tool_choice: None,
+    };
+
+    let _ = wrapped.complete(request).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    assert!(nested.exists(), "Log directory should have been created");
+    let files: Vec<_> = std::fs::read_dir(&nested)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(files.len(), 1);
+}
+
+#[tokio::test]
+async fn logging_disabled_when_no_dir() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let inner: Arc<dyn LlmService> = Arc::new(MockLlmService::new());
+    let wrapped = LoggingLlmService::wrap(inner, None);
+
+    let request = llm_provider::CompletionRequest {
+        model: "mock-model".into(),
+        messages: vec![],
+        temperature: None,
+        max_tokens: None,
+        top_p: None,
+        stop: None,
+        tools: None,
+        tool_choice: None,
+    };
+
+    let _ = wrapped.complete(request).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    // Tempdir should remain empty — no log files written
+    let files: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(files.len(), 0, "No files should be written when log_dir is None");
 }

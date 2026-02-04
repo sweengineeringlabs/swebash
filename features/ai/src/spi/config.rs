@@ -1,5 +1,7 @@
 /// Configuration from environment variables.
 
+use std::path::PathBuf;
+
 /// AI service configuration.
 #[derive(Debug, Clone)]
 pub struct AiConfig {
@@ -17,6 +19,8 @@ pub struct AiConfig {
     pub default_agent: String,
     /// Whether to auto-detect the best agent from input keywords.
     pub agent_auto_detect: bool,
+    /// Optional directory for logging LLM request/response JSON files.
+    pub log_dir: Option<PathBuf>,
 }
 
 /// Tool calling configuration.
@@ -80,6 +84,7 @@ impl AiConfig {
     /// | `SWEBASH_AI_EXEC_TIMEOUT` | `30` | Command timeout (seconds) |
     /// | `SWEBASH_AI_DEFAULT_AGENT` | `shell` | Default agent on startup |
     /// | `SWEBASH_AI_AGENT_AUTO_DETECT` | `true` | Auto-detect agent from keywords |
+    /// | `SWEBASH_AI_LOG_DIR` | _(none)_ | Directory for LLM request/response JSON logs |
     pub fn from_env() -> Self {
         let enabled = std::env::var("SWEBASH_AI_ENABLED")
             .map(|v| v != "false" && v != "0")
@@ -131,6 +136,11 @@ impl AiConfig {
             .map(|v| v != "false" && v != "0")
             .unwrap_or(true);
 
+        let log_dir = std::env::var("SWEBASH_AI_LOG_DIR")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from);
+
         Self {
             enabled,
             provider,
@@ -139,6 +149,7 @@ impl AiConfig {
             tools,
             default_agent,
             agent_auto_detect,
+            log_dir,
         }
     }
 
@@ -160,5 +171,28 @@ fn default_model_for_provider(provider: &str) -> String {
         "anthropic" => "claude-sonnet-4-20250514".to_string(),
         "gemini" => "gemini-2.0-flash".to_string(),
         _ => "gpt-4o".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn config_reads_log_dir_from_env() {
+        std::env::set_var("SWEBASH_AI_LOG_DIR", "/tmp/ai-logs");
+        let config = AiConfig::from_env();
+        assert_eq!(config.log_dir, Some(PathBuf::from("/tmp/ai-logs")));
+        std::env::remove_var("SWEBASH_AI_LOG_DIR");
+    }
+
+    #[test]
+    #[serial]
+    fn config_log_dir_none_when_unset() {
+        std::env::remove_var("SWEBASH_AI_LOG_DIR");
+        let config = AiConfig::from_env();
+        assert_eq!(config.log_dir, None);
     }
 }

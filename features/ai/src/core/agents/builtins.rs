@@ -211,6 +211,7 @@ agents:
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: crate::spi::config::ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -252,6 +253,7 @@ agents:
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: crate::spi::config::ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
@@ -274,6 +276,7 @@ agents:
             default_agent: "shell".into(),
             agent_auto_detect: true,
             tools: crate::spi::config::ToolConfig::default(),
+            log_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);

@@ -20,6 +20,7 @@ use llm_provider::{CompletionBuilder, DefaultLlmService, LlmError, LlmService};
 /// `chat::SimpleChatEngine` (for conversational chat with memory).
 pub struct ChatProviderClient {
     service: Arc<DefaultLlmService>,
+    llm: Arc<dyn LlmService>,
     provider: String,
     model: String,
 }
@@ -39,16 +40,26 @@ impl ChatProviderClient {
             "Chat provider client initialized via chat/llm-provider crates"
         );
 
+        let service = Arc::new(service);
+        let llm = super::logging::LoggingLlmService::wrap(
+            service.clone(),
+            config.log_dir.clone(),
+        );
+
         Ok(Self {
-            service: Arc::new(service),
+            service,
+            llm,
             provider: config.provider.clone(),
             model: config.model.clone(),
         })
     }
 
     /// Get the LLM service as an `Arc<dyn LlmService>` for constructing a `SimpleChatEngine`.
+    ///
+    /// When `log_dir` is configured, this returns the logging-wrapped service
+    /// so that all LLM calls (stateless and chat) are logged.
     pub fn llm_service(&self) -> Arc<dyn LlmService> {
-        self.service.clone()
+        self.llm.clone()
     }
 }
 
@@ -89,7 +100,7 @@ impl AiClient for ChatProviderClient {
         }
 
         let response = builder
-            .execute(&*self.service)
+            .execute(&*self.llm)
             .await
             .map_err(map_llm_error)?;
 
