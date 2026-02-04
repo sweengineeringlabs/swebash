@@ -1,7 +1,7 @@
 use anyhow::Result;
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     queue,
     style::Print,
     terminal::{self, ClearType},
@@ -128,8 +128,12 @@ impl LineEditor {
         self.render(prompt, history)?;
 
         loop {
-            // Read key event
+            // Read key event (filter to Press only; on Windows crossterm
+            // also emits Release/Repeat events which would duplicate input)
             if let Event::Key(key_event) = event::read()? {
+                if key_event.kind != KeyEventKind::Press {
+                    continue;
+                }
                 match self.handle_key(key_event, history)? {
                     ControlFlow::Continue => {
                         self.render(prompt, history)?;
