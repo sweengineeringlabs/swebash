@@ -3,30 +3,24 @@ use wasmtime::*;
 
 use super::state::HostState;
 
-/// Resolve the path to the compiled engine.wasm file.
-pub fn engine_wasm_path() -> std::path::PathBuf {
-    if let Ok(p) = std::env::var("ENGINE_WASM") {
-        return std::path::PathBuf::from(p);
-    }
-    let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("..");
-    path.push("..");
-    path.push("..");
-    path.push("target");
-    path.push("wasm32-unknown-unknown");
-    path.push("release");
-    path.push("engine.wasm");
-    path
-}
+/// Engine WASM bytes embedded at compile time by build.rs.
+const EMBEDDED_ENGINE_WASM: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/engine.wasm"));
 
 /// Create a Wasmtime engine, module, store, and linker.
 /// Returns (store, instance) with all imports registered.
+///
+/// If the `ENGINE_WASM` environment variable is set at runtime, the module is
+/// loaded from that file path (useful during development).  Otherwise the
+/// compile-time embedded bytes are used.
 pub fn setup() -> Result<(Store<HostState>, Instance)> {
     let engine = Engine::default();
 
-    let wasm_path = engine_wasm_path();
-    let module = Module::from_file(&engine, &wasm_path)
-        .with_context(|| format!("failed to load wasm module at {}", wasm_path.display()))?;
+    let module = if let Ok(path) = std::env::var("ENGINE_WASM") {
+        Module::from_file(&engine, &path)
+            .with_context(|| format!("failed to load wasm module at {path}"))?
+    } else {
+        Module::new(&engine, EMBEDDED_ENGINE_WASM).context("failed to load embedded wasm module")?
+    };
 
     let state = HostState {
         response_buf_ptr: 0,

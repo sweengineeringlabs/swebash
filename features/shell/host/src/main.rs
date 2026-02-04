@@ -8,8 +8,13 @@ use swebash_readline::{Completer, Hinter, History, LineEditor, ReadlineConfig, V
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Load .env file if present (for development convenience)
-    // Silently ignore if file doesn't exist - env vars can be set via shell
+    // Load .env from next to the executable first, then fall back to cwd.
+    // This means a double-clicked binary finds its .env in the same folder.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let _ = dotenvy::from_path(exe_dir.join(".env"));
+        }
+    }
     let _ = dotenvy::dotenv();
 
     // Set initial workspace directory from SWEBASH_WORKSPACE env var.

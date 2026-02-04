@@ -8,12 +8,12 @@ param(
 Invoke-Preflight
 Load-EnvFile
 
-if ($Release) {
-    $BuildFlag = @("--release")
-    $ProfileDir = "release"
-} else {
+if ($Debug) {
     $BuildFlag = @()
     $ProfileDir = "debug"
+} else {
+    $BuildFlag = @("--release")
+    $ProfileDir = "release"
 }
 
 $WasmBin = Join-Path $TargetDir "wasm32-unknown-unknown\$ProfileDir\engine.wasm"

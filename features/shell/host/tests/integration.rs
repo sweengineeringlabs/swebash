@@ -11,18 +11,6 @@ fn host_exe() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_swebash"))
 }
 
-fn engine_wasm_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.push("..");
-    p.push("..");
-    p.push("..");
-    p.push("target");
-    p.push("wasm32-unknown-unknown");
-    p.push("release");
-    p.push("engine.wasm");
-    p
-}
-
 /// Run shell commands and return (stdout, stderr).
 fn run(commands: &[&str]) -> (String, String) {
     run_in(&std::env::current_dir().unwrap(), commands)
@@ -35,13 +23,6 @@ fn run_in(dir: &Path, commands: &[&str]) -> (String, String) {
 
 /// Run shell commands with a specific working directory and optionally override HOME.
 fn run_in_with_home(dir: &Path, commands: &[&str], home: Option<&Path>) -> (String, String) {
-    assert!(
-        engine_wasm_path().exists(),
-        "engine.wasm not found — build it first:\n  \
-         cargo build --manifest-path features/shell/engine/Cargo.toml \
-         --target wasm32-unknown-unknown --release"
-    );
-
     let mut input = String::new();
     for cmd in commands {
         input.push_str(cmd);
@@ -902,5 +883,173 @@ fn ai_agent_switch_from_shell_with_ai_prefix() {
     assert!(
         out.contains("Entered AI mode") || out.contains("[AI:devops]"),
         "ai @devops should enter AI mode with devops agent. stdout: {out}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tests — embedded WASM / ENGINE_WASM override
+// ---------------------------------------------------------------------------
+
+/// Walk up from the host binary to locate engine.wasm inside the target tree.
+/// Returns `None` if the file cannot be found (test will be skipped).
+fn find_engine_wasm() -> Option<PathBuf> {
+    let mut search = host_exe();
+    loop {
+        let candidate = search
+            .join("wasm32-unknown-unknown")
+            .join("release")
+            .join("engine.wasm");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        if !search.pop() {
+            return None;
+        }
+    }
+}
+
+#[test]
+fn embedded_wasm_starts_without_env_var() {
+    // The binary embeds engine.wasm at compile time.  When ENGINE_WASM is not
+    // set, it should start normally using the embedded bytes.
+    let (out, err) = run(&["echo embedded_ok"]);
+    assert!(
+        out.contains("embedded_ok"),
+        "binary should start with embedded WASM. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn engine_wasm_env_override_invalid_path() {
+    // When ENGINE_WASM points to a non-existent file, the binary should exit
+    // with a non-zero status and print a helpful error on stderr.
+    let mut child = Command::new(host_exe())
+        .env("ENGINE_WASM", "/nonexistent/path/engine.wasm")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to start host binary");
+
+    child.stdin.take().unwrap().write_all(b"exit\n").unwrap();
+
+    let output = child.wait_with_output().expect("failed to wait on host");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        !output.status.success(),
+        "binary should fail with invalid ENGINE_WASM path. stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("failed to load wasm module"),
+        "error should mention wasm loading failure. stderr: {stderr}"
+    );
+}
+
+#[test]
+fn engine_wasm_env_override_valid_path() {
+    // When ENGINE_WASM points to a valid .wasm file, the binary should load
+    // from that file instead of the embedded bytes.
+    let wasm_path = match find_engine_wasm() {
+        Some(p) => p,
+        None => {
+            eprintln!("skipping: could not locate engine.wasm for override test");
+            return;
+        }
+    };
+
+    let dir = std::env::current_dir().unwrap();
+    let mut child = Command::new(host_exe())
+        .current_dir(&dir)
+        .env("ENGINE_WASM", &wasm_path)
+        .env("SWEBASH_WORKSPACE", &dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to start host binary");
+
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"echo override_ok\nexit\n")
+        .unwrap();
+
+    let output = child.wait_with_output().expect("failed to wait on host");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stdout.contains("override_ok"),
+        "binary should work with ENGINE_WASM override. stdout: {stdout}, stderr: {stderr}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tests — .env loading
+// ---------------------------------------------------------------------------
+
+#[test]
+fn dotenv_loaded_from_cwd() {
+    let dir = TestDir::new("dotenv_cwd");
+    std::fs::write(
+        dir.path().join(".env"),
+        "SWEBASH_TEST_CWD_VAR=from_cwd\n",
+    )
+    .unwrap();
+
+    let (out, _) = run_in(dir.path(), &["env"]);
+    assert!(
+        out.contains("SWEBASH_TEST_CWD_VAR=from_cwd"),
+        ".env in cwd should be loaded. stdout length: {}",
+        out.len()
+    );
+}
+
+#[test]
+fn dotenv_loaded_from_exe_dir() {
+    // Place a .env next to the binary and run from a *different* directory.
+    let exe = host_exe();
+    let dotenv_path = exe.parent().unwrap().join(".env");
+
+    // Guard: clean up from any previous failed run.
+    let _ = std::fs::remove_file(&dotenv_path);
+    std::fs::write(&dotenv_path, "SWEBASH_TEST_EXE_DIR_VAR=from_exe_dir\n").unwrap();
+
+    let dir = TestDir::new("dotenv_exe");
+    let (out, _) = run_in(dir.path(), &["env"]);
+
+    // Clean up before asserting so the file doesn't linger on failure.
+    let _ = std::fs::remove_file(&dotenv_path);
+
+    assert!(
+        out.contains("SWEBASH_TEST_EXE_DIR_VAR=from_exe_dir"),
+        ".env next to exe should be loaded. stdout length: {}",
+        out.len()
+    );
+}
+
+#[test]
+fn dotenv_exe_dir_takes_precedence_over_cwd() {
+    // When both locations define the same variable, the exe-dir .env wins
+    // because it is loaded first and dotenvy does not overwrite.
+    let exe = host_exe();
+    let exe_dotenv = exe.parent().unwrap().join(".env");
+
+    let _ = std::fs::remove_file(&exe_dotenv);
+    std::fs::write(&exe_dotenv, "SWEBASH_TEST_PREC=exe_dir\n").unwrap();
+
+    let dir = TestDir::new("dotenv_prec");
+    std::fs::write(dir.path().join(".env"), "SWEBASH_TEST_PREC=cwd\n").unwrap();
+
+    let (out, _) = run_in(dir.path(), &["env"]);
+
+    let _ = std::fs::remove_file(&exe_dotenv);
+
+    assert!(
+        out.contains("SWEBASH_TEST_PREC=exe_dir"),
+        "exe-dir .env should take precedence over cwd .env. stdout length: {}",
+        out.len()
     );
 }

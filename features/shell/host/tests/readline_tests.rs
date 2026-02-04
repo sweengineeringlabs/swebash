@@ -17,18 +17,6 @@ fn host_exe() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_swebash"))
 }
 
-fn engine_wasm_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.push("..");
-    p.push("..");
-    p.push("..");
-    p.push("target");
-    p.push("wasm32-unknown-unknown");
-    p.push("release");
-    p.push("engine.wasm");
-    p
-}
-
 struct TestContext {
     home_dir: PathBuf,
     history_file: PathBuf,
@@ -69,11 +57,6 @@ impl TestContext {
 
     /// Run commands with simulated input (simple mode - no escape sequences)
     fn run_simple(&self, input: &str) -> (String, String) {
-        assert!(
-            engine_wasm_path().exists(),
-            "engine.wasm not found — build it first"
-        );
-
         let mut child = Command::new(host_exe())
             .current_dir(&self.home_dir)
             .env("HOME", &self.home_dir)
