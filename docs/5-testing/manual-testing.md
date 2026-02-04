@@ -282,6 +282,41 @@ The project depends on a local Cargo registry for rustratify crates. The test sc
 | Debug build | `./sbh build --debug` | Builds engine WASM (release) and host (debug) without errors |
 | Run | `./sbh run` | Launches shell, shows banner and prompt |
 
+### 24. sbh.ps1 help (PowerShell)
+
+| Test | Command | Expected |
+|------|---------|----------|
+| Help flag | `.\sbh.ps1 --help` | Prints usage with all commands: setup, build, run, test |
+| Help short flag | `.\sbh.ps1 -h` | Same output as `--help` |
+| Help command | `.\sbh.ps1 help` | Same output as `--help` |
+| No args | `.\sbh.ps1` | Prints usage, exits with code 0 |
+| Unknown command | `.\sbh.ps1 foo` | Prints usage, exits with code 1 |
+
+### 25. sbh.ps1 test (PowerShell)
+
+| Test | Command | Expected |
+|------|---------|----------|
+| All suites | `.\sbh.ps1 test` | Runs engine, readline, host, ai tests in order; all pass |
+| Engine only | `.\sbh.ps1 test engine` | Runs engine tests only |
+| Host only | `.\sbh.ps1 test host` | Runs host tests only |
+| Readline only | `.\sbh.ps1 test readline` | Runs readline tests only |
+| AI only | `.\sbh.ps1 test ai` | Runs AI tests only |
+
+### 26. sbh.ps1 setup (PowerShell)
+
+| Test | Command | Expected |
+|------|---------|----------|
+| Setup dispatch | `.\sbh.ps1 setup` | Dispatches to `bin\setup.ps1`; checks prerequisites, registry, .env |
+| No parse errors | `.\sbh.ps1 setup` | No `ParserError` or `MissingEndCurlyBrace` errors |
+
+### 27. sbh.ps1 build & run (PowerShell)
+
+| Test | Command | Expected |
+|------|---------|----------|
+| Release build | `.\sbh.ps1 build` | Builds engine WASM (release) and host (release) without errors |
+| Debug build | `.\sbh.ps1 build -Debug` | Builds engine WASM (release) and host (debug) without errors |
+| Run | `.\sbh.ps1 run` | Launches shell, shows banner and prompt |
+
 ---
 
 ## Automated Test Suites

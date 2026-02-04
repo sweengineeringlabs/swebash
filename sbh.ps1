@@ -1,12 +1,4 @@
-# sbh.ps1 — swebash quickstart entrypoint (Windows)
-param(
-    [Parameter(Position = 0)]
-    [string]$Command,
-
-    [Parameter(ValueFromRemainingArguments)]
-    [string[]]$Rest
-)
-
+# sbh.ps1 -- swebash quickstart entrypoint (Windows)
 $RepoRoot = $PSScriptRoot
 
 function Show-Usage {
@@ -20,8 +12,11 @@ function Show-Usage {
     Write-Host "    -Release       Run release build"
     Write-Host "    -Debug         Run debug build (default)"
     Write-Host "  test [suite]   Build and run tests"
-    Write-Host "    -Suite engine|host|readline|ai|all (default: all)"
+    Write-Host "    engine|host|readline|ai|all (default: all)"
 }
+
+$Command = if ($args.Count -gt 0) { $args[0] } else { "" }
+$Rest = @($args | Select-Object -Skip 1)
 
 switch ($Command) {
     "setup" { & "$RepoRoot\bin\setup.ps1" @Rest }

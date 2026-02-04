@@ -53,7 +53,7 @@ if (-not (Test-Path $EnvFile)) {
         Copy-Item $EnvExample $EnvFile
         Write-Host "==> Copied .env.example -> .env (edit API keys before running)"
     } else {
-        Write-Warning ".env.example not found — skipping .env creation"
+        Write-Warning ".env.example not found -- skipping .env creation"
     }
 } else {
     Write-Host "==> .env already exists"
