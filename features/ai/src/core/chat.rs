@@ -62,7 +62,10 @@ pub async fn chat_streaming(
     let task_b = tokio::spawn(async move {
         while let Some(event) = event_stream.next().await {
             if let AgentEvent::Content { content, is_final: false } = event {
-                let _ = tx.send(ChatStreamEvent::Delta(content)).await;
+                if tx.send(ChatStreamEvent::Delta(content)).await.is_err() {
+                    tracing::warn!("stream receiver dropped, stopping delta forwarding");
+                    break;
+                }
             }
         }
     });
@@ -76,17 +79,29 @@ pub async fn chat_streaming(
     tokio::spawn(async move {
         match engine.as_ref().send_streaming(message, events).await {
             Ok(response) => {
-                let _ = task_b.await;
-                let _ = tx_err
+                if let Err(e) = task_b.await {
+                    tracing::error!("delta forwarding task panicked: {e}");
+                }
+                if tx_err
                     .send(ChatStreamEvent::Done(
                         response.message.content.trim().to_string(),
                     ))
-                    .await;
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!("stream receiver dropped before Done event");
+                }
             }
             Err(e) => {
-                let _ = tx_err
-                    .send(ChatStreamEvent::Done(format!("Error: {}", e)))
-                    .await;
+                let err_msg = format!("Error: {e}");
+                if tx_err
+                    .send(ChatStreamEvent::Done(err_msg.clone()))
+                    .await
+                    .is_err()
+                {
+                    tracing::error!("failed to send error to stream: {err_msg}");
+                    eprintln!("[swebash] chat error (stream lost): {err_msg}");
+                }
             }
         }
     });

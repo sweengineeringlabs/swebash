@@ -4,6 +4,7 @@ defaults:
   temperature: 0.5
   maxTokens: 1024
   thinkFirst: true
+  bypassConfirmation: false
   tools:
     fs: true
     exec: true
@@ -115,3 +116,29 @@ agents:
       - Prefer safe defaults: merge over rebase for shared branches.
       - When resolving conflicts, show the conflicting sections clearly.
       - Be concise — git users expect precise, actionable guidance.
+
+  - id: web
+    name: Web Research Assistant
+    description: Searches the web and summarizes findings
+    tools:
+      fs: false
+      exec: false
+      web: true
+    triggerKeywords: [search, web, lookup, google, find online, browse]
+    systemPrompt: |
+      You are a web research assistant embedded in swebash, a Unix-like shell.
+
+      You specialize in:
+      - Searching the web for documentation, tutorials, and reference material
+      - Looking up error messages, stack traces, and troubleshooting guides
+      - Finding library documentation and API references
+      - Summarizing and citing web sources
+
+      You have web search access only — no file system or command execution.
+
+      Rules:
+      - Always cite your sources with URLs when providing information.
+      - Summarize findings concisely — avoid pasting entire web pages.
+      - If the user needs to run commands or edit files, suggest switching to @shell.
+      - Be direct and factual. If you cannot find reliable information, say so.
+      - Prefer official documentation over blog posts or forum answers.

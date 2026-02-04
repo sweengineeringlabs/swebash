@@ -1526,12 +1526,13 @@ async fn agent_list_returns_all_builtins() {
     match try_create_service().await {
         Ok(service) => {
             let agents = service.list_agents().await;
-            assert_eq!(agents.len(), 4, "should have 4 built-in agents");
+            assert_eq!(agents.len(), 5, "should have 5 built-in agents");
             let ids: Vec<&str> = agents.iter().map(|a| a.id.as_str()).collect();
             assert!(ids.contains(&"shell"), "should contain shell agent");
             assert!(ids.contains(&"review"), "should contain review agent");
             assert!(ids.contains(&"devops"), "should contain devops agent");
             assert!(ids.contains(&"git"), "should contain git agent");
+            assert!(ids.contains(&"web"), "should contain web agent");
         }
         Err(e) => assert_setup_error(&e),
     }
@@ -1707,7 +1708,7 @@ fn yaml_parse_embedded_defaults() {
     let yaml = include_str!("../src/core/agents/default_agents.yaml");
     let parsed = AgentsYaml::from_yaml(yaml).expect("embedded YAML should parse");
     assert_eq!(parsed.version, 1);
-    assert_eq!(parsed.agents.len(), 4);
+    assert_eq!(parsed.agents.len(), 5);
 }
 
 #[test]
@@ -1818,6 +1819,7 @@ fn config_agent_inherits_defaults() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
+        bypass_confirmation: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1839,6 +1841,7 @@ fn config_agent_overrides_temperature_and_tokens() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
+        bypass_confirmation: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1859,6 +1862,7 @@ fn config_agent_tool_filter_only() {
         tools: Some(ToolsConfig { fs: true, exec: false, web: false }),
         trigger_keywords: vec![],
         think_first: None,
+        bypass_confirmation: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1885,6 +1889,7 @@ fn config_agent_tool_filter_none() {
         tools: Some(ToolsConfig { fs: false, exec: false, web: false }),
         trigger_keywords: vec![],
         think_first: None,
+        bypass_confirmation: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1907,6 +1912,7 @@ fn config_agent_tool_filter_all() {
         tools: Some(ToolsConfig { fs: true, exec: true, web: true }),
         trigger_keywords: vec![],
         think_first: None,
+        bypass_confirmation: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1926,6 +1932,7 @@ fn config_agent_trigger_keywords() {
         tools: None,
         trigger_keywords: vec!["alpha".into(), "beta".into(), "gamma".into()],
         think_first: None,
+        bypass_confirmation: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1947,6 +1954,7 @@ fn config_agent_system_prompt_preserved() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
+        bypass_confirmation: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1960,6 +1968,7 @@ fn config_agent_inherits_custom_defaults() {
         max_tokens: 2048,
         tools: ToolsConfig { fs: true, exec: false, web: true },
         think_first: false,
+        bypass_confirmation: false,
     };
     let entry = AgentEntry {
         id: "inheritor".into(),
@@ -1971,6 +1980,7 @@ fn config_agent_inherits_custom_defaults() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
+        bypass_confirmation: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -2005,12 +2015,13 @@ fn mock_config() -> AiConfig {
 fn yaml_registry_loads_all_default_agents() {
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
     let agents = registry.list();
-    assert_eq!(agents.len(), 4);
+    assert_eq!(agents.len(), 5);
     let ids: Vec<&str> = agents.iter().map(|a| a.id()).collect();
     assert!(ids.contains(&"shell"));
     assert!(ids.contains(&"review"));
     assert!(ids.contains(&"devops"));
     assert!(ids.contains(&"git"));
+    assert!(ids.contains(&"web"));
 }
 
 #[test]
@@ -2151,8 +2162,8 @@ agents:
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
     std::env::remove_var("SWEBASH_AGENTS_CONFIG");
 
-    // Should have 4 defaults + 1 custom = 5
-    assert_eq!(registry.list().len(), 5);
+    // Should have 5 defaults + 1 custom = 6
+    assert_eq!(registry.list().len(), 6);
     let custom = registry.get("custom-from-env").unwrap();
     assert_eq!(custom.display_name(), "Custom From Env");
     assert!(custom.trigger_keywords().contains(&"custom".to_string()));
@@ -2187,8 +2198,8 @@ agents:
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
     std::env::remove_var("SWEBASH_AGENTS_CONFIG");
 
-    // Still 4 agents (override doesn't add, it replaces)
-    assert_eq!(registry.list().len(), 4);
+    // Still 5 agents (override doesn't add, it replaces)
+    assert_eq!(registry.list().len(), 5);
 
     let shell = registry.get("shell").unwrap();
     assert_eq!(shell.display_name(), "My Custom Shell");
@@ -2222,12 +2233,13 @@ fn yaml_user_config_invalid_file_ignored() {
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
     std::env::remove_var("SWEBASH_AGENTS_CONFIG");
 
-    // Should still have all 4 defaults despite invalid user file
-    assert_eq!(registry.list().len(), 4);
+    // Should still have all 5 defaults despite invalid user file
+    assert_eq!(registry.list().len(), 5);
     assert!(registry.get("shell").is_some());
     assert!(registry.get("review").is_some());
     assert!(registry.get("devops").is_some());
     assert!(registry.get("git").is_some());
+    assert!(registry.get("web").is_some());
 
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -2243,7 +2255,7 @@ fn yaml_user_config_nonexistent_path_ignored() {
     std::env::remove_var("SWEBASH_AGENTS_CONFIG");
 
     // All defaults should load fine
-    assert_eq!(registry.list().len(), 4);
+    assert_eq!(registry.list().len(), 5);
 }
 
 #[test]
@@ -2282,8 +2294,8 @@ agents:
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
     std::env::remove_var("SWEBASH_AGENTS_CONFIG");
 
-    // 4 defaults + 2 new = 6
-    assert_eq!(registry.list().len(), 6);
+    // 5 defaults + 2 new = 7
+    assert_eq!(registry.list().len(), 7);
 
     let security = registry.get("security").unwrap();
     assert_eq!(security.display_name(), "Security Scanner");
@@ -2357,7 +2369,7 @@ async fn yaml_service_list_agents_returns_correct_info() {
     match try_create_service().await {
         Ok(service) => {
             let agents = service.list_agents().await;
-            assert_eq!(agents.len(), 4);
+            assert_eq!(agents.len(), 5);
 
             // Verify all agents have correct display names from YAML
             let shell = agents.iter().find(|a| a.id == "shell").unwrap();
@@ -2453,8 +2465,8 @@ agents:
     match result {
         Ok(service) => {
             let agents = service.list_agents().await;
-            // 4 defaults + 1 custom (shell is overridden, not added)
-            assert_eq!(agents.len(), 5);
+            // 5 defaults + 1 custom (shell is overridden, not added)
+            assert_eq!(agents.len(), 6);
 
             // Shell should show overridden name
             let shell = agents.iter().find(|a| a.id == "shell").unwrap();
@@ -2753,6 +2765,7 @@ fn delegate_register_overwrite_and_cache_coherence() {
             tools: Some(ToolsConfig { fs: false, exec: false, web: false }),
             trigger_keywords: vec!["custom".into()],
             think_first: None,
+            bypass_confirmation: None,
         },
         &AgentDefaults::default(),
     );
@@ -2794,10 +2807,10 @@ agents:
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
     std::env::remove_var("SWEBASH_AGENTS_CONFIG");
 
-    // 5 agents: 4 built-in + 1 user
-    assert_eq!(registry.list().len(), 5);
+    // 6 agents: 5 built-in + 1 user
+    assert_eq!(registry.list().len(), 6);
 
-    // All 5 agents should produce engines
+    // All 6 agents should produce engines
     for agent in registry.list() {
         assert!(
             registry.engine_for(agent.id()).is_some(),
@@ -2852,7 +2865,7 @@ async fn delegate_e2e_service_layer_round_trip() {
             // Switch back and verify list
             service.switch_agent("shell").await.unwrap();
             let agents = service.list_agents().await;
-            assert_eq!(agents.len(), 4);
+            assert_eq!(agents.len(), 5);
 
             // Verify AgentInfo comes from AgentDescriptor trait
             let shell = agents.iter().find(|a| a.id == "shell").unwrap();
@@ -3097,6 +3110,7 @@ fn think_first_appends_prompt_when_enabled() {
         max_tokens: 1024,
         tools: ToolsConfig::default(),
         think_first: true,
+        bypass_confirmation: false,
     };
     let entry = AgentEntry {
         id: "thinker".into(),
@@ -3108,6 +3122,7 @@ fn think_first_appends_prompt_when_enabled() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None, // inherits true from defaults
+        bypass_confirmation: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3135,6 +3150,7 @@ fn think_first_does_not_append_when_disabled() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None, // inherits false from defaults
+        bypass_confirmation: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3152,6 +3168,7 @@ fn think_first_agent_override_disables_default() {
         max_tokens: 1024,
         tools: ToolsConfig::default(),
         think_first: true, // globally enabled
+        bypass_confirmation: false,
     };
     let entry = AgentEntry {
         id: "override".into(),
@@ -3163,6 +3180,7 @@ fn think_first_agent_override_disables_default() {
         tools: None,
         trigger_keywords: vec![],
         think_first: Some(false), // agent-level override disables it
+        bypass_confirmation: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3186,6 +3204,7 @@ fn think_first_agent_override_enables() {
         tools: None,
         trigger_keywords: vec![],
         think_first: Some(true), // agent-level override enables it
+        bypass_confirmation: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3202,6 +3221,7 @@ fn think_first_skipped_on_empty_prompt() {
         max_tokens: 1024,
         tools: ToolsConfig::default(),
         think_first: true,
+        bypass_confirmation: false,
     };
     let entry = AgentEntry {
         id: "empty".into(),
@@ -3213,6 +3233,7 @@ fn think_first_skipped_on_empty_prompt() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
+        bypass_confirmation: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3261,4 +3282,141 @@ agents:
         "Base prompt.",
         "Agent with thinkFirst=false should not have reasoning prompt"
     );
+}
+
+// ── bypassConfirmation config tests ─────────────────────────────────────
+
+#[test]
+fn bypass_confirmation_default_is_false() {
+    let defaults = AgentDefaults::default();
+    assert!(!defaults.bypass_confirmation, "bypassConfirmation should default to false");
+}
+
+#[test]
+fn bypass_confirmation_inherits_from_defaults() {
+    let defaults = AgentDefaults {
+        temperature: 0.5,
+        max_tokens: 1024,
+        tools: ToolsConfig::default(),
+        think_first: false,
+        bypass_confirmation: true, // defaults enable bypass
+    };
+    let entry = AgentEntry {
+        id: "inheritor".into(),
+        name: "Inheritor".into(),
+        description: "Inherits bypass".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: "prompt".into(),
+        tools: None,
+        trigger_keywords: vec![],
+        think_first: None,
+        bypass_confirmation: None, // inherits from defaults
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+    assert!(agent.bypass_confirmation(), "should inherit true from defaults");
+}
+
+#[test]
+fn bypass_confirmation_agent_override_enables() {
+    let defaults = AgentDefaults::default(); // bypass_confirmation: false
+    let entry = AgentEntry {
+        id: "bypasser".into(),
+        name: "Bypasser".into(),
+        description: "Overrides bypass".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: "prompt".into(),
+        tools: None,
+        trigger_keywords: vec![],
+        think_first: None,
+        bypass_confirmation: Some(true), // agent-level override enables
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+    assert!(agent.bypass_confirmation(), "agent override should enable bypass");
+}
+
+#[test]
+fn bypass_confirmation_agent_override_disables() {
+    let defaults = AgentDefaults {
+        temperature: 0.5,
+        max_tokens: 1024,
+        tools: ToolsConfig::default(),
+        think_first: false,
+        bypass_confirmation: true, // defaults enable bypass
+    };
+    let entry = AgentEntry {
+        id: "no-bypass".into(),
+        name: "NoBypass".into(),
+        description: "Disables bypass".into(),
+        temperature: None,
+        max_tokens: None,
+        system_prompt: "prompt".into(),
+        tools: None,
+        trigger_keywords: vec![],
+        think_first: None,
+        bypass_confirmation: Some(false), // agent-level override disables
+    };
+    let agent = ConfigAgent::from_entry(entry, &defaults);
+    assert!(!agent.bypass_confirmation(), "agent override should disable bypass");
+}
+
+#[test]
+fn bypass_confirmation_yaml_parsing() {
+    let yaml = r#"
+version: 1
+defaults:
+  bypassConfirmation: true
+agents:
+  - id: alpha
+    name: Alpha
+    description: Inherits bypass
+    systemPrompt: alpha prompt
+  - id: beta
+    name: Beta
+    description: Overrides bypass
+    systemPrompt: beta prompt
+    bypassConfirmation: false
+"#;
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    assert!(parsed.defaults.bypass_confirmation, "defaults should parse bypassConfirmation");
+
+    let defaults = parsed.defaults;
+    let mut agents = parsed.agents.into_iter();
+
+    let alpha = ConfigAgent::from_entry(agents.next().unwrap(), &defaults);
+    assert!(alpha.bypass_confirmation(), "alpha should inherit true from defaults");
+
+    let beta = ConfigAgent::from_entry(agents.next().unwrap(), &defaults);
+    assert!(!beta.bypass_confirmation(), "beta should override to false");
+}
+
+// ── @web agent tests ────────────────────────────────────────────────────
+
+#[test]
+fn yaml_registry_web_agent_properties() {
+    let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
+    let web = registry.get("web").expect("web agent should be registered");
+
+    assert_eq!(web.display_name(), "Web Research Assistant");
+    assert_eq!(web.description(), "Searches the web and summarizes findings");
+
+    // Should have web-only tools
+    match web.tool_filter() {
+        ToolFilter::Categories(cats) => {
+            assert!(!cats.contains(&"fs".to_string()), "web agent should not have fs");
+            assert!(!cats.contains(&"exec".to_string()), "web agent should not have exec");
+            assert!(cats.contains(&"web".to_string()), "web agent should have web");
+        }
+        other => panic!("Expected ToolFilter::Categories for web agent, got: {:?}", other),
+    }
+
+    // Verify trigger keywords
+    let keywords = web.trigger_keywords();
+    assert!(keywords.contains(&"search".to_string()));
+    assert!(keywords.contains(&"web".to_string()));
+    assert!(keywords.contains(&"lookup".to_string()));
+    assert!(keywords.contains(&"google".to_string()));
+    assert!(keywords.contains(&"find online".to_string()));
+    assert!(keywords.contains(&"browse".to_string()));
 }

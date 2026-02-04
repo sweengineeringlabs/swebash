@@ -61,6 +61,10 @@ impl EngineFactory<ConfigAgent> for SwebashEngineFactory {
         let temperature = descriptor.temperature().unwrap_or(0.5);
         let max_tokens = descriptor.max_tokens().unwrap_or(1024);
 
+        // Computed but not yet consumed — confirmation not enforced by ToolAwareChatEngine yet.
+        let _require_confirmation = self.config.tools.require_confirmation
+            && !descriptor.bypass_confirmation();
+
         let chat_config = ChatConfig {
             model: self.config.model.clone(),
             temperature,
@@ -193,6 +197,7 @@ mod tests {
                 tools: None,
                 trigger_keywords: keywords,
                 think_first: None,
+                bypass_confirmation: None,
             },
             &AgentDefaults::default(),
         )
@@ -532,6 +537,7 @@ mod tests {
                 tools: None,
                 trigger_keywords: vec![],
                 think_first: None,
+                bypass_confirmation: None,
             },
             &AgentDefaults::default(),
         ));
@@ -546,6 +552,7 @@ mod tests {
                 tools: None,
                 trigger_keywords: vec![],
                 think_first: None,
+                bypass_confirmation: None,
             },
             &AgentDefaults::default(),
         ));
@@ -777,6 +784,7 @@ mod tests {
                 tools: None,
                 trigger_keywords: vec![],
                 think_first: None,
+                bypass_confirmation: None,
             },
             &AgentDefaults::default(),
         );
