@@ -1,5 +1,7 @@
 mod spi;
 
+use std::path::PathBuf;
+
 use anyhow::{Context, Result};
 use swebash_ai::{commands, handle_ai_command, output, AiCommand, AiService};
 use swebash_readline::{Completer, Hinter, History, LineEditor, ReadlineConfig, ValidationResult, Validator};
@@ -9,6 +11,35 @@ async fn main() -> Result<()> {
     // Load .env file if present (for development convenience)
     // Silently ignore if file doesn't exist - env vars can be set via shell
     let _ = dotenvy::dotenv();
+
+    // Set initial workspace directory from SWEBASH_WORKSPACE env var.
+    // If unset or empty, defaults to home directory (~).
+    // Use SWEBASH_WORKSPACE=. to stay in the inherited working directory.
+    let workspace = std::env::var("SWEBASH_WORKSPACE")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            if s.starts_with("~/") || s == "~" {
+                dirs::home_dir()
+                    .map(|h| h.join(s.strip_prefix("~/").unwrap_or("")))
+                    .unwrap_or_else(|| PathBuf::from(&s))
+            } else {
+                PathBuf::from(&s)
+            }
+        });
+
+    if let Some(ws) = workspace {
+        if ws.exists() {
+            let _ = std::env::set_current_dir(&ws);
+        } else {
+            eprintln!(
+                "warning: SWEBASH_WORKSPACE path does not exist: {}",
+                ws.display()
+            );
+        }
+    } else if let Some(home) = dirs::home_dir() {
+        let _ = std::env::set_current_dir(&home);
+    }
 
     // Initialize AI service (None if unconfigured — shell continues without AI)
     let ai_service = swebash_ai::create_ai_service().await.ok();

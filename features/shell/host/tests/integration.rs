@@ -56,6 +56,10 @@ fn run_in_with_home(dir: &Path, commands: &[&str], home: Option<&Path>) -> (Stri
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
+    // Pin workspace to the test's working directory so the shell doesn't
+    // cd to ~ on startup (SWEBASH_WORKSPACE overrides the default).
+    command.env("SWEBASH_WORKSPACE", dir);
+
     // Override HOME directory if provided (for testing history file location)
     if let Some(home_path) = home {
         command.env("HOME", home_path);
