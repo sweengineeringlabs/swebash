@@ -195,6 +195,30 @@ This forces `MockLlm` boilerplate in every test that only needs metadata operati
 - [ ] Ensure CI runs bash tests on Linux or WSL, not Git Bash
 - [ ] Document supported test platforms (PowerShell on Windows, bash on WSL/Linux)
 
+## Backlog: Agent documentation context injection
+
+**Problem**: Agent knowledge is limited to what fits in the static `systemPrompt` YAML field.
+Agents with `fs: true` can read docs at runtime via tool calls, but this requires the LLM to
+decide to read a file before answering — adding latency and consuming tool iterations.
+
+Currently `@rscagent` lists 30+ doc paths in its system prompt and instructs the LLM to read
+them before responding. This works but is fragile: the LLM may skip the read, doc paths may
+change, and the approach doesn't scale to other agents or dynamic documentation sets.
+
+**Goal**: First-class mechanism for agents to declare documentation sources that are
+automatically injected into the conversation context.
+
+- [ ] Design `docs` field in agent YAML schema (list of glob patterns or paths)
+- [ ] Implement doc loading at engine creation time (read matching files, concatenate into context)
+- [ ] Add token budget / truncation strategy (max doc tokens per agent, priority ordering)
+- [ ] Consider lazy doc loading: inject a doc summary initially, full content on demand
+- [ ] Evaluate RAG-style approach: embed doc chunks, retrieve relevant chunks per query
+- [ ] Update `AgentEntry` and `ConfigAgent` structs to support new `docs` field
+- [ ] Add tests for doc injection (doc found, doc missing, doc over budget)
+- [ ] Migrate `@rscagent` to use `docs` field instead of inline path list
+- [ ] Migrate `@seaaudit` to reference SEA architecture docs if available
+- [ ] Document the feature in agent architecture docs
+
 ## Future Work
 - Evaluate Loom (tokio-rs/loom) for exhaustive concurrency testing of async task coordination
 - Evaluate Shuttle (awslabs/shuttle) for randomized concurrency testing of async/tokio code

@@ -113,7 +113,7 @@ mod tests {
         let parsed = AgentsYaml::from_yaml(DEFAULT_AGENTS_YAML)
             .expect("Embedded default_agents.yaml should parse");
         assert_eq!(parsed.version, 1);
-        assert_eq!(parsed.agents.len(), 6);
+        assert_eq!(parsed.agents.len(), 7);
 
         let ids: Vec<&str> = parsed.agents.iter().map(|a| a.id.as_str()).collect();
         assert!(ids.contains(&"shell"));
@@ -122,6 +122,7 @@ mod tests {
         assert!(ids.contains(&"git"));
         assert!(ids.contains(&"web"));
         assert!(ids.contains(&"seaaudit"));
+        assert!(ids.contains(&"rscagent"));
     }
 
     #[test]
@@ -262,7 +263,7 @@ agents:
         register_from_yaml(&mut manager, user_yaml, "user");
 
         // New agent should be added alongside defaults
-        assert_eq!(manager.list().len(), 7);
+        assert_eq!(manager.list().len(), 8);
         let security = manager.get("security").unwrap();
         assert_eq!(security.display_name(), "Security Scanner");
     }
@@ -285,6 +286,6 @@ agents:
         register_from_yaml(&mut manager, "not: valid: yaml: [", "bad-user-file");
 
         // Defaults should still be present
-        assert_eq!(manager.list().len(), 6);
+        assert_eq!(manager.list().len(), 7);
     }
 }

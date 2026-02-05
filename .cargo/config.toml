@@ -1,6 +1,14 @@
-# Local registry index is set via CARGO_REGISTRIES_LOCAL_INDEX env var
-# Configured by: ./sbh setup (persisted to ~/.bashrc)
+# Local registry: Linux-native copy for reliable checksums
 [registries.local]
+index = "file:///home/adentic/.cargo/registry.local/index"
+
+# Redirect old NTFS registry path to the Linux-native copy
+[source.old-ntfs-local]
+registry = "file:///mnt/c/Users/elvis/.cargo/registry.local/index"
+replace-with = "linux-local"
+
+[source.linux-local]
+registry = "file:///home/adentic/.cargo/registry.local/index"
 
 # WSL/Linux: build artifacts on native filesystem to avoid NTFS I/O overhead
 # Native Windows: this path is ignored; cargo uses default target/ directory
