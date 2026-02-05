@@ -18,6 +18,8 @@ pub use agent_controller::{AgentDescriptor, ToolFilter};
 use crate::spi::config::{AiConfig, ToolConfig};
 use crate::core::tools;
 
+use std::time::Duration;
+
 use config::ConfigAgent;
 
 // ── SwebashEngineFactory ───────────────────────────────────────────
@@ -86,7 +88,16 @@ impl EngineFactory<ConfigAgent> for SwebashEngineFactory {
                 exec_timeout: effective_tools.exec_timeout,
             };
 
-            let registry = tools::create_standard_registry(&rustratify_config);
+            let registry = if effective_tools.cache.enabled {
+                let cache_cfg = agent_cache::CacheConfig::with_ttl(
+                    Duration::from_secs(effective_tools.cache.ttl_secs),
+                ).with_max_entries(effective_tools.cache.max_entries);
+                let (reg, _) = tools::create_cached_registry(&rustratify_config, cache_cfg);
+                reg
+            } else {
+                tools::create_standard_registry(&rustratify_config)
+            };
+
             Some(Arc::new(ToolAwareChatEngine::new(
                 self.llm.clone(),
                 chat_config,

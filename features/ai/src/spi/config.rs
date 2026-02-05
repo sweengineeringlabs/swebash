@@ -42,6 +42,33 @@ pub struct ToolConfig {
     pub fs_max_size: usize,
     /// Command execution timeout in seconds.
     pub exec_timeout: u64,
+    /// Tool result caching configuration.
+    pub cache: ToolCacheConfig,
+}
+
+/// Configuration for tool result caching.
+///
+/// When enabled, ReadOnly tool results (file reads, directory listings, metadata checks)
+/// are cached to eliminate redundant tool round-trips within agent sessions.
+/// Each agent gets its own isolated cache, scoped to the engine's lifetime.
+#[derive(Debug, Clone)]
+pub struct ToolCacheConfig {
+    /// Whether tool result caching is enabled.
+    pub enabled: bool,
+    /// Time-to-live for cached entries in seconds.
+    pub ttl_secs: u64,
+    /// Maximum number of cached entries.
+    pub max_entries: usize,
+}
+
+impl Default for ToolCacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            ttl_secs: 300,
+            max_entries: 200,
+        }
+    }
 }
 
 impl ToolConfig {
@@ -62,6 +89,7 @@ impl Default for ToolConfig {
             max_iterations: 10,
             fs_max_size: 1_048_576, // 1MB
             exec_timeout: 30,
+            cache: ToolCacheConfig::default(),
         }
     }
 }
@@ -85,6 +113,9 @@ impl AiConfig {
     /// | `SWEBASH_AI_DEFAULT_AGENT` | `shell` | Default agent on startup |
     /// | `SWEBASH_AI_AGENT_AUTO_DETECT` | `true` | Auto-detect agent from keywords |
     /// | `SWEBASH_AI_LOG_DIR` | _(none)_ | Directory for LLM request/response JSON logs |
+    /// | `SWEBASH_AI_TOOL_CACHE` | `true` | Enable/disable tool result caching |
+    /// | `SWEBASH_AI_TOOL_CACHE_TTL` | `300` | Cache TTL in seconds |
+    /// | `SWEBASH_AI_TOOL_CACHE_MAX` | `200` | Max cached entries |
     pub fn from_env() -> Self {
         let enabled = std::env::var("SWEBASH_AI_ENABLED")
             .map(|v| v != "false" && v != "0")
@@ -127,6 +158,19 @@ impl AiConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(30),
+            cache: ToolCacheConfig {
+                enabled: std::env::var("SWEBASH_AI_TOOL_CACHE")
+                    .map(|v| v != "false" && v != "0")
+                    .unwrap_or(true),
+                ttl_secs: std::env::var("SWEBASH_AI_TOOL_CACHE_TTL")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(300),
+                max_entries: std::env::var("SWEBASH_AI_TOOL_CACHE_MAX")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(200),
+            },
         };
 
         let default_agent = std::env::var("SWEBASH_AI_DEFAULT_AGENT")

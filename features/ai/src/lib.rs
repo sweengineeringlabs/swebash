@@ -27,7 +27,7 @@ pub use api::AiService;
 pub use api::cli::handle_ai_command;
 pub use api::commands::{self, AiCommand};
 pub use api::output;
-pub use spi::config::{AiConfig, ToolConfig};
+pub use spi::config::{AiConfig, ToolCacheConfig, ToolConfig};
 pub use core::DefaultAiService;
 
 /// Factory: create the AI service from environment configuration.

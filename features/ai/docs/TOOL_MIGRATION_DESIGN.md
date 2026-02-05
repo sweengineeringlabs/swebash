@@ -520,42 +520,33 @@ async fn test_tool_aware_engine_with_filesystem() {
 
 ## Implementation Checklist
 
-### Phase 1: rustratify Enhancement
-- [ ] Create `rustratify/ai/llm/agent/tool/src/providers/` directory
-- [ ] Move & adapt `filesystem.rs` from swebash-ai
-- [ ] Move & adapt `command.rs` from swebash-ai
-- [ ] Move & adapt `web.rs` from swebash-ai
-- [ ] Add `ToolConfig` struct
-- [ ] Add `create_standard_registry()` factory function
-- [ ] Add unit tests for each provider
-- [ ] Update rustratify `Cargo.toml` with dependencies (reqwest, url)
-- [ ] Run `cargo test` in rustratify
+### Phase 1: rustratify Enhancement — COMPLETE
+- [x] Create `rustratify/ai/llm/agent/tool/src/providers/` directory
+- [x] Move & adapt `filesystem.rs` from swebash-ai
+- [x] Move & adapt `command.rs` from swebash-ai
+- [x] Move & adapt `web.rs` from swebash-ai
+- [x] Add `ToolConfig` struct
+- [x] Add `create_standard_registry()` factory function
+- [x] Add unit tests for each provider
+- [x] Update rustratify `Cargo.toml` with dependencies (reqwest, url)
+- [x] Run `cargo test` in rustratify
 
-### Phase 2: swebash-ai Refactor
-- [ ] Update `ai/Cargo.toml` to depend on rustratify's `tool` crate
-- [ ] Delete `ai/src/core/tools/fs.rs`
-- [ ] Delete `ai/src/core/tools/exec.rs`
-- [ ] Delete `ai/src/core/tools/web.rs`
-- [ ] Update `ai/src/lib.rs` to use `create_standard_registry()`
-- [ ] Update `ai/src/spi/tool_aware_engine.rs` to use rustratify types
-- [ ] Update integration tests
-- [ ] Run `cargo test` in swebash-ai
-- [ ] Test end-to-end with actual LLM calls
+### Phase 2: swebash-ai Refactor — COMPLETE
+- [x] Update `ai/Cargo.toml` to depend on rustratify's `tool` crate
+- [x] Delete `ai/src/core/tools/fs.rs`
+- [x] Delete `ai/src/core/tools/exec.rs`
+- [x] Delete `ai/src/core/tools/web.rs`
+- [x] Update `ai/src/lib.rs` to use `create_standard_registry()`
+- [x] Update `ai/src/spi/tool_aware_engine.rs` to use rustratify types
+- [x] Update integration tests
+- [x] Run `cargo test` in swebash-ai
+- [x] Test end-to-end with actual LLM calls
 
 ### Phase 3: Documentation
 - [ ] Update rustratify tool crate README
 - [ ] Update swebash-ai CONFIGURATION.md
 - [ ] Document tool extension points
 - [ ] Add examples of custom tool implementation
-
-## Timeline
-
-- **Phase 1** (rustratify): ~3-4 hours
-- **Phase 2** (swebash-ai): ~2-3 hours
-- **Phase 3** (docs): ~1 hour
-- **Testing & iteration**: ~2 hours
-
-**Total**: ~8-10 hours
 
 ## Open Questions
 
