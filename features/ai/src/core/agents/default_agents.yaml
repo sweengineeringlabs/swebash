@@ -306,6 +306,13 @@ agents:
       web: false
     maxIterations: 25
     triggerKeywords: [docreview, documentation review, docs audit, doc check, w3h, framework compliance]
+    docs:
+      budget: 4000
+      sources:
+        - docs/README.md
+        - docs/glossary.md
+        - docs/3-design/architecture.md
+        - docs/6-operation/creating-agents.md
     systemPrompt: |
       You are a documentation review agent embedded in swebash. You audit project
       documentation against the SEA Documentation Framework — a layered, audience-focused

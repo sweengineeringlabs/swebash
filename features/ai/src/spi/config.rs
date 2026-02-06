@@ -21,6 +21,12 @@ pub struct AiConfig {
     pub agent_auto_detect: bool,
     /// Optional directory for logging LLM request/response JSON files.
     pub log_dir: Option<PathBuf>,
+    /// Base directory for resolving `docs_context` source paths in built-in agents.
+    ///
+    /// When set, agents that define a `docs` block in their YAML will have
+    /// their source globs resolved relative to this directory.
+    /// Defaults to the current working directory when not explicitly set.
+    pub docs_base_dir: Option<PathBuf>,
 }
 
 /// Tool calling configuration.
@@ -116,6 +122,7 @@ impl AiConfig {
     /// | `SWEBASH_AI_TOOL_CACHE` | `true` | Enable/disable tool result caching |
     /// | `SWEBASH_AI_TOOL_CACHE_TTL` | `300` | Cache TTL in seconds |
     /// | `SWEBASH_AI_TOOL_CACHE_MAX` | `200` | Max cached entries |
+    /// | `SWEBASH_AI_DOCS_BASE_DIR` | _(cwd)_ | Base dir for agent docs_context source paths |
     pub fn from_env() -> Self {
         let enabled = std::env::var("SWEBASH_AI_ENABLED")
             .map(|v| v != "false" && v != "0")
@@ -185,6 +192,12 @@ impl AiConfig {
             .filter(|v| !v.is_empty())
             .map(PathBuf::from);
 
+        let docs_base_dir = std::env::var("SWEBASH_AI_DOCS_BASE_DIR")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| std::env::current_dir().ok());
+
         Self {
             enabled,
             provider,
@@ -194,6 +207,7 @@ impl AiConfig {
             default_agent,
             agent_auto_detect,
             log_dir,
+            docs_base_dir,
         }
     }
 

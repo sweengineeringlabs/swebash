@@ -27,7 +27,7 @@ use swebash_ai::core::agents::builtins::{builtin_agent_count, create_default_reg
 fn builtin_count() -> usize {
     builtin_agent_count()
 }
-use swebash_ai::core::agents::config::{AgentDefaults, AgentEntry, AgentsYaml, ConfigAgent, ToolsConfig};
+use swebash_ai::core::agents::config::{AgentDefaults, AgentEntry, AgentsYaml, ConfigAgent, DocsConfig, ToolsConfig, load_docs_context};
 use swebash_ai::core::agents::{AgentDescriptor, ToolFilter};
 use swebash_ai::core::DefaultAiService;
 use swebash_ai::spi::chat_provider::ChatProviderClient;
@@ -46,6 +46,7 @@ fn anthropic_config() -> AiConfig {
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
         log_dir: None,
+        docs_base_dir: None,
     }
 }
 
@@ -104,6 +105,7 @@ fn config_has_api_key_known_provider() {
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
         log_dir: None,
+        docs_base_dir: None,
     };
     assert!(config.has_api_key());
     std::env::remove_var("OPENAI_API_KEY");
@@ -122,6 +124,7 @@ fn config_has_api_key_missing() {
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
         log_dir: None,
+        docs_base_dir: None,
     };
     assert!(!config.has_api_key());
 }
@@ -137,6 +140,7 @@ fn config_has_api_key_unknown_provider() {
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
         log_dir: None,
+        docs_base_dir: None,
     };
     assert!(!config.has_api_key());
 }
@@ -214,6 +218,7 @@ async fn service_status_model_matches_config() {
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
         log_dir: None,
+        docs_base_dir: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => assert_eq!(service.status().await.model, expected_model),
@@ -597,6 +602,7 @@ async fn chat_history_respects_capacity() {
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
         log_dir: None,
+        docs_base_dir: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -872,6 +878,7 @@ async fn service_disabled_rejects_requests() {
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
         log_dir: None,
+        docs_base_dir: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -905,6 +912,7 @@ async fn error_bad_api_key_propagates() {
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
         log_dir: None,
+        docs_base_dir: None,
     };
 
     // The error may surface at client creation or at the first API call —
@@ -948,6 +956,7 @@ async fn error_invalid_model_propagates() {
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
         log_dir: None,
+        docs_base_dir: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -977,6 +986,7 @@ async fn error_disabled_service_propagates_through_chat() {
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
         log_dir: None,
+        docs_base_dir: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -1141,6 +1151,7 @@ fn factory_creates_engine_with_cache_enabled() {
         agent_auto_detect: true,
         tools: ToolConfig::default(), // cache enabled by default
         log_dir: None,
+        docs_base_dir: None,
     };
     let llm: Arc<dyn LlmService> = Arc::new(MockLlmService::new());
     let registry = swebash_ai::core::agents::builtins::create_default_registry(llm, config);
@@ -1165,6 +1176,7 @@ fn factory_creates_engine_with_cache_disabled() {
             ..ToolConfig::default()
         },
         log_dir: None,
+        docs_base_dir: None,
     };
     let llm: Arc<dyn LlmService> = Arc::new(MockLlmService::new());
     let registry = swebash_ai::core::agents::builtins::create_default_registry(llm, config);
@@ -1368,6 +1380,7 @@ fn config_fs_only() -> AiConfig {
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
         log_dir: None,
+        docs_base_dir: None,
     }
 }
 
@@ -1393,6 +1406,7 @@ fn config_exec_only() -> AiConfig {
         default_agent: "shell".to_string(),
         agent_auto_detect: true,
         log_dir: None,
+        docs_base_dir: None,
     }
 }
 
@@ -2095,6 +2109,7 @@ fn mock_config() -> AiConfig {
         agent_auto_detect: true,
         tools: ToolConfig::default(),
         log_dir: None,
+        docs_base_dir: None,
     }
 }
 
@@ -2203,6 +2218,109 @@ fn yaml_registry_system_prompts_contain_key_content() {
     let git = registry.get("git").unwrap();
     assert!(git.system_prompt().contains("Git"));
     assert!(git.system_prompt().contains("rebase"));
+}
+
+#[test]
+fn yaml_builtin_docs_context_not_injected_when_base_dir_is_none() {
+    // When docs_base_dir is None, agents with docs blocks should NOT have
+    // the <documentation>...</documentation> block prepended to their prompt.
+    let mut config = mock_config();
+    config.docs_base_dir = None;
+    let registry = create_default_registry(Arc::new(MockLlmService::new()), config);
+
+    let docreview = registry.get("docreview").unwrap();
+    assert!(
+        !docreview.system_prompt().starts_with("<documentation>\n"),
+        "docreview prompt should not start with injected docs block when base_dir is None"
+    );
+
+    let rscagent = registry.get("rscagent").unwrap();
+    assert!(
+        !rscagent.system_prompt().starts_with("<documentation>\n"),
+        "rscagent prompt should not start with injected docs block when base_dir is None"
+    );
+}
+
+#[test]
+fn yaml_builtin_docs_context_injected_when_base_dir_has_files() {
+    // End-to-end: create_default_registry → agent descriptor → engine creation.
+    // Proves the docs flow from YAML config all the way to the chat engine's
+    // system prompt for both @docreview and @rscagent.
+    let dir = std::env::temp_dir().join("swebash_test_builtin_docs");
+    let _ = std::fs::remove_dir_all(&dir); // clean slate
+
+    // @docreview sources
+    std::fs::create_dir_all(dir.join("docs/3-design")).unwrap();
+    std::fs::create_dir_all(dir.join("docs/6-operation")).unwrap();
+    std::fs::write(dir.join("docs/README.md"), "# Docs Hub\nNavigation here.").unwrap();
+    std::fs::write(dir.join("docs/glossary.md"), "# Glossary\nWidget: a thing.").unwrap();
+    std::fs::write(dir.join("docs/3-design/architecture.md"), "# Architecture\nLayers.").unwrap();
+    std::fs::write(
+        dir.join("docs/6-operation/creating-agents.md"),
+        "# Creating Agents\nYAML.",
+    )
+    .unwrap();
+
+    // @rscagent sources (subset — enough to prove injection)
+    std::fs::create_dir_all(dir.join("doc/1_specification")).unwrap();
+    std::fs::write(dir.join("doc/architecture.md"), "# RSC Arch\nCompiler pipeline.").unwrap();
+    std::fs::write(
+        dir.join("doc/1_specification/grammar.md"),
+        "# Grammar\nRSX syntax rules.",
+    )
+    .unwrap();
+
+    let mut config = mock_config();
+    config.docs_base_dir = Some(dir.clone());
+    let registry = create_default_registry(Arc::new(MockLlmService::new()), config);
+
+    // ── @docreview: docs injected into system prompt ──
+    let docreview = registry.get("docreview").unwrap();
+    let prompt = docreview.system_prompt();
+    assert!(
+        prompt.starts_with("<documentation>\n"),
+        "docreview prompt should start with injected docs block, got: {}",
+        &prompt[..prompt.len().min(80)]
+    );
+    assert!(prompt.contains("Navigation here."), "should contain docs/README.md content");
+    assert!(prompt.contains("Widget: a thing."), "should contain glossary.md content");
+    assert!(prompt.contains("Layers."), "should contain architecture.md content");
+    assert!(prompt.contains("YAML."), "should contain creating-agents.md content");
+    assert!(prompt.contains("</documentation>"), "should have closing tag");
+    assert!(
+        prompt.contains("documentation review agent"),
+        "original system prompt should be preserved after docs block"
+    );
+
+    // ── @rscagent: docs injected into system prompt ──
+    let rscagent = registry.get("rscagent").unwrap();
+    let rsc_prompt = rscagent.system_prompt();
+    assert!(
+        rsc_prompt.starts_with("<documentation>\n"),
+        "rscagent prompt should start with injected docs block, got: {}",
+        &rsc_prompt[..rsc_prompt.len().min(80)]
+    );
+    assert!(rsc_prompt.contains("Compiler pipeline."), "should contain doc/architecture.md");
+    assert!(rsc_prompt.contains("RSX syntax rules."), "should contain grammar.md");
+
+    // ── Engine creation succeeds with docs-enriched prompts ──
+    assert!(
+        registry.engine_for("docreview").is_some(),
+        "engine should be created for docreview with docs-enriched prompt"
+    );
+    assert!(
+        registry.engine_for("rscagent").is_some(),
+        "engine should be created for rscagent with docs-enriched prompt"
+    );
+
+    // ── Agents without docs blocks are unaffected ──
+    let shell = registry.get("shell").unwrap();
+    assert!(
+        !shell.system_prompt().starts_with("<documentation>\n"),
+        "shell agent should have no docs block"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
@@ -2438,6 +2556,54 @@ agents:
     // suggest_agent should also work for user keywords
     assert_eq!(registry.suggest_agent("scan"), Some("security"));
     assert_eq!(registry.suggest_agent("cve"), Some("security"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+#[serial]
+fn yaml_docs_context_prepends_documentation_to_system_prompt() {
+    let dir = std::env::temp_dir().join("swebash_yaml_test_docs_context");
+    std::fs::create_dir_all(dir.join("ref")).ok();
+    std::fs::write(dir.join("ref").join("guide.md"), "# Style Guide\nUse snake_case.").unwrap();
+    std::fs::write(dir.join("ref").join("glossary.md"), "# Glossary\nWidget: a thing.").unwrap();
+
+    let config_path = dir.join("agents.yaml");
+    std::fs::write(
+        &config_path,
+        r#"
+version: 1
+agents:
+  - id: docbot
+    name: Doc Bot
+    description: Bot with docs
+    systemPrompt: You are a doc bot.
+    docs:
+      budget: 8000
+      sources:
+        - ref/*.md
+"#,
+    )
+    .unwrap();
+
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", config_path.to_str().unwrap());
+    let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
+
+    let docbot = registry.get("docbot").unwrap();
+    let prompt = docbot.system_prompt();
+
+    // Docs should be wrapped in <documentation> tags and prepended
+    assert!(
+        prompt.starts_with("<documentation>"),
+        "system prompt should start with <documentation>, got: {}",
+        &prompt[..prompt.len().min(80)]
+    );
+    assert!(prompt.contains("Use snake_case."), "should contain guide.md content");
+    assert!(prompt.contains("Widget: a thing."), "should contain glossary.md content");
+    assert!(prompt.contains("</documentation>"), "should have closing tag");
+    // Original prompt should follow after the docs block
+    assert!(prompt.contains("You are a doc bot."), "original prompt should be preserved");
 
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -3682,4 +3848,218 @@ fn max_iterations_seaaudit_agent_has_25() {
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
     let seaaudit = registry.get("seaaudit").expect("seaaudit should be registered");
     assert_eq!(seaaudit.max_iterations(), Some(25), "seaaudit should have maxIterations: 25");
+}
+
+// ── Project-local config tests ──────────────────────────────────────────
+
+#[test]
+fn yaml_project_local_config_overrides_builtin_agent() {
+    let dir = std::env::temp_dir().join("swebash_test_project_local_override");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join(".swebash")).unwrap();
+    std::fs::write(
+        dir.join(".swebash").join("agents.yaml"),
+        r#"
+version: 1
+agents:
+  - id: shell
+    name: Project Shell
+    description: Project-local shell agent
+    systemPrompt: Project shell prompt.
+"#,
+    )
+    .unwrap();
+
+    let mut config = mock_config();
+    config.docs_base_dir = Some(dir.clone());
+    let registry = create_default_registry(Arc::new(MockLlmService::new()), config);
+
+    // Project-local override should replace the builtin shell agent
+    let shell = registry.get("shell").unwrap();
+    assert_eq!(shell.display_name(), "Project Shell");
+    assert_eq!(shell.description(), "Project-local shell agent");
+
+    // Other builtins should still exist
+    assert!(registry.get("review").is_some());
+    assert!(registry.get("devops").is_some());
+
+    // Total count unchanged (override, not add)
+    assert_eq!(registry.list().len(), builtin_count());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn yaml_project_local_config_adds_agent() {
+    let dir = std::env::temp_dir().join("swebash_test_project_local_add");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join(".swebash")).unwrap();
+    std::fs::write(
+        dir.join(".swebash").join("agents.yaml"),
+        r#"
+version: 1
+agents:
+  - id: project-agent
+    name: Project Agent
+    description: A project-specific agent
+    systemPrompt: You are a project agent.
+    triggerKeywords: [project, local]
+"#,
+    )
+    .unwrap();
+
+    let mut config = mock_config();
+    config.docs_base_dir = Some(dir.clone());
+    let registry = create_default_registry(Arc::new(MockLlmService::new()), config);
+
+    // New agent should be added alongside builtins
+    assert_eq!(registry.list().len(), builtin_count() + 1);
+    let agent = registry.get("project-agent").unwrap();
+    assert_eq!(agent.display_name(), "Project Agent");
+    assert!(agent.trigger_keywords().contains(&"project".to_string()));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn yaml_project_local_config_with_docs_loads_relative() {
+    let dir = std::env::temp_dir().join("swebash_test_project_local_docs");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join(".swebash")).unwrap();
+    std::fs::create_dir_all(dir.join("ref")).unwrap();
+    std::fs::write(dir.join("ref").join("guide.md"), "# Guide\nProject guide content.").unwrap();
+
+    std::fs::write(
+        dir.join(".swebash").join("agents.yaml"),
+        r#"
+version: 1
+agents:
+  - id: docbot
+    name: Doc Bot
+    description: Bot with project docs
+    systemPrompt: You are a project doc bot.
+    docs:
+      budget: 8000
+      sources:
+        - ref/*.md
+"#,
+    )
+    .unwrap();
+
+    let mut config = mock_config();
+    config.docs_base_dir = Some(dir.clone());
+    let registry = create_default_registry(Arc::new(MockLlmService::new()), config);
+
+    let docbot = registry.get("docbot").unwrap();
+    let prompt = docbot.system_prompt();
+    assert!(
+        prompt.starts_with("<documentation>"),
+        "prompt should start with docs block, got: {}",
+        &prompt[..prompt.len().min(80)]
+    );
+    assert!(prompt.contains("Project guide content."), "should contain guide.md");
+    assert!(prompt.contains("You are a project doc bot."), "original prompt should be preserved");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+#[serial]
+fn yaml_user_config_overrides_project_local() {
+    let dir = std::env::temp_dir().join("swebash_test_user_over_project");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join(".swebash")).unwrap();
+
+    // Project-local defines agent with one name
+    std::fs::write(
+        dir.join(".swebash").join("agents.yaml"),
+        r#"
+version: 1
+agents:
+  - id: conflict-agent
+    name: Project Version
+    description: From project-local config
+    systemPrompt: Project prompt.
+"#,
+    )
+    .unwrap();
+
+    // User config defines same agent with different name
+    let user_dir = std::env::temp_dir().join("swebash_test_user_over_project_user");
+    let _ = std::fs::remove_dir_all(&user_dir);
+    std::fs::create_dir_all(&user_dir).unwrap();
+    let user_config = user_dir.join("agents.yaml");
+    std::fs::write(
+        &user_config,
+        r#"
+version: 1
+agents:
+  - id: conflict-agent
+    name: User Version
+    description: From user config
+    systemPrompt: User prompt.
+"#,
+    )
+    .unwrap();
+
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", user_config.to_str().unwrap());
+    let mut config = mock_config();
+    config.docs_base_dir = Some(dir.clone());
+    let registry = create_default_registry(Arc::new(MockLlmService::new()), config);
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
+
+    // User config wins over project-local
+    let agent = registry.get("conflict-agent").unwrap();
+    assert_eq!(agent.display_name(), "User Version");
+    assert_eq!(agent.description(), "From user config");
+
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::remove_dir_all(&user_dir).ok();
+}
+
+// ── Error propagation tests ─────────────────────────────────────────────
+
+#[test]
+fn yaml_docs_context_warns_on_unresolved_sources() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let config = DocsConfig {
+        budget: 8000,
+        sources: vec![
+            "nonexistent/path/*.md".to_string(),
+            "also/missing/*.txt".to_string(),
+        ],
+    };
+
+    let result = load_docs_context(&config, dir.path());
+    assert!(result.content.is_none(), "no content should load from nonexistent sources");
+    assert_eq!(result.files_loaded, 0);
+    assert_eq!(result.unresolved.len(), 2);
+    assert!(result.unresolved.contains(&"nonexistent/path/*.md".to_string()));
+    assert!(result.unresolved.contains(&"also/missing/*.txt".to_string()));
+}
+
+#[test]
+fn yaml_docs_context_partial_resolution_loads_available() {
+    let dir = tempfile::tempdir().unwrap();
+    let docs_dir = dir.path().join("docs");
+    std::fs::create_dir_all(&docs_dir).unwrap();
+    std::fs::write(docs_dir.join("real.md"), "# Real Doc\nActual content here.").unwrap();
+
+    let config = DocsConfig {
+        budget: 8000,
+        sources: vec![
+            "docs/real.md".to_string(),
+            "missing/nothing/*.md".to_string(),
+        ],
+    };
+
+    let result = load_docs_context(&config, dir.path());
+    // Existing file should load
+    assert!(result.content.is_some());
+    let text = result.content.unwrap();
+    assert!(text.contains("Actual content here."));
+    assert_eq!(result.files_loaded, 1);
+    // Missing source should be unresolved
+    assert_eq!(result.unresolved, vec!["missing/nothing/*.md"]);
 }

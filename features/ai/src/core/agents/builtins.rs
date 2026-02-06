@@ -31,20 +31,56 @@ pub fn builtin_agent_count() -> usize {
 
 /// Create the default agent registry with all built-in agents.
 ///
-/// Loads embedded defaults first, then optionally overlays user-defined
-/// agents from a config file (whole-agent replacement by ID).
+/// Loads agents in three layers (later layers override earlier ones):
+/// 1. Embedded defaults from `default_agents.yaml`
+/// 2. Project-local `.swebash/agents.yaml` in `docs_base_dir` (if present)
+/// 3. User-level config file (whole-agent replacement by ID)
 pub fn create_default_registry(llm: Arc<dyn LlmService>, config: AiConfig) -> AgentManager {
+    let docs_base_dir = config.docs_base_dir.clone();
     let mut manager = AgentManager::new(llm, config);
 
-    // 1. Parse and register embedded default agents
-    register_from_yaml(&mut manager, DEFAULT_AGENTS_YAML, "built-in");
+    // 1. Parse and register embedded default agents.
+    //    Use docs_base_dir from config so agents with docs_context can load files.
+    register_from_yaml(
+        &mut manager,
+        DEFAULT_AGENTS_YAML,
+        "built-in",
+        docs_base_dir.as_deref(),
+    );
 
-    // 2. Look for user config file and overlay
+    // 2. Look for project-local config (.swebash/agents.yaml in docs_base_dir)
+    if let Some(ref base) = docs_base_dir {
+        let project_config = base.join(".swebash").join("agents.yaml");
+        if project_config.is_file() {
+            match std::fs::read_to_string(&project_config) {
+                Ok(contents) => {
+                    tracing::info!("Loading project agents from {}", project_config.display());
+                    register_from_yaml(
+                        &mut manager,
+                        &contents,
+                        &project_config.display().to_string(),
+                        Some(base.as_path()),
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to read project agents file {}: {e}", project_config.display());
+                }
+            }
+        }
+    }
+
+    // 3. Look for user config file and overlay
     if let Some(path) = find_user_agents_config() {
+        let base_dir = path.parent().map(|p| p.to_path_buf());
         match std::fs::read_to_string(&path) {
             Ok(contents) => {
                 tracing::info!("Loading user agents from {}", path.display());
-                register_from_yaml(&mut manager, &contents, &path.display().to_string());
+                register_from_yaml(
+                    &mut manager,
+                    &contents,
+                    &path.display().to_string(),
+                    base_dir.as_deref(),
+                );
             }
             Err(e) => {
                 tracing::warn!("Failed to read user agents file {}: {e}", path.display());
@@ -57,14 +93,24 @@ pub fn create_default_registry(llm: Arc<dyn LlmService>, config: AiConfig) -> Ag
 
 /// Parse a YAML string and register all agents into the manager.
 ///
+/// When `base_dir` is `Some`, any agent with a `docs` section will have
+/// its file sources loaded relative to that directory and prepended to
+/// the system prompt.
+///
 /// On parse failure, logs a warning and continues with whatever agents
 /// are already registered.
-fn register_from_yaml(manager: &mut AgentManager, yaml: &str, source: &str) {
+fn register_from_yaml(
+    manager: &mut AgentManager,
+    yaml: &str,
+    source: &str,
+    base_dir: Option<&std::path::Path>,
+) {
     match AgentsYaml::from_yaml(yaml) {
         Ok(parsed) => {
             let defaults = parsed.defaults;
             for entry in parsed.agents {
-                let agent = ConfigAgent::from_entry(entry, &defaults);
+                let agent =
+                    ConfigAgent::from_entry_with_base_dir(entry, &defaults, base_dir);
                 manager.register(agent);
             }
         }
@@ -216,11 +262,12 @@ agents:
             agent_auto_detect: true,
             tools: crate::spi::config::ToolConfig::default(),
             log_dir: None,
+            docs_base_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
-        register_from_yaml(&mut manager, DEFAULT_AGENTS_YAML, "defaults");
-        register_from_yaml(&mut manager, user_yaml, "user");
+        register_from_yaml(&mut manager, DEFAULT_AGENTS_YAML, "defaults", None);
+        register_from_yaml(&mut manager, user_yaml, "user", None);
 
         // User override should replace the default shell agent
         let shell = manager.get("shell").unwrap();
@@ -258,11 +305,12 @@ agents:
             agent_auto_detect: true,
             tools: crate::spi::config::ToolConfig::default(),
             log_dir: None,
+            docs_base_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
-        register_from_yaml(&mut manager, DEFAULT_AGENTS_YAML, "defaults");
-        register_from_yaml(&mut manager, user_yaml, "user");
+        register_from_yaml(&mut manager, DEFAULT_AGENTS_YAML, "defaults", None);
+        register_from_yaml(&mut manager, user_yaml, "user", None);
 
         // New agent should be added alongside defaults
         assert_eq!(manager.list().len(), builtin_agent_count() + 1);
@@ -281,11 +329,12 @@ agents:
             agent_auto_detect: true,
             tools: crate::spi::config::ToolConfig::default(),
             log_dir: None,
+            docs_base_dir: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
-        register_from_yaml(&mut manager, DEFAULT_AGENTS_YAML, "defaults");
-        register_from_yaml(&mut manager, "not: valid: yaml: [", "bad-user-file");
+        register_from_yaml(&mut manager, DEFAULT_AGENTS_YAML, "defaults", None);
+        register_from_yaml(&mut manager, "not: valid: yaml: [", "bad-user-file", None);
 
         // Defaults should still be present
         assert_eq!(manager.list().len(), builtin_agent_count());

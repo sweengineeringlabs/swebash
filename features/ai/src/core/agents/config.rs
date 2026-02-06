@@ -120,19 +120,36 @@ fn bool_true() -> bool {
 
 // ── Document loading ────────────────────────────────────────────────
 
+/// Result of loading document context from file sources.
+#[derive(Debug)]
+pub struct DocsLoadResult {
+    /// The loaded content, if any sources resolved.
+    pub content: Option<String>,
+    /// Sources that matched zero files.
+    pub unresolved: Vec<String>,
+    /// Total number of files successfully loaded.
+    pub files_loaded: usize,
+}
+
 /// Load document context from file sources, respecting a token budget.
 ///
 /// Expands globs, reads files, prepends `--- path ---` headers, and
 /// truncates to `budget * 4` chars (heuristic: 1 token ≈ 4 chars).
 /// Missing files are skipped with a warning (fail-open).
-/// Returns `None` if no content was loaded.
-pub fn load_docs_context(docs: &DocsConfig, base_dir: &Path) -> Option<String> {
+/// Returns a [`DocsLoadResult`] with content, unresolved sources, and file count.
+pub fn load_docs_context(docs: &DocsConfig, base_dir: &Path) -> DocsLoadResult {
     if docs.sources.is_empty() {
-        return None;
+        return DocsLoadResult {
+            content: None,
+            unresolved: vec![],
+            files_loaded: 0,
+        };
     }
 
     let char_budget = docs.budget * 4;
     let mut result = String::new();
+    let mut unresolved = Vec::new();
+    let mut files_loaded: usize = 0;
 
     for pattern in &docs.sources {
         let full_pattern = base_dir.join(pattern).to_string_lossy().to_string();
@@ -140,9 +157,12 @@ pub fn load_docs_context(docs: &DocsConfig, base_dir: &Path) -> Option<String> {
             Ok(paths) => paths,
             Err(e) => {
                 tracing::warn!(pattern = %pattern, error = %e, "invalid glob pattern, skipping");
+                unresolved.push(pattern.clone());
                 continue;
             }
         };
+
+        let mut pattern_matched = false;
 
         for entry in paths {
             let path = match entry {
@@ -155,6 +175,8 @@ pub fn load_docs_context(docs: &DocsConfig, base_dir: &Path) -> Option<String> {
 
             match std::fs::read_to_string(&path) {
                 Ok(content) => {
+                    pattern_matched = true;
+                    files_loaded += 1;
                     let display_path = path.strip_prefix(base_dir)
                         .unwrap_or(&path)
                         .display();
@@ -173,21 +195,30 @@ pub fn load_docs_context(docs: &DocsConfig, base_dir: &Path) -> Option<String> {
             }
         }
 
+        if !pattern_matched {
+            unresolved.push(pattern.clone());
+        }
+
         if result.len() >= char_budget {
             break;
         }
     }
 
-    if result.is_empty() {
-        return None;
-    }
+    let content = if result.is_empty() {
+        None
+    } else {
+        // Truncate to budget
+        if result.len() > char_budget {
+            result.truncate(char_budget);
+        }
+        Some(result)
+    };
 
-    // Truncate to budget
-    if result.len() > char_budget {
-        result.truncate(char_budget);
+    DocsLoadResult {
+        content,
+        unresolved,
+        files_loaded,
     }
-
-    Some(result)
 }
 
 // ── Parsing ────────────────────────────────────────────────────────
@@ -261,10 +292,19 @@ impl ConfigAgent {
         // Load document context and prepend to system prompt.
         // TODO: migrate to ChatConfig.docs_context when ChatEngine supports it
         if let (Some(docs), Some(dir)) = (&entry.docs, base_dir) {
-            if let Some(docs_content) = load_docs_context(docs, dir) {
+            let result = load_docs_context(docs, dir);
+            if let Some(docs_content) = result.content {
                 system_prompt = format!(
                     "<documentation>\n{}\n</documentation>\n\n{}",
                     docs_content, system_prompt
+                );
+            }
+            if !result.unresolved.is_empty() {
+                tracing::warn!(
+                    agent = %entry.id,
+                    unresolved = ?result.unresolved,
+                    files_loaded = result.files_loaded,
+                    "agent has docs_context sources that resolved no files"
                 );
             }
         }
@@ -795,8 +835,9 @@ agents:
         };
 
         let result = load_docs_context(&config, dir.path());
-        assert!(result.is_some());
-        let text = result.unwrap();
+        assert_eq!(result.files_loaded, 2);
+        assert!(result.unresolved.is_empty());
+        let text = result.content.unwrap();
         assert!(text.contains("--- docs"));
         assert!(text.contains("Content A"));
         assert!(text.contains("Content B"));
@@ -812,7 +853,9 @@ agents:
         };
 
         let result = load_docs_context(&config, dir.path());
-        assert!(result.is_none());
+        assert!(result.content.is_none());
+        assert_eq!(result.unresolved, vec!["nonexistent/*.md"]);
+        assert_eq!(result.files_loaded, 0);
     }
 
     #[test]
@@ -830,8 +873,8 @@ agents:
         };
 
         let result = load_docs_context(&config, dir.path());
-        assert!(result.is_some());
-        let text = result.unwrap();
+        assert!(result.content.is_some());
+        let text = result.content.unwrap();
         assert!(text.len() <= 400);
     }
 
@@ -845,7 +888,8 @@ agents:
         };
 
         let result = load_docs_context(&config, dir.path());
-        assert!(result.is_none());
+        assert!(result.content.is_none());
+        assert_eq!(result.files_loaded, 0);
     }
 
     #[test]
@@ -863,9 +907,32 @@ agents:
         };
 
         let result = load_docs_context(&config, dir.path());
-        assert!(result.is_some());
-        let text = result.unwrap();
+        assert!(result.content.is_some());
+        let text = result.content.unwrap();
         assert!(text.contains("Lexer docs"));
         assert!(text.contains("Parser docs"));
+    }
+
+    #[test]
+    fn test_load_docs_context_partial_resolution() {
+        let dir = tempfile::tempdir().unwrap();
+        let docs_dir = dir.path().join("docs");
+        std::fs::create_dir_all(&docs_dir).unwrap();
+        std::fs::write(docs_dir.join("exists.md"), "# Exists\nReal content.").unwrap();
+
+        let config = DocsConfig {
+            budget: 8000,
+            sources: vec![
+                "docs/exists.md".to_string(),
+                "missing/*.md".to_string(),
+            ],
+        };
+
+        let result = load_docs_context(&config, dir.path());
+        assert!(result.content.is_some());
+        let text = result.content.unwrap();
+        assert!(text.contains("Real content."));
+        assert_eq!(result.files_loaded, 1);
+        assert_eq!(result.unresolved, vec!["missing/*.md"]);
     }
 }
