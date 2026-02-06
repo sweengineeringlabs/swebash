@@ -36,6 +36,7 @@ Architecture decisions and system design.
 | [Command Design](3-design/command-design.md) | AI command triggers and shell-mode dispatch | Developers, architects |
 | [Prompt Engineering](3-design/prompt-engineering.md) | System prompt design principles | Developers, architects |
 | [ADR-001](3-design/ADR-001-agent-doc-context.md) | Agent documentation context strategy | Developers, architects |
+| [ADR Index](3-design/adr/README.md) | Architecture decision record index and template | Developers, architects |
 
 ### 4-Development
 
@@ -43,6 +44,7 @@ Implementation details, setup, and backlog.
 
 | Document | Description | Audience |
 |----------|-------------|----------|
+| [Developer Guide](4-development/developer-guide.md) | Day-to-day workflow, conventions, common tasks | Contributors, developers |
 | [Setup Guide](4-development/setup-guide.md) | Dev environment setup, build, and run | Contributors, developers |
 | [AI Mode](4-development/ai-mode.md) | AI mode architecture and intent detection | Developers |
 | [Arrow Keys](4-development/arrow-keys.md) | Arrow key navigation implementation | Developers |
