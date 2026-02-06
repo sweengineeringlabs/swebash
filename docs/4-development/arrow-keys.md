@@ -1,5 +1,7 @@
 # Arrow Key Navigation Implementation
 
+**Audience**: Developers
+
 ## Summary
 
 Successfully implemented full arrow key navigation and line editing for swebash using the crossterm library. The shell now supports professional readline-style editing with history navigation and inline hints.

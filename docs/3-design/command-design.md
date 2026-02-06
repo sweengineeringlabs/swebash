@@ -1,5 +1,7 @@
 # Command Design
 
+**Audience**: Developers, architects
+
 ## AI Command Triggers
 
 All AI commands are intercepted in the host REPL **before** reaching the WASM engine.

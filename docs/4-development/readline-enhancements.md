@@ -1,5 +1,7 @@
 # Rustyline Enhancements - Technical Design
 
+**Audience**: Developers
+
 ## Overview
 
 This document describes the technical design for implementing advanced rustyline features in swebash. These enhancements will provide a modern, user-friendly shell experience comparable to fish, zsh, or nushell.

@@ -1,5 +1,6 @@
 # ADR-001: Agent Documentation Context Strategy
 
+**Audience**: Developers, architects
 **Status:** Proposed
 **Date:** 2026-02-05
 **Authors:** Architecture Team

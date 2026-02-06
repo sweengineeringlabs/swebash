@@ -1,5 +1,7 @@
 # AI Mode Architecture
 
+**Audience**: Developers
+
 ## Overview
 
 AI Mode is an interactive mode in swebash that allows natural conversation with AI without repeatedly typing the `ai` prefix. It combines smart intent detection with conversational fallback to provide a seamless experience.

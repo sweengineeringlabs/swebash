@@ -1,5 +1,7 @@
 # AI Integration Design
 
+**Audience**: Developers, architects
+
 ## Isolation Boundary
 
 The `AiClient` trait in `spi/mod.rs` is the isolation boundary between swebash-ai and the LLM HTTP APIs.

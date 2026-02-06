@@ -1,5 +1,7 @@
 # Agent Architecture
 
+**Audience**: Developers, architects
+
 Specialized AI agents, each with its own system prompt, tool access, and conversation memory.
 
 ## Overview

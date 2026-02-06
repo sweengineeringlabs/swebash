@@ -1,5 +1,7 @@
 # swebash Architecture
 
+**Audience**: Developers, architects
+
 ## Overview
 
 swebash is a WASM-based Unix-like shell with three crates:

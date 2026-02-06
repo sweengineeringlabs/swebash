@@ -1,5 +1,7 @@
 # Backlog: Case study — SEA eliminates cross-platform "common" libraries
 
+**Audience**: Developers, architects
+
 **Problem**: `lib/common.sh` and `lib/common.ps1` duplicate the same logic (registry setup, env loading, Cargo.lock sync) across two languages with divergent idioms, edge cases, and bugs. Every new feature requires parallel implementation and parallel tests. The Cargo.lock sync work is a concrete example — identical intent, two implementations, two test suites.
 
 - [ ] Document how a Single Executable Application (SEA) approach removes this duplication

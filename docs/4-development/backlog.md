@@ -1,5 +1,7 @@
 # Development Backlog
 
+**Audience**: Developers, project leads
+
 ## Phase 1: Foundation (Complete)
 - [x] 1.1 Create `ai/` crate with Cargo.toml, add to workspace
 - [x] 1.2 Implement L1 types: AiMessage, AiRole, CompletionOptions, AiError

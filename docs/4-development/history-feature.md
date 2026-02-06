@@ -1,5 +1,7 @@
 # Command History Feature
 
+**Audience**: Developers
+
 ## Overview
 Added command history support to swebash with a custom, in-house implementation:
 - **Persistent history**: Commands automatically saved to `~/.swebash_history`

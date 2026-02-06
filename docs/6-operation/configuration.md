@@ -1,5 +1,7 @@
 # Configuration
 
+**Audience**: Users, DevOps
+
 ## Environment Variables
 
 All configuration is done via environment variables. No config files are required.

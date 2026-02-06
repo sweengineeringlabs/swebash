@@ -1,5 +1,7 @@
 # Prompt Engineering
 
+**Audience**: Developers, architects
+
 ## Design Principles
 
 1. **Role clarity**: Each system prompt defines a clear, specific role.

@@ -1,5 +1,7 @@
 # Manual Testing Guide
 
+**Audience**: Developers, QA
+
 ## Prerequisites
 
 1. Rust toolchain with `wasm32-unknown-unknown` target installed

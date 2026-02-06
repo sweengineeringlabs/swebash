@@ -1,5 +1,7 @@
 # swebash Development Setup Guide
 
+**Audience**: Contributors, developers
+
 ## Prerequisites
 
 - **Rust toolchain**: Install from [rustup.rs](https://rustup.rs)

@@ -1,5 +1,7 @@
 # AI Mode Test Suite
 
+**Audience**: Developers, QA
+
 ## Overview
 
 Comprehensive test coverage for AI Mode with smart detection, including 38 tests covering all aspects of the feature.
