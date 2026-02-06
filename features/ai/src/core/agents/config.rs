@@ -2,6 +2,8 @@
 ///
 /// Provides serde types for parsing agent YAML files and a `ConfigAgent`
 /// that implements the `AgentDescriptor` trait from parsed configuration.
+use std::path::Path;
+
 use serde::Deserialize;
 
 use agent_controller::{AgentDescriptor, ToolFilter};
@@ -68,6 +70,15 @@ impl Default for ToolsConfig {
     }
 }
 
+/// Document context configuration for loading reference material.
+#[derive(Debug, Deserialize)]
+pub struct DocsConfig {
+    /// Token budget for document context (heuristic: 1 token ≈ 4 chars).
+    pub budget: usize,
+    /// File paths or glob patterns to load as documentation.
+    pub sources: Vec<String>,
+}
+
 /// A single agent entry in the YAML file.
 #[derive(Debug, Deserialize)]
 pub struct AgentEntry {
@@ -88,6 +99,9 @@ pub struct AgentEntry {
     pub bypass_confirmation: Option<bool>,
     #[serde(default, rename = "maxIterations")]
     pub max_iterations: Option<usize>,
+    /// Document context configuration.
+    #[serde(default)]
+    pub docs: Option<DocsConfig>,
 }
 
 // ── Defaults helpers ───────────────────────────────────────────────
@@ -102,6 +116,78 @@ fn default_max_tokens() -> u32 {
 
 fn bool_true() -> bool {
     true
+}
+
+// ── Document loading ────────────────────────────────────────────────
+
+/// Load document context from file sources, respecting a token budget.
+///
+/// Expands globs, reads files, prepends `--- path ---` headers, and
+/// truncates to `budget * 4` chars (heuristic: 1 token ≈ 4 chars).
+/// Missing files are skipped with a warning (fail-open).
+/// Returns `None` if no content was loaded.
+pub fn load_docs_context(docs: &DocsConfig, base_dir: &Path) -> Option<String> {
+    if docs.sources.is_empty() {
+        return None;
+    }
+
+    let char_budget = docs.budget * 4;
+    let mut result = String::new();
+
+    for pattern in &docs.sources {
+        let full_pattern = base_dir.join(pattern).to_string_lossy().to_string();
+        let paths = match glob::glob(&full_pattern) {
+            Ok(paths) => paths,
+            Err(e) => {
+                tracing::warn!(pattern = %pattern, error = %e, "invalid glob pattern, skipping");
+                continue;
+            }
+        };
+
+        for entry in paths {
+            let path = match entry {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!(error = %e, "glob entry error, skipping");
+                    continue;
+                }
+            };
+
+            match std::fs::read_to_string(&path) {
+                Ok(content) => {
+                    let display_path = path.strip_prefix(base_dir)
+                        .unwrap_or(&path)
+                        .display();
+                    let header = format!("--- {} ---\n", display_path);
+                    result.push_str(&header);
+                    result.push_str(&content);
+                    result.push('\n');
+                }
+                Err(e) => {
+                    tracing::warn!(path = %path.display(), error = %e, "failed to read doc file, skipping");
+                }
+            }
+
+            if result.len() >= char_budget {
+                break;
+            }
+        }
+
+        if result.len() >= char_budget {
+            break;
+        }
+    }
+
+    if result.is_empty() {
+        return None;
+    }
+
+    // Truncate to budget
+    if result.len() > char_budget {
+        result.truncate(char_budget);
+    }
+
+    Some(result)
 }
 
 // ── Parsing ────────────────────────────────────────────────────────
@@ -131,7 +217,19 @@ pub struct ConfigAgent {
 
 impl ConfigAgent {
     /// Build a `ConfigAgent` from an `AgentEntry`, filling in defaults.
+    ///
+    /// If `base_dir` is provided and the entry has a `docs` section,
+    /// document content is loaded and prepended to the system prompt.
     pub fn from_entry(entry: AgentEntry, defaults: &AgentDefaults) -> Self {
+        Self::from_entry_with_base_dir(entry, defaults, None)
+    }
+
+    /// Build a `ConfigAgent` with an optional base directory for doc loading.
+    pub fn from_entry_with_base_dir(
+        entry: AgentEntry,
+        defaults: &AgentDefaults,
+        base_dir: Option<&Path>,
+    ) -> Self {
         let tools = entry.tools.as_ref().unwrap_or(&defaults.tools);
         let tool_filter = if tools.fs && tools.exec && tools.web {
             ToolFilter::All
@@ -150,7 +248,7 @@ impl ConfigAgent {
         };
 
         let think_first = entry.think_first.unwrap_or(defaults.think_first);
-        let system_prompt = if think_first && !entry.system_prompt.is_empty() {
+        let mut system_prompt = if think_first && !entry.system_prompt.is_empty() {
             format!(
                 "{}\nAlways explain your reasoning and what you plan to do before calling any tools.\n\
                  Provide a brief explanation of your approach first, then use tools to execute it.",
@@ -159,6 +257,17 @@ impl ConfigAgent {
         } else {
             entry.system_prompt
         };
+
+        // Load document context and prepend to system prompt.
+        // TODO: migrate to ChatConfig.docs_context when ChatEngine supports it
+        if let (Some(docs), Some(dir)) = (&entry.docs, base_dir) {
+            if let Some(docs_content) = load_docs_context(docs, dir) {
+                system_prompt = format!(
+                    "<documentation>\n{}\n</documentation>\n\n{}",
+                    docs_content, system_prompt
+                );
+            }
+        }
 
         Self {
             id: entry.id,
@@ -356,6 +465,7 @@ agents:
             think_first: None,
             bypass_confirmation: None,
             max_iterations: None,
+            docs: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         assert!(matches!(agent.tool_filter(), ToolFilter::All));
@@ -379,6 +489,7 @@ agents:
             think_first: None,
             bypass_confirmation: None,
             max_iterations: None,
+            docs: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -409,6 +520,7 @@ agents:
             think_first: None,
             bypass_confirmation: None,
             max_iterations: None,
+            docs: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         // system_prompt() returns &str — borrow from owned field
@@ -430,6 +542,7 @@ agents:
             think_first: None,
             bypass_confirmation: None,
             max_iterations: None,
+            docs: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         // trigger_keywords() returns &[String] — borrow from owned Vec
@@ -455,6 +568,7 @@ agents:
             think_first: None,
             bypass_confirmation: None,
             max_iterations: None,
+            docs: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -479,6 +593,7 @@ agents:
             think_first: None,
             bypass_confirmation: None,
             max_iterations: None,
+            docs: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -503,6 +618,7 @@ agents:
             think_first: None,
             bypass_confirmation: None,
             max_iterations: None,
+            docs: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -529,6 +645,7 @@ agents:
             think_first: None,
             bypass_confirmation: None,
             max_iterations: None,
+            docs: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -557,6 +674,7 @@ agents:
             think_first: None,
             bypass_confirmation: None,
             max_iterations: None,
+            docs: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         assert_eq!(agent.system_prompt(), "");
@@ -577,6 +695,7 @@ agents:
             think_first: None,
             bypass_confirmation: None,
             max_iterations: None,
+            docs: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         assert_eq!(agent.trigger_keywords().len(), 20);
@@ -598,6 +717,7 @@ agents:
             think_first: None,
             bypass_confirmation: None,
             max_iterations: None,
+            docs: None,
         };
         let entry2 = AgentEntry {
             id: "dup".into(),
@@ -611,6 +731,7 @@ agents:
             think_first: None,
             bypass_confirmation: None,
             max_iterations: None,
+            docs: None,
         };
         let a1 = ConfigAgent::from_entry(entry1, &defaults);
         let a2 = ConfigAgent::from_entry(entry2, &defaults);
@@ -618,5 +739,133 @@ agents:
         assert_eq!(a2.display_name(), "Replacement");
         assert_eq!(a2.temperature(), Some(0.9));
         assert_eq!(a2.trigger_keywords(), &["new".to_string()]);
+    }
+
+    // ── Document Context Tests ──────────────────────────────────────
+
+    const DOCS_YAML: &str = r#"
+version: 1
+agents:
+  - id: with-docs
+    name: Docs Agent
+    description: Agent with docs
+    systemPrompt: You are helpful.
+    docs:
+      budget: 8000
+      sources:
+        - "docs/*.md"
+"#;
+
+    const NO_DOCS_YAML: &str = r#"
+version: 1
+agents:
+  - id: no-docs
+    name: No Docs Agent
+    description: Agent without docs
+    systemPrompt: You are helpful.
+"#;
+
+    #[test]
+    fn test_yaml_with_docs_field_parses() {
+        let parsed = AgentsYaml::from_yaml(DOCS_YAML).unwrap();
+        assert_eq!(parsed.agents.len(), 1);
+        let docs = parsed.agents[0].docs.as_ref().unwrap();
+        assert_eq!(docs.budget, 8000);
+        assert_eq!(docs.sources, vec!["docs/*.md"]);
+    }
+
+    #[test]
+    fn test_yaml_without_docs_field_still_works() {
+        let parsed = AgentsYaml::from_yaml(NO_DOCS_YAML).unwrap();
+        assert_eq!(parsed.agents.len(), 1);
+        assert!(parsed.agents[0].docs.is_none());
+    }
+
+    #[test]
+    fn test_load_docs_context_with_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let docs_dir = dir.path().join("docs");
+        std::fs::create_dir_all(&docs_dir).unwrap();
+        std::fs::write(docs_dir.join("a.md"), "# File A\nContent A").unwrap();
+        std::fs::write(docs_dir.join("b.md"), "# File B\nContent B").unwrap();
+
+        let config = DocsConfig {
+            budget: 8000,
+            sources: vec!["docs/*.md".to_string()],
+        };
+
+        let result = load_docs_context(&config, dir.path());
+        assert!(result.is_some());
+        let text = result.unwrap();
+        assert!(text.contains("--- docs"));
+        assert!(text.contains("Content A"));
+        assert!(text.contains("Content B"));
+    }
+
+    #[test]
+    fn test_load_docs_context_missing_files_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let config = DocsConfig {
+            budget: 8000,
+            sources: vec!["nonexistent/*.md".to_string()],
+        };
+
+        let result = load_docs_context(&config, dir.path());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_load_docs_context_budget_truncation() {
+        let dir = tempfile::tempdir().unwrap();
+        let docs_dir = dir.path().join("docs");
+        std::fs::create_dir_all(&docs_dir).unwrap();
+        // Write a file larger than budget
+        let content = "x".repeat(5000);
+        std::fs::write(docs_dir.join("big.md"), &content).unwrap();
+
+        let config = DocsConfig {
+            budget: 100, // 100 tokens = 400 chars
+            sources: vec!["docs/*.md".to_string()],
+        };
+
+        let result = load_docs_context(&config, dir.path());
+        assert!(result.is_some());
+        let text = result.unwrap();
+        assert!(text.len() <= 400);
+    }
+
+    #[test]
+    fn test_load_docs_context_empty_sources_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let config = DocsConfig {
+            budget: 8000,
+            sources: vec![],
+        };
+
+        let result = load_docs_context(&config, dir.path());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_load_docs_context_glob_expansion() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("crates").join("compiler");
+        std::fs::create_dir_all(sub.join("lexer")).unwrap();
+        std::fs::create_dir_all(sub.join("parser")).unwrap();
+        std::fs::write(sub.join("lexer").join("README.md"), "Lexer docs").unwrap();
+        std::fs::write(sub.join("parser").join("README.md"), "Parser docs").unwrap();
+
+        let config = DocsConfig {
+            budget: 8000,
+            sources: vec!["crates/compiler/*/README.md".to_string()],
+        };
+
+        let result = load_docs_context(&config, dir.path());
+        assert!(result.is_some());
+        let text = result.unwrap();
+        assert!(text.contains("Lexer docs"));
+        assert!(text.contains("Parser docs"));
     }
 }

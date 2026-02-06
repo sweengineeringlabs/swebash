@@ -206,6 +206,29 @@ agents:
       web: false
     maxIterations: 20
     triggerKeywords: [rustscript, rsc, rsx, component, signal, wasm, theme, route]
+    docs:
+      budget: 8000
+      sources:
+        - doc/architecture.md
+        - doc/1_specification/grammar.md
+        - doc/1_specification/signal-runtime.md
+        - doc/1_specification/compiler-ir.md
+        - doc/3_design/compile/README.md
+        - docs/GETTING_STARTED.md
+        - docs/COMPONENTS.md
+        - docs/ROUTING.md
+        - docs/STYLING.md
+        - docs/TESTING.md
+        - docs/CLI.md
+        - doc/guide/04-signals.md
+        - doc/guide/06-templates.md
+        - doc/guide/07-best-practices.md
+        - doc/3_design/runtime/reactive_system.md
+        - doc/3_design/runtime/component_model.md
+        - doc/3_design/runtime/ssr.md
+        - doc/3_design/compile/code_splitting.md
+        - doc/3_design/compile/incremental_compilation.md
+        - crates/compiler/*/README.md
     systemPrompt: |
       You are a RustScript framework assistant embedded in swebash.
 
@@ -258,52 +281,15 @@ agents:
       You have filesystem and command execution access to read RustScript source files,
       run rsc commands, and inspect build output.
 
-      Documentation reference (read these files to give accurate answers):
-        Architecture & pipeline:
-          doc/architecture.md                         — compiler pipeline overview
-          doc/1_specification/grammar.md              — language EBNF grammar
-          doc/1_specification/signal-runtime.md       — signal reactive runtime spec
-          doc/1_specification/compiler-ir.md           — IR specification (HIR/MIR)
-          doc/3_design/compile/README.md              — compilation pipeline design
-        User guides:
-          docs/GETTING_STARTED.md                     — setup and first project
-          docs/COMPONENTS.md                          — component system guide
-          docs/ROUTING.md                             — routing guide
-          docs/STYLING.md                             — styling guide
-          docs/TESTING.md                             — testing guide
-          docs/CLI.md                                 — CLI command reference
-          doc/guide/04-signals.md                     — signals and reactivity guide
-          doc/guide/06-templates.md                   — template syntax guide
-          doc/guide/07-best-practices.md              — best practices
-        Runtime & design:
-          doc/3_design/runtime/reactive_system.md     — reactive system design
-          doc/3_design/runtime/component_model.md     — component model design
-          doc/3_design/runtime/ssr.md                 — SSR design
-          doc/3_design/compile/code_splitting.md      — code splitting architecture
-          doc/3_design/compile/incremental_compilation.md — incremental compilation
-        Compiler crate READMEs:
-          crates/compiler/lexer/README.md
-          crates/compiler/parser/README.md
-          crates/compiler/hir/README.md
-          crates/compiler/mir/README.md
-          crates/compiler/codegen/README.md
-          crates/compiler/types/README.md
-          crates/compiler/borrow-check/README.md
-          crates/compiler/css/README.md
-          crates/compiler/routing/README.md
-          crates/compiler/sema/README.md
-          crates/compiler/ssr/README.md
-
-      When answering questions, read the relevant documentation files listed above using
-      your filesystem tool BEFORE responding. Do not rely solely on the summary in this
-      prompt — consult the actual docs for accurate details, code examples, and API
-      specifics. Cite the doc path you referenced in your answer.
+      The <documentation> section above contains reference material loaded from the project
+      docs. Consult it for accurate details, code examples, and API specifics. Cite the
+      doc path you referenced in your answer.
 
       Rules:
       - Read source files and documentation before diagnosing issues. Never guess.
       - When the user has compiler errors, explain the error code (E0382, RSC001, etc.)
         and show the fix in context.
-      - For component design questions, read docs/COMPONENTS.md and doc/guide/04-signals.md
+      - For component design questions, consult the COMPONENTS and signals docs
         then show idiomatic RSX patterns with signals.
       - When running rsc commands, explain what they do and interpret the output.
       - Reference specific file paths and line numbers in the crate layout.

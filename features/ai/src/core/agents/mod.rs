@@ -209,7 +209,8 @@ mod tests {
                 trigger_keywords: keywords,
                 think_first: None,
                 bypass_confirmation: None,
-            max_iterations: None,
+                max_iterations: None,
+                docs: None,
             },
             &AgentDefaults::default(),
         )
@@ -550,7 +551,8 @@ mod tests {
                 trigger_keywords: vec![],
                 think_first: None,
                 bypass_confirmation: None,
-            max_iterations: None,
+                max_iterations: None,
+                docs: None,
             },
             &AgentDefaults::default(),
         ));
@@ -566,7 +568,8 @@ mod tests {
                 trigger_keywords: vec![],
                 think_first: None,
                 bypass_confirmation: None,
-            max_iterations: None,
+                max_iterations: None,
+                docs: None,
             },
             &AgentDefaults::default(),
         ));
@@ -799,7 +802,8 @@ mod tests {
                 trigger_keywords: vec![],
                 think_first: None,
                 bypass_confirmation: None,
-            max_iterations: None,
+                max_iterations: None,
+                docs: None,
             },
             &AgentDefaults::default(),
         );
