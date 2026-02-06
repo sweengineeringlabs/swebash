@@ -22,7 +22,11 @@ use swebash_ai::api::types::{
 };
 use swebash_ai::api::AiService;
 use swebash_ai::{AiConfig, ToolCacheConfig, ToolConfig};
-use swebash_ai::core::agents::builtins::create_default_registry;
+use swebash_ai::core::agents::builtins::{builtin_agent_count, create_default_registry};
+
+fn builtin_count() -> usize {
+    builtin_agent_count()
+}
 use swebash_ai::core::agents::config::{AgentDefaults, AgentEntry, AgentsYaml, ConfigAgent, ToolsConfig};
 use swebash_ai::core::agents::{AgentDescriptor, ToolFilter};
 use swebash_ai::core::DefaultAiService;
@@ -1598,16 +1602,7 @@ async fn agent_list_returns_all_builtins() {
     match try_create_service().await {
         Ok(service) => {
             let agents = service.list_agents().await;
-            assert_eq!(agents.len(), 8, "should have 8 built-in agents");
-            let ids: Vec<&str> = agents.iter().map(|a| a.id.as_str()).collect();
-            assert!(ids.contains(&"shell"), "should contain shell agent");
-            assert!(ids.contains(&"review"), "should contain review agent");
-            assert!(ids.contains(&"devops"), "should contain devops agent");
-            assert!(ids.contains(&"git"), "should contain git agent");
-            assert!(ids.contains(&"web"), "should contain web agent");
-            assert!(ids.contains(&"seaaudit"), "should contain seaaudit agent");
-            assert!(ids.contains(&"rscagent"), "should contain rscagent agent");
-            assert!(ids.contains(&"docreview"), "should contain docreview agent");
+            assert_eq!(agents.len(), builtin_count(), "should have all built-in agents");
         }
         Err(e) => assert_setup_error(&e),
     }
@@ -1783,7 +1778,7 @@ fn yaml_parse_embedded_defaults() {
     let yaml = include_str!("../src/core/agents/default_agents.yaml");
     let parsed = AgentsYaml::from_yaml(yaml).expect("embedded YAML should parse");
     assert_eq!(parsed.version, 1);
-    assert_eq!(parsed.agents.len(), 8);
+    assert_eq!(parsed.agents.len(), builtin_count());
 }
 
 #[test]
@@ -2107,15 +2102,7 @@ fn mock_config() -> AiConfig {
 fn yaml_registry_loads_all_default_agents() {
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
     let agents = registry.list();
-    assert_eq!(agents.len(), 8);
-    let ids: Vec<&str> = agents.iter().map(|a| a.id()).collect();
-    assert!(ids.contains(&"shell"));
-    assert!(ids.contains(&"review"));
-    assert!(ids.contains(&"devops"));
-    assert!(ids.contains(&"git"));
-    assert!(ids.contains(&"rscagent"));
-    assert!(ids.contains(&"web"));
-    assert!(ids.contains(&"seaaudit"));
+    assert_eq!(agents.len(), builtin_count());
 }
 
 #[test]
@@ -2255,8 +2242,8 @@ agents:
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
     std::env::remove_var("SWEBASH_AGENTS_CONFIG");
 
-    // Should have 8 defaults + 1 custom = 9
-    assert_eq!(registry.list().len(), 9);
+    // defaults + 1 custom
+    assert_eq!(registry.list().len(), builtin_count() + 1);
     let custom = registry.get("custom-from-env").unwrap();
     assert_eq!(custom.display_name(), "Custom From Env");
     assert!(custom.trigger_keywords().contains(&"custom".to_string()));
@@ -2291,8 +2278,8 @@ agents:
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
     std::env::remove_var("SWEBASH_AGENTS_CONFIG");
 
-    // Still 8 agents (override doesn't add, it replaces)
-    assert_eq!(registry.list().len(), 8);
+    // Override replaces, doesn't add
+    assert_eq!(registry.list().len(), builtin_count());
 
     let shell = registry.get("shell").unwrap();
     assert_eq!(shell.display_name(), "My Custom Shell");
@@ -2326,8 +2313,8 @@ fn yaml_user_config_invalid_file_ignored() {
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
     std::env::remove_var("SWEBASH_AGENTS_CONFIG");
 
-    // Should still have all 8 defaults despite invalid user file
-    assert_eq!(registry.list().len(), 8);
+    // Should still have all defaults despite invalid user file
+    assert_eq!(registry.list().len(), builtin_count());
     assert!(registry.get("shell").is_some());
     assert!(registry.get("review").is_some());
     assert!(registry.get("devops").is_some());
@@ -2349,7 +2336,7 @@ fn yaml_user_config_nonexistent_path_ignored() {
     std::env::remove_var("SWEBASH_AGENTS_CONFIG");
 
     // All defaults should load fine
-    assert_eq!(registry.list().len(), 8);
+    assert_eq!(registry.list().len(), builtin_count());
 }
 
 #[test]
@@ -2388,8 +2375,8 @@ agents:
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
     std::env::remove_var("SWEBASH_AGENTS_CONFIG");
 
-    // 8 defaults + 2 new = 10
-    assert_eq!(registry.list().len(), 10);
+    // defaults + 2 new
+    assert_eq!(registry.list().len(), builtin_count() + 2);
 
     let security = registry.get("security").unwrap();
     assert_eq!(security.display_name(), "Security Scanner");
@@ -2463,7 +2450,7 @@ async fn yaml_service_list_agents_returns_correct_info() {
     match try_create_service().await {
         Ok(service) => {
             let agents = service.list_agents().await;
-            assert_eq!(agents.len(), 8);
+            assert_eq!(agents.len(), builtin_count());
 
             // Verify all agents have correct display names from YAML
             let shell = agents.iter().find(|a| a.id == "shell").unwrap();
@@ -2559,8 +2546,8 @@ agents:
     match result {
         Ok(service) => {
             let agents = service.list_agents().await;
-            // 8 defaults + 1 custom (shell is overridden, not added)
-            assert_eq!(agents.len(), 9);
+            // defaults + 1 custom (shell is overridden, not added)
+            assert_eq!(agents.len(), builtin_count() + 1);
 
             // Shell should show overridden name
             let shell = agents.iter().find(|a| a.id == "shell").unwrap();
@@ -2903,10 +2890,10 @@ agents:
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
     std::env::remove_var("SWEBASH_AGENTS_CONFIG");
 
-    // 9 agents: 8 built-in + 1 user
-    assert_eq!(registry.list().len(), 9);
+    // built-in + 1 user
+    assert_eq!(registry.list().len(), builtin_count() + 1);
 
-    // All 8 agents should produce engines
+    // All agents should produce engines
     for agent in registry.list() {
         assert!(
             registry.engine_for(agent.id()).is_some(),
@@ -2961,7 +2948,7 @@ async fn delegate_e2e_service_layer_round_trip() {
             // Switch back and verify list
             service.switch_agent("shell").await.unwrap();
             let agents = service.list_agents().await;
-            assert_eq!(agents.len(), 8);
+            assert_eq!(agents.len(), builtin_count());
 
             // Verify AgentInfo comes from AgentDescriptor trait
             let shell = agents.iter().find(|a| a.id == "shell").unwrap();

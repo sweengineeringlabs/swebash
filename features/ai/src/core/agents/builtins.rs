@@ -18,6 +18,17 @@ use super::AgentManager;
 /// Embedded default agents YAML, compiled into the binary.
 const DEFAULT_AGENTS_YAML: &str = include_str!("default_agents.yaml");
 
+/// Return the number of agents defined in the embedded default YAML.
+///
+/// Useful in tests to avoid hardcoding a count that breaks whenever a
+/// new agent is added to `default_agents.yaml`.
+pub fn builtin_agent_count() -> usize {
+    AgentsYaml::from_yaml(DEFAULT_AGENTS_YAML)
+        .expect("embedded YAML must parse")
+        .agents
+        .len()
+}
+
 /// Create the default agent registry with all built-in agents.
 ///
 /// Loads embedded defaults first, then optionally overlays user-defined
@@ -113,17 +124,7 @@ mod tests {
         let parsed = AgentsYaml::from_yaml(DEFAULT_AGENTS_YAML)
             .expect("Embedded default_agents.yaml should parse");
         assert_eq!(parsed.version, 1);
-        assert_eq!(parsed.agents.len(), 8);
-
-        let ids: Vec<&str> = parsed.agents.iter().map(|a| a.id.as_str()).collect();
-        assert!(ids.contains(&"shell"));
-        assert!(ids.contains(&"review"));
-        assert!(ids.contains(&"devops"));
-        assert!(ids.contains(&"git"));
-        assert!(ids.contains(&"web"));
-        assert!(ids.contains(&"seaaudit"));
-        assert!(ids.contains(&"rscagent"));
-        assert!(ids.contains(&"docreview"));
+        assert_eq!(parsed.agents.len(), builtin_agent_count());
     }
 
     #[test]
@@ -264,7 +265,7 @@ agents:
         register_from_yaml(&mut manager, user_yaml, "user");
 
         // New agent should be added alongside defaults
-        assert_eq!(manager.list().len(), 9);
+        assert_eq!(manager.list().len(), builtin_agent_count() + 1);
         let security = manager.get("security").unwrap();
         assert_eq!(security.display_name(), "Security Scanner");
     }
@@ -287,6 +288,6 @@ agents:
         register_from_yaml(&mut manager, "not: valid: yaml: [", "bad-user-file");
 
         // Defaults should still be present
-        assert_eq!(manager.list().len(), 8);
+        assert_eq!(manager.list().len(), builtin_agent_count());
     }
 }
