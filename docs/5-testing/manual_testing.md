@@ -181,7 +181,7 @@ export LLM_PROVIDER=anthropic SWEBASH_AI_ENABLED=true
 
 | Test | Command | Expected |
 |------|---------|----------|
-| List from shell | `ai agents` | Prints table of 8 agents (shell\*, review, devops, git, web, seaaudit, rscagent, docreview) with descriptions. Active agent marked with `*`. |
+| List from shell | `ai agents` | Prints table of 10 agents (shell\*, review, devops, git, web, seaaudit, rscagent, docreview, clitester, apitester) with descriptions. Active agent marked with `*`. |
 | List from AI mode | `ai` then `agents` | Same table, shown inside AI mode |
 
 ### 14. Agent Switching (AI Mode)
@@ -261,14 +261,14 @@ Agents are loaded in three layers (later layers override earlier ones):
 
 | Test | Steps | Expected |
 |------|-------|----------|
-| Add custom agent | Create `~/.config/swebash/agents.yaml` with a new agent (e.g. `id: security`), restart shell | `ai agents` lists 9 agents (8 defaults + custom) |
+| Add custom agent | Create `~/.config/swebash/agents.yaml` with a new agent (e.g. `id: security`), restart shell | `ai agents` lists 11 agents (10 defaults + custom) |
 | Switch to custom agent | `@security` | Prints "Switched to Security Scanner (security)", prompt shows `[AI:security] >` |
 | Custom trigger keywords | Add `triggerKeywords: [scan, cve]` to custom agent, restart, enter AI mode | Typing `scan this file` auto-detects the custom agent |
-| Override built-in agent | Add `id: shell` entry with custom `name` and `description` to user YAML, restart | `ai agents` shows custom name/description for shell agent; still 8 agents total |
-| Invalid user YAML | Write broken YAML to the config file, restart | Shell starts normally with 8 default agents (invalid file silently ignored) |
+| Override built-in agent | Add `id: shell` entry with custom `name` and `description` to user YAML, restart | `ai agents` shows custom name/description for shell agent; still 10 agents total |
+| Invalid user YAML | Write broken YAML to the config file, restart | Shell starts normally with 10 default agents (invalid file silently ignored) |
 | Env var override | `export SWEBASH_AGENTS_CONFIG=/path/to/agents.yaml`, restart shell | Agents from the specified file are loaded |
-| No config file | Ensure no user YAML exists anywhere, restart | Shell starts normally with 8 default agents |
-| Project-local config | Create `.swebash/agents.yaml` in project root with a new agent (e.g. `id: projbot`), restart shell | `ai agents` lists 9 agents (8 defaults + project agent) |
+| No config file | Ensure no user YAML exists anywhere, restart | Shell starts normally with 10 default agents |
+| Project-local config | Create `.swebash/agents.yaml` in project root with a new agent (e.g. `id: projbot`), restart shell | `ai agents` lists 11 agents (10 defaults + project agent) |
 | Project-local override | Add `id: shell` entry to `.swebash/agents.yaml` with custom name, restart | Shell agent shows custom name (project layer overrides built-in) |
 | User overrides project | Same `id` in both project-local and user-level config, restart | User-level config wins (loaded last) |
 | Docs base dir | `export SWEBASH_AI_DOCS_BASE_DIR=/path/to/project`, restart | Project-local config is read from `/path/to/project/.swebash/agents.yaml` |
@@ -308,7 +308,7 @@ Directives are quality standards defined in the `defaults.directives` section of
 | Directives present | `ai` then ask agent to describe its system prompt, or inspect via debug logging | System prompt starts with `<directives>` block containing 7 quality directives |
 | Directives before docs | Switch to `@rscagent` or `@docreview` (agents with docs) | `<directives>` block appears before `<documentation>` block in system prompt |
 | Directives before prompt | Inspect any agent's system prompt | `<directives>` block appears before the agent's own system prompt text |
-| All agents inherit | Check system prompts of shell, review, devops, git, web, seaaudit, rscagent, docreview | All agents have the same `<directives>` block from defaults |
+| All agents inherit | Check system prompts of shell, review, devops, git, web, seaaudit, rscagent, docreview, clitester, apitester | All agents have the same `<directives>` block from defaults |
 | Agent override | Add `directives: ["Custom rule."]` to a user agent in `agents.yaml`, restart | That agent's `<directives>` block contains only `- Custom rule.`, not the defaults |
 | Agent suppress | Add `directives: []` to a user agent in `agents.yaml`, restart | That agent has no `<directives>` block at all |
 
@@ -467,14 +467,14 @@ cargo test -p swebash-ai -p swebash
 | Host integration | `features/shell/host/tests/integration.rs` | 60 |
 | Host readline tests | `features/shell/host/tests/readline_tests.rs` | 19 |
 | AI unit tests | `features/ai/src/` | 123 |
-| AI integration | `features/ai/tests/integration.rs` | 155 |
-| **Total** | | **431** |
+| AI integration | `features/ai/tests/integration.rs` | 157 |
+| **Total** | | **433** |
 
 ### Agent-Specific Automated Tests
 
 | Test | Suite | Verifies |
 |------|-------|----------|
-| `agent_list_returns_all_builtins` | AI integration | 8 agents registered |
+| `agent_list_returns_all_builtins` | AI integration | 10 agents registered |
 | `agent_default_is_shell` | AI integration | Default agent is shell |
 | `agent_switch_and_current_round_trip` | AI integration | Switch between agents and verify |
 | `agent_switch_unknown_returns_error` | AI integration | Error on unknown agent |
@@ -486,7 +486,7 @@ cargo test -p swebash-ai -p swebash
 | `agent_active_agent_id` | AI integration | Direct ID accessor |
 | `agent_engine_caching` | AI integration | Engine survives round-trip switches |
 | `agent_default_config_override` | AI integration | Custom default agent from config |
-| `ai_agents_list_command` | Host integration | `ai agents` lists all 8 agents |
+| `ai_agents_list_command` | Host integration | `ai agents` lists all 10 agents |
 | `ai_agent_switch_in_ai_mode` | Host integration | `@review` switches agent |
 | `ai_agent_list_in_ai_mode` | Host integration | `agents` command inside AI mode |
 | `ai_mode_prompt_shows_default_agent` | Host integration | Prompt shows `[AI:shell]` |
@@ -507,7 +507,7 @@ cargo test -p swebash-ai -p swebash
 | `ai_agent_switch_from_shell_exit_returns_to_shell` | Host integration | Exit after `@devops` returns to working shell |
 | `ai_agent_switch_from_shell_all_agents` | Host integration | All `@agent` shorthands enter AI mode |
 | `ai_agent_switch_from_shell_with_ai_prefix` | Host integration | `ai @devops` enters AI mode |
-| `yaml_parse_embedded_defaults` | AI integration | Embedded YAML parses with 8 agents |
+| `yaml_parse_embedded_defaults` | AI integration | Embedded YAML parses with 10 agents |
 | `yaml_parse_defaults_section` | AI integration | Defaults (temperature, maxTokens, tools) correct |
 | `yaml_parse_agent_ids_match_originals` | AI integration | shell/review/devops/git IDs present |
 | `yaml_parse_trigger_keywords_preserved` | AI integration | All keywords match original structs |
@@ -522,8 +522,10 @@ cargo test -p swebash-ai -p swebash
 | `config_agent_trigger_keywords` | AI integration | Keywords passed through correctly |
 | `config_agent_system_prompt_preserved` | AI integration | Multiline prompts preserved |
 | `config_agent_inherits_custom_defaults` | AI integration | Non-default defaults section works |
-| `yaml_registry_loads_all_default_agents` | AI integration | 8 agents via create_default_registry |
+| `yaml_registry_loads_all_default_agents` | AI integration | 10 agents via create_default_registry |
 | `yaml_registry_{shell,review,devops,git}_agent_properties` | AI integration | Properties match originals |
+| `yaml_registry_clitester_agent_properties` | AI integration | clitester tools, keywords, maxIterations |
+| `yaml_registry_apitester_agent_properties` | AI integration | apitester tools, keywords, maxIterations |
 | `yaml_registry_detect_agent_from_keywords` | AI integration | Keyword detection from YAML |
 | `yaml_registry_suggest_agent_from_keywords` | AI integration | Suggestion from YAML keywords |
 | `yaml_registry_system_prompts_contain_key_content` | AI integration | Prompts contain expected terms |

@@ -1815,6 +1815,8 @@ fn yaml_parse_agent_ids_match_originals() {
     assert!(ids.contains(&"review"));
     assert!(ids.contains(&"devops"));
     assert!(ids.contains(&"git"));
+    assert!(ids.contains(&"clitester"));
+    assert!(ids.contains(&"apitester"));
 }
 
 #[test]
@@ -2227,6 +2229,14 @@ fn yaml_registry_system_prompts_contain_key_content() {
     let git = registry.get("git").unwrap();
     assert!(git.system_prompt().contains("Git"));
     assert!(git.system_prompt().contains("rebase"));
+
+    let clitester = registry.get("clitester").unwrap();
+    assert!(clitester.system_prompt().contains("CLI manual tester"));
+    assert!(clitester.system_prompt().contains("shell"));
+
+    let apitester = registry.get("apitester").unwrap();
+    assert!(apitester.system_prompt().contains("AI-feature manual tester"));
+    assert!(apitester.system_prompt().contains("agent"));
 }
 
 #[test]
@@ -2247,6 +2257,18 @@ fn yaml_builtin_docs_context_not_injected_when_base_dir_is_none() {
     assert!(
         !rscagent.system_prompt().starts_with("<documentation>\n"),
         "rscagent prompt should not start with injected docs block when base_dir is None"
+    );
+
+    let clitester = registry.get("clitester").unwrap();
+    assert!(
+        !clitester.system_prompt().starts_with("<documentation>\n"),
+        "clitester prompt should not start with injected docs block when base_dir is None"
+    );
+
+    let apitester = registry.get("apitester").unwrap();
+    assert!(
+        !apitester.system_prompt().starts_with("<documentation>\n"),
+        "apitester prompt should not start with injected docs block when base_dir is None"
     );
 }
 
@@ -2278,6 +2300,24 @@ fn yaml_builtin_docs_context_injected_when_base_dir_has_files() {
     std::fs::write(
         dir.join("doc/1_specification/grammar.md"),
         "# Grammar\nRSX syntax rules.",
+    )
+    .unwrap();
+
+    // @clitester and @apitester sources
+    std::fs::create_dir_all(dir.join("docs/5-testing")).unwrap();
+    std::fs::write(
+        dir.join("docs/5-testing/manual_testing.md"),
+        "# Manual Testing Guide\nShell basics and AI feature tests.",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("docs/5-testing/e2e_testing.md"),
+        "# E2E Testing\nEnd-to-end test scenarios.",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("docs/5-testing/ai_mode_tests.md"),
+        "# AI Mode Tests\nAgent switching and auto-detection tests.",
     )
     .unwrap();
 
@@ -2322,6 +2362,40 @@ fn yaml_builtin_docs_context_injected_when_base_dir_has_files() {
     assert!(
         registry.engine_for("rscagent").is_some(),
         "engine should be created for rscagent with docs-enriched prompt"
+    );
+
+    // ── @clitester: docs injected into system prompt ──
+    let clitester = registry.get("clitester").unwrap();
+    let cli_prompt = clitester.system_prompt();
+    assert!(
+        cli_prompt.starts_with("<directives>\n"),
+        "clitester prompt should start with directives block, got: {}",
+        &cli_prompt[..cli_prompt.len().min(80)]
+    );
+    assert!(cli_prompt.contains("<documentation>\n"), "clitester prompt should contain documentation block");
+    assert!(cli_prompt.contains("Shell basics and AI feature tests."), "should contain manual_testing.md content");
+    assert!(cli_prompt.contains("End-to-end test scenarios."), "should contain e2e_testing.md content");
+
+    // ── @apitester: docs injected into system prompt ──
+    let apitester = registry.get("apitester").unwrap();
+    let api_prompt = apitester.system_prompt();
+    assert!(
+        api_prompt.starts_with("<directives>\n"),
+        "apitester prompt should start with directives block, got: {}",
+        &api_prompt[..api_prompt.len().min(80)]
+    );
+    assert!(api_prompt.contains("<documentation>\n"), "apitester prompt should contain documentation block");
+    assert!(api_prompt.contains("Shell basics and AI feature tests."), "should contain manual_testing.md content");
+    assert!(api_prompt.contains("Agent switching and auto-detection tests."), "should contain ai_mode_tests.md content");
+
+    // ── Engine creation succeeds for new agents ──
+    assert!(
+        registry.engine_for("clitester").is_some(),
+        "engine should be created for clitester with docs-enriched prompt"
+    );
+    assert!(
+        registry.engine_for("apitester").is_some(),
+        "engine should be created for apitester with docs-enriched prompt"
     );
 
     // ── Agents without docs blocks are unaffected ──
@@ -3751,6 +3825,83 @@ fn yaml_registry_seaaudit_agent_properties() {
     assert!(prompt.contains("Stratified Encapsulation Architecture"), "prompt should mention SEA");
     assert!(prompt.contains("L4"), "prompt should reference L4 layer");
     assert!(prompt.contains("L5"), "prompt should reference L5 layer");
+}
+
+#[test]
+fn yaml_registry_clitester_agent_properties() {
+    let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
+    let clitester = registry.get("clitester").expect("clitester agent should be registered");
+
+    assert_eq!(clitester.display_name(), "CLI Manual Tester");
+    assert_eq!(
+        clitester.description(),
+        "Runs CLI and shell manual test scenarios from project docs"
+    );
+
+    // Should have fs + exec tools (no web)
+    match clitester.tool_filter() {
+        ToolFilter::Categories(cats) => {
+            assert!(cats.contains(&"fs".to_string()), "clitester should have fs");
+            assert!(cats.contains(&"exec".to_string()), "clitester should have exec");
+            assert!(!cats.contains(&"web".to_string()), "clitester should not have web");
+        }
+        other => panic!("Expected ToolFilter::Categories for clitester, got: {:?}", other),
+    }
+
+    // Verify trigger keywords
+    let keywords = clitester.trigger_keywords();
+    assert!(keywords.contains(&"clitester".to_string()));
+    assert!(keywords.contains(&"cli test".to_string()));
+    assert!(keywords.contains(&"shell test".to_string()));
+    assert!(keywords.contains(&"manual test".to_string()));
+    assert!(keywords.contains(&"smoke test".to_string()));
+
+    // System prompt should reference CLI testing concepts
+    let prompt = clitester.system_prompt();
+    assert!(prompt.contains("CLI manual tester"), "prompt should mention CLI manual tester");
+    assert!(prompt.contains("Shell basics"), "prompt should reference Shell basics");
+    assert!(prompt.contains("sbh launcher"), "prompt should reference sbh launcher");
+
+    // maxIterations should be 30
+    assert_eq!(clitester.max_iterations(), Some(30), "clitester should have maxIterations: 30");
+}
+
+#[test]
+fn yaml_registry_apitester_agent_properties() {
+    let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
+    let apitester = registry.get("apitester").expect("apitester agent should be registered");
+
+    assert_eq!(apitester.display_name(), "API Manual Tester");
+    assert_eq!(
+        apitester.description(),
+        "Runs AI and agent manual test scenarios from project docs"
+    );
+
+    // Should have fs + exec tools (no web)
+    match apitester.tool_filter() {
+        ToolFilter::Categories(cats) => {
+            assert!(cats.contains(&"fs".to_string()), "apitester should have fs");
+            assert!(cats.contains(&"exec".to_string()), "apitester should have exec");
+            assert!(!cats.contains(&"web".to_string()), "apitester should not have web");
+        }
+        other => panic!("Expected ToolFilter::Categories for apitester, got: {:?}", other),
+    }
+
+    // Verify trigger keywords
+    let keywords = apitester.trigger_keywords();
+    assert!(keywords.contains(&"apitester".to_string()));
+    assert!(keywords.contains(&"api test".to_string()));
+    assert!(keywords.contains(&"ai test".to_string()));
+    assert!(keywords.contains(&"agent test".to_string()));
+
+    // System prompt should reference AI testing concepts
+    let prompt = apitester.system_prompt();
+    assert!(prompt.contains("AI-feature manual tester"), "prompt should mention AI-feature manual tester");
+    assert!(prompt.contains("Agent listing and switching"), "prompt should reference agent switching");
+    assert!(prompt.contains("Auto-detection"), "prompt should reference auto-detection");
+
+    // maxIterations should be 30
+    assert_eq!(apitester.max_iterations(), Some(30), "apitester should have maxIterations: 30");
 }
 
 // ── maxIterations per-agent config tests ────────────────────────────────
