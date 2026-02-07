@@ -2258,15 +2258,17 @@ fn yaml_builtin_docs_context_injected_when_base_dir_has_files() {
     let dir = std::env::temp_dir().join("swebash_test_builtin_docs");
     let _ = std::fs::remove_dir_all(&dir); // clean slate
 
-    // @docreview sources
-    std::fs::create_dir_all(dir.join("docs/3-design")).unwrap();
-    std::fs::create_dir_all(dir.join("docs/7-operation")).unwrap();
-    std::fs::write(dir.join("docs/README.md"), "# Docs Hub\nNavigation here.").unwrap();
-    std::fs::write(dir.join("docs/glossary.md"), "# Glossary\nWidget: a thing.").unwrap();
-    std::fs::write(dir.join("docs/3-design/architecture.md"), "# Architecture\nLayers.").unwrap();
+    // @docreview sources (relative to base_dir via ../template-engine/...)
+    let te_papers = dir.join("../template-engine/01-ideation/research/papers");
+    std::fs::create_dir_all(&te_papers).unwrap();
     std::fs::write(
-        dir.join("docs/7-operation/creating_agents.md"),
-        "# Creating Agents\nYAML.",
+        te_papers.join("sdlc_documentation_framework.md"),
+        "# SDLC Documentation Framework\nW3H pattern and phase organization.",
+    )
+    .unwrap();
+    std::fs::write(
+        te_papers.join("module_governance_framework.md"),
+        "# Module Governance Framework\nNaming conventions and quality gates.",
     )
     .unwrap();
 
@@ -2292,10 +2294,8 @@ fn yaml_builtin_docs_context_injected_when_base_dir_has_files() {
         &prompt[..prompt.len().min(80)]
     );
     assert!(prompt.contains("<documentation>\n"), "docreview prompt should contain documentation block");
-    assert!(prompt.contains("Navigation here."), "should contain docs/README.md content");
-    assert!(prompt.contains("Widget: a thing."), "should contain glossary.md content");
-    assert!(prompt.contains("Layers."), "should contain architecture.md content");
-    assert!(prompt.contains("YAML."), "should contain creating_agents.md content");
+    assert!(prompt.contains("W3H pattern and phase organization."), "should contain sdlc_documentation_framework.md content");
+    assert!(prompt.contains("Naming conventions and quality gates."), "should contain module_governance_framework.md content");
     assert!(prompt.contains("</documentation>"), "should have closing tag");
     assert!(
         prompt.contains("documentation review agent"),
