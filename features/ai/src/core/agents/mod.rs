@@ -17,10 +17,12 @@ pub use agent_controller::{AgentDescriptor, ToolFilter};
 
 use crate::spi::config::{AiConfig, ToolConfig};
 use crate::core::tools;
+use crate::core::rag::index::RagIndexManager;
+use crate::core::rag::tool::RagTool;
+
+use config::{ConfigAgent, DocsStrategy};
 
 use std::time::Duration;
-
-use config::ConfigAgent;
 
 // ── SwebashEngineFactory ───────────────────────────────────────────
 
@@ -31,6 +33,8 @@ use config::ConfigAgent;
 pub struct SwebashEngineFactory {
     llm: Arc<dyn LlmService>,
     config: AiConfig,
+    /// Optional RAG index manager, shared across all agents.
+    rag_index_manager: Option<Arc<RagIndexManager>>,
 }
 
 impl SwebashEngineFactory {
@@ -48,6 +52,7 @@ impl SwebashEngineFactory {
                     enable_fs: global.enable_fs && has("fs"),
                     enable_exec: global.enable_exec && has("exec"),
                     enable_web: global.enable_web && has("web"),
+                    enable_rag: has("rag"),
                     ..global.clone()
                 }
             }
@@ -88,7 +93,7 @@ impl EngineFactory<ConfigAgent> for SwebashEngineFactory {
                 exec_timeout: effective_tools.exec_timeout,
             };
 
-            let registry = if effective_tools.cache.enabled {
+            let mut registry = if effective_tools.cache.enabled {
                 let cache_cfg = agent_cache::CacheConfig::with_ttl(
                     Duration::from_secs(effective_tools.cache.ttl_secs),
                 ).with_max_entries(effective_tools.cache.max_entries);
@@ -97,6 +102,44 @@ impl EngineFactory<ConfigAgent> for SwebashEngineFactory {
             } else {
                 tools::create_standard_registry(&rustratify_config)
             };
+
+            // Register RagTool for agents using the RAG docs strategy.
+            if effective_tools.enable_rag {
+                if let Some(ref rag_mgr) = self.rag_index_manager {
+                    if *descriptor.docs_strategy() == DocsStrategy::Rag {
+                        // Build the index eagerly (blocking in the factory).
+                        // If docs_base_dir is available, ensure the index is built.
+                        if let Some(ref base_dir) = self.config.docs_base_dir {
+                            let sources = descriptor.docs_sources();
+                            if !sources.is_empty() {
+                                let rt = tokio::runtime::Handle::try_current();
+                                if let Ok(handle) = rt {
+                                    let mgr = rag_mgr.clone();
+                                    let agent_id = descriptor.id().to_string();
+                                    let srcs = sources.to_vec();
+                                    let dir = base_dir.clone();
+                                    // Spawn and block on index build.
+                                    let _ = handle.block_on(async {
+                                        if let Err(e) = mgr.ensure_index(&agent_id, &srcs, &dir).await {
+                                            tracing::warn!(
+                                                agent = %agent_id,
+                                                error = %e,
+                                                "failed to build RAG index, rag_search may return no results"
+                                            );
+                                        }
+                                    });
+                                }
+                            }
+                        }
+
+                        registry.register(Box::new(RagTool::new(
+                            descriptor.id(),
+                            rag_mgr.clone(),
+                            descriptor.docs_top_k(),
+                        )));
+                    }
+                }
+            }
 
             Some(Arc::new(ToolAwareChatEngine::new(
                 self.llm.clone(),
@@ -121,11 +164,16 @@ pub struct AgentManager {
 }
 
 impl AgentManager {
-    /// Create a new manager with the given LLM service and config.
-    pub fn new(llm: Arc<dyn LlmService>, config: AiConfig) -> Self {
+    /// Create a new manager with the given LLM service, config, and optional RAG index manager.
+    pub fn new(
+        llm: Arc<dyn LlmService>,
+        config: AiConfig,
+        rag_index_manager: Option<Arc<RagIndexManager>>,
+    ) -> Self {
         let factory = SwebashEngineFactory {
             llm,
             config: config.clone(),
+            rag_index_manager,
         };
         Self {
             registry: agent_controller::AgentRegistry::new(),
@@ -264,7 +312,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         manager.register(make_test_agent("git", vec!["git".into(), "commit".into(), "branch".into()]));
         manager.register(make_test_agent("devops", vec!["docker".into(), "k8s".into()]));
 
@@ -287,7 +335,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         manager.register(make_test_agent("devops", vec!["docker".into(), "k8s".into(), "terraform".into()]));
         manager.register(make_test_agent("git", vec!["git".into(), "commit".into()]));
 
@@ -315,7 +363,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         manager.register(make_test_agent("alpha", vec![]));
         manager.register(make_test_agent("beta", vec![]));
 
@@ -341,7 +389,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         manager.register(make_test_agent("alpha", vec!["a".into()]));
 
         let agent = manager.get("alpha");
@@ -363,7 +411,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         assert!(manager.get("nonexistent").is_none());
     }
 
@@ -383,7 +431,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         manager.register(make_test_agent("shell", vec![]));
 
         let engine = manager.engine_for("shell");
@@ -404,7 +452,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         assert!(manager.engine_for("ghost").is_none());
     }
 
@@ -422,7 +470,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         manager.register(make_test_agent("agent-a", vec![]));
 
         let e1 = manager.engine_for("agent-a").unwrap();
@@ -445,7 +493,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         manager.register(make_test_agent("agent-a", vec![]));
         manager.register(make_test_agent("agent-b", vec![]));
 
@@ -470,7 +518,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         manager.register(make_test_agent("agent-a", vec![]));
 
         let e1 = manager.engine_for("agent-a").unwrap();
@@ -494,7 +542,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         manager.register(make_test_agent("agent-a", vec![]));
         manager.register(make_test_agent("agent-b", vec![]));
 
@@ -522,7 +570,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         manager.register(make_test_agent("agent-a", vec![]));
         manager.register(make_test_agent("agent-b", vec![]));
 
@@ -553,7 +601,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         manager.register(ConfigAgent::from_entry(
             AgentEntry {
                 id: "dup".into(),
@@ -620,6 +668,7 @@ mod tests {
         let factory = SwebashEngineFactory {
             llm: Arc::new(MockLlmService::new()),
             config,
+            rag_index_manager: None,
         };
 
         let effective = factory.effective_tool_config(&ToolFilter::All);
@@ -680,6 +729,7 @@ mod tests {
         let factory = SwebashEngineFactory {
             llm: Arc::new(MockLlmService::new()),
             config,
+            rag_index_manager: None,
         };
 
         // Agent requests web — but global disables it
@@ -723,6 +773,7 @@ mod tests {
         let factory = SwebashEngineFactory {
             llm: Arc::new(MockLlmService::new()),
             config,
+            rag_index_manager: None,
         };
 
         // Categories should preserve fs_max_size, exec_timeout, etc.
@@ -753,6 +804,7 @@ mod tests {
         let factory = SwebashEngineFactory {
             llm: Arc::new(MockLlmService::new()),
             config,
+            rag_index_manager: None,
         };
 
         let agent = make_test_agent("shell", vec![]);
@@ -782,6 +834,7 @@ mod tests {
         let factory = SwebashEngineFactory {
             llm: Arc::new(MockLlmService::new()),
             config,
+            rag_index_manager: None,
         };
 
         let agent = make_test_agent("chat-only", vec![]);
@@ -811,6 +864,7 @@ mod tests {
         let factory = SwebashEngineFactory {
             llm: Arc::new(MockLlmService::new()),
             config,
+            rag_index_manager: None,
         };
 
         // Agent with explicit temperature/tokens
@@ -854,7 +908,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         manager.register(make_test_agent("git", vec!["Git".into(), "COMMIT".into()]));
 
         // Rustratify's detect_agent uses contains() with lowered input
@@ -876,7 +930,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         manager.register(make_test_agent("git", vec!["git".into()]));
 
         assert_eq!(manager.detect_agent(""), None);
@@ -896,7 +950,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         manager.register(make_test_agent("git", vec!["git".into()]));
 
         assert_eq!(manager.suggest_agent(""), None);
@@ -916,7 +970,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         // Agent with no keywords should never be detected
         manager.register(make_test_agent("shell", vec![]));
         manager.register(make_test_agent("git", vec!["git".into()]));
@@ -942,7 +996,7 @@ mod tests {
             docs_base_dir: None,
         };
 
-        let manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         assert!(manager.list().is_empty());
         assert!(manager.get("anything").is_none());
         assert!(manager.engine_for("anything").is_none());

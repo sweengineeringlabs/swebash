@@ -14,6 +14,8 @@ pub enum AiError {
     Timeout,
     /// Rate limited by the provider.
     RateLimited,
+    /// RAG index operation failed (build, query, embedding).
+    IndexError(String),
 }
 
 impl fmt::Display for AiError {
@@ -24,6 +26,7 @@ impl fmt::Display for AiError {
             AiError::ParseError(msg) => write!(f, "Failed to parse AI response: {}", msg),
             AiError::Timeout => write!(f, "AI request timed out"),
             AiError::RateLimited => write!(f, "AI rate limited, please try again later"),
+            AiError::IndexError(msg) => write!(f, "RAG index error: {}", msg),
         }
     }
 }

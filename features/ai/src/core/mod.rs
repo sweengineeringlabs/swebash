@@ -11,6 +11,7 @@ pub mod chat;
 pub mod complete;
 pub mod explain;
 pub mod prompt;
+pub mod rag;
 pub mod translate;
 pub mod tools;
 

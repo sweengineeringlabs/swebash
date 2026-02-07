@@ -61,6 +61,9 @@ pub struct ToolsConfig {
     pub exec: bool,
     #[serde(default = "bool_true")]
     pub web: bool,
+    /// RAG tool access (auto-enabled when `docs.strategy: rag`).
+    #[serde(default)]
+    pub rag: bool,
 }
 
 impl Default for ToolsConfig {
@@ -69,7 +72,24 @@ impl Default for ToolsConfig {
             fs: true,
             exec: true,
             web: true,
+            rag: false,
         }
+    }
+}
+
+/// Strategy for how an agent consumes its documentation.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DocsStrategy {
+    /// Preload: read files at startup and bake into the system prompt (default).
+    Preload,
+    /// RAG: build a vector index; the agent invokes `rag_search` tool on demand.
+    Rag,
+}
+
+impl Default for DocsStrategy {
+    fn default() -> Self {
+        Self::Preload
     }
 }
 
@@ -77,9 +97,21 @@ impl Default for ToolsConfig {
 #[derive(Debug, Deserialize)]
 pub struct DocsConfig {
     /// Token budget for document context (heuristic: 1 token ≈ 4 chars).
+    /// Used only when `strategy` is `Preload`.
     pub budget: usize,
+    /// How the agent consumes docs: `preload` (default) or `rag`.
+    #[serde(default)]
+    pub strategy: DocsStrategy,
+    /// Number of search results returned per RAG query (default: 5).
+    /// Used only when `strategy` is `Rag`.
+    #[serde(default = "default_top_k")]
+    pub top_k: usize,
     /// File paths or glob patterns to load as documentation.
     pub sources: Vec<String>,
+}
+
+fn default_top_k() -> usize {
+    5
 }
 
 /// A single agent entry in the YAML file.
@@ -251,6 +283,12 @@ pub struct ConfigAgent {
     trigger_keywords: Vec<String>,
     bypass_confirmation: bool,
     max_iterations: Option<usize>,
+    /// The docs strategy this agent uses (`Preload` or `Rag`).
+    docs_strategy: DocsStrategy,
+    /// Source glob patterns for RAG indexing (only used when `docs_strategy == Rag`).
+    docs_sources: Vec<String>,
+    /// Number of RAG results per query (only used when `docs_strategy == Rag`).
+    docs_top_k: usize,
 }
 
 impl ConfigAgent {
@@ -269,7 +307,27 @@ impl ConfigAgent {
         base_dir: Option<&Path>,
     ) -> Self {
         let tools = entry.tools.as_ref().unwrap_or(&defaults.tools);
-        let tool_filter = if tools.fs && tools.exec && tools.web {
+        let docs_strategy = entry
+            .docs
+            .as_ref()
+            .map(|d| d.strategy.clone())
+            .unwrap_or_default();
+        let docs_sources = entry
+            .docs
+            .as_ref()
+            .map(|d| d.sources.clone())
+            .unwrap_or_default();
+        let docs_top_k = entry
+            .docs
+            .as_ref()
+            .map(|d| d.top_k)
+            .unwrap_or(default_top_k());
+
+        // When strategy is Rag, auto-enable the "rag" tool category.
+        let uses_rag = docs_strategy == DocsStrategy::Rag;
+        let rag_enabled = tools.rag || uses_rag;
+
+        let tool_filter = if tools.fs && tools.exec && tools.web && !rag_enabled {
             ToolFilter::All
         } else {
             let mut cats = Vec::new();
@@ -281,6 +339,9 @@ impl ConfigAgent {
             }
             if tools.web {
                 cats.push("web".to_string());
+            }
+            if rag_enabled {
+                cats.push("rag".to_string());
             }
             ToolFilter::Categories(cats)
         };
@@ -296,23 +357,39 @@ impl ConfigAgent {
             entry.system_prompt
         };
 
-        // Load document context and prepend to system prompt.
-        // TODO: migrate to ChatConfig.docs_context when ChatEngine supports it
+        // Load document context based on strategy.
         if let (Some(docs), Some(dir)) = (&entry.docs, base_dir) {
-            let result = load_docs_context(docs, dir);
-            if let Some(docs_content) = result.content {
-                system_prompt = format!(
-                    "<documentation>\n{}\n</documentation>\n\n{}",
-                    docs_content, system_prompt
-                );
-            }
-            if !result.unresolved.is_empty() {
-                tracing::warn!(
-                    agent = %entry.id,
-                    unresolved = ?result.unresolved,
-                    files_loaded = result.files_loaded,
-                    "agent has docs_context sources that resolved no files"
-                );
+            match docs_strategy {
+                DocsStrategy::Preload => {
+                    // Preload: read files at startup and bake into the system prompt.
+                    let result = load_docs_context(docs, dir);
+                    if let Some(docs_content) = result.content {
+                        system_prompt = format!(
+                            "<documentation>\n{}\n</documentation>\n\n{}",
+                            docs_content, system_prompt
+                        );
+                    }
+                    if !result.unresolved.is_empty() {
+                        tracing::warn!(
+                            agent = %entry.id,
+                            unresolved = ?result.unresolved,
+                            files_loaded = result.files_loaded,
+                            "agent has docs_context sources that resolved no files"
+                        );
+                    }
+                }
+                DocsStrategy::Rag => {
+                    // RAG: docs are NOT baked into the prompt.
+                    // Instead, append a note about the rag_search tool.
+                    system_prompt = format!(
+                        "{}\n\n\
+                         You have access to a `rag_search` tool that searches your documentation index. \
+                         When you need to look up specific details, API references, configuration examples, \
+                         or other information from the loaded documentation, call `rag_search` with a \
+                         descriptive query. Prefer using this tool over guessing when documentation is available.",
+                        system_prompt.trim_end()
+                    );
+                }
             }
         }
 
@@ -344,6 +421,9 @@ impl ConfigAgent {
                 .bypass_confirmation
                 .unwrap_or(defaults.bypass_confirmation),
             max_iterations: entry.max_iterations.or(defaults.max_iterations),
+            docs_strategy,
+            docs_sources,
+            docs_top_k,
         }
     }
 
@@ -355,6 +435,21 @@ impl ConfigAgent {
     /// Per-agent tool iteration limit override, if set.
     pub fn max_iterations(&self) -> Option<usize> {
         self.max_iterations
+    }
+
+    /// The docs strategy this agent uses.
+    pub fn docs_strategy(&self) -> &DocsStrategy {
+        &self.docs_strategy
+    }
+
+    /// Source glob patterns for RAG indexing.
+    pub fn docs_sources(&self) -> &[String] {
+        &self.docs_sources
+    }
+
+    /// Number of search results per RAG query.
+    pub fn docs_top_k(&self) -> usize {
+        self.docs_top_k
     }
 }
 
@@ -522,6 +617,7 @@ agents:
                 fs: true,
                 exec: true,
                 web: true,
+                rag: false,
             }),
             trigger_keywords: vec![],
             think_first: None,
@@ -547,6 +643,7 @@ agents:
                 fs: false,
                 exec: false,
                 web: false,
+                rag: false,
             }),
             trigger_keywords: vec![],
             think_first: None,
@@ -629,7 +726,7 @@ agents:
             temperature: None,
             max_tokens: None,
             system_prompt: "prompt".into(),
-            tools: Some(ToolsConfig { fs: false, exec: true, web: false }),
+            tools: Some(ToolsConfig { fs: false, exec: true, web: false, rag: false }),
             trigger_keywords: vec![],
             think_first: None,
             bypass_confirmation: None,
@@ -655,7 +752,7 @@ agents:
             temperature: None,
             max_tokens: None,
             system_prompt: "prompt".into(),
-            tools: Some(ToolsConfig { fs: false, exec: false, web: true }),
+            tools: Some(ToolsConfig { fs: false, exec: false, web: true, rag: false }),
             trigger_keywords: vec![],
             think_first: None,
             bypass_confirmation: None,
@@ -681,7 +778,7 @@ agents:
             temperature: None,
             max_tokens: None,
             system_prompt: "prompt".into(),
-            tools: Some(ToolsConfig { fs: true, exec: false, web: true }),
+            tools: Some(ToolsConfig { fs: true, exec: false, web: true, rag: false }),
             trigger_keywords: vec![],
             think_first: None,
             bypass_confirmation: None,
@@ -709,7 +806,7 @@ agents:
             temperature: None,
             max_tokens: None,
             system_prompt: "prompt".into(),
-            tools: Some(ToolsConfig { fs: false, exec: true, web: true }),
+            tools: Some(ToolsConfig { fs: false, exec: true, web: true, rag: false }),
             trigger_keywords: vec![],
             think_first: None,
             bypass_confirmation: None,

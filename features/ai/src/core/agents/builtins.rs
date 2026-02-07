@@ -11,6 +11,7 @@ use std::sync::Arc;
 use llm_provider::LlmService;
 
 use crate::spi::config::AiConfig;
+use crate::core::rag::index::RagIndexManager;
 
 use super::config::{AgentsYaml, ConfigAgent};
 use super::AgentManager;
@@ -37,7 +38,8 @@ pub fn builtin_agent_count() -> usize {
 /// 3. User-level config file (whole-agent replacement by ID)
 pub fn create_default_registry(llm: Arc<dyn LlmService>, config: AiConfig) -> AgentManager {
     let docs_base_dir = config.docs_base_dir.clone();
-    let mut manager = AgentManager::new(llm, config);
+    let rag_manager = create_rag_manager();
+    let mut manager = AgentManager::new(llm, config, rag_manager);
 
     // 1. Parse and register embedded default agents.
     //    Use docs_base_dir from config so agents with docs_context can load files.
@@ -89,6 +91,43 @@ pub fn create_default_registry(llm: Arc<dyn LlmService>, config: AiConfig) -> Ag
     }
 
     manager
+}
+
+/// Create a RAG index manager with the default embedding provider and in-memory store.
+///
+/// Returns `Some` when a local embedding provider is available (the `rag-local` feature),
+/// `None` otherwise. When `None`, agents configured with `strategy: rag` will fall back
+/// to preload behavior.
+fn create_rag_manager() -> Option<Arc<RagIndexManager>> {
+    #[cfg(feature = "rag-local")]
+    {
+        use crate::core::rag::chunker::ChunkerConfig;
+        use crate::core::rag::embeddings::FastEmbedProvider;
+        use crate::core::rag::stores::InMemoryVectorStore;
+
+        match FastEmbedProvider::new() {
+            Ok(embedder) => {
+                let store = Arc::new(InMemoryVectorStore::new());
+                let manager = RagIndexManager::new(
+                    Arc::new(embedder),
+                    store,
+                    ChunkerConfig::default(),
+                );
+                tracing::info!("RAG index manager initialized with FastEmbed + InMemoryVectorStore");
+                Some(Arc::new(manager))
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to initialize FastEmbed, RAG disabled");
+                None
+            }
+        }
+    }
+
+    #[cfg(not(feature = "rag-local"))]
+    {
+        tracing::debug!("rag-local feature not enabled, RAG disabled");
+        None
+    }
 }
 
 /// Parse a YAML string and register all agents into the manager.
@@ -265,7 +304,7 @@ agents:
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         register_from_yaml(&mut manager, DEFAULT_AGENTS_YAML, "defaults", None);
         register_from_yaml(&mut manager, user_yaml, "user", None);
 
@@ -308,7 +347,7 @@ agents:
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         register_from_yaml(&mut manager, DEFAULT_AGENTS_YAML, "defaults", None);
         register_from_yaml(&mut manager, user_yaml, "user", None);
 
@@ -332,7 +371,7 @@ agents:
             docs_base_dir: None,
         };
 
-        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config);
+        let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
         register_from_yaml(&mut manager, DEFAULT_AGENTS_YAML, "defaults", None);
         register_from_yaml(&mut manager, "not: valid: yaml: [", "bad-user-file", None);
 

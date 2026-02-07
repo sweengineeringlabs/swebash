@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "AI/LLM integration for swebash shell (SEA pattern)"
 
+[features]
+default = ["rag-local"]
+rag-local = ["fastembed"]       # Local ONNX embedding (no API key needed)
+rag-sqlite = ["rusqlite"]       # Persistent SQLite vector store
+
 [dependencies]
 # Chat engine (from rustratify) — provides SimpleChatEngine with memory management
 chat-engine = { package = "chat", version = "0.1.0", registry = "local" }
@@ -44,6 +49,18 @@ agent-controller = { version = "0.1.0", registry = "local" }
 
 # Agent cache (from rustratify) — tool result caching for ReadOnly tools
 agent-cache = { version = "0.1.0", registry = "local" }
+
+# RAG: text chunking with sentence boundary detection
+unicode-segmentation = "1.11"
+
+# RAG: file fingerprinting for staleness detection
+sha2 = "0.10"
+
+# RAG: local ONNX embedding (optional, default feature)
+fastembed = { version = "4", optional = true }
+
+# RAG: persistent SQLite vector store (optional)
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }

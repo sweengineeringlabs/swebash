@@ -38,6 +38,8 @@ pub struct ToolConfig {
     pub enable_exec: bool,
     /// Enable web search tools.
     pub enable_web: bool,
+    /// Enable RAG document search tools.
+    pub enable_rag: bool,
     /// Require confirmation for dangerous operations.
     pub require_confirmation: bool,
     /// Maximum number of tool calls per turn.
@@ -80,7 +82,7 @@ impl Default for ToolCacheConfig {
 impl ToolConfig {
     /// Check if any tools are enabled.
     pub fn enabled(&self) -> bool {
-        self.enable_fs || self.enable_exec || self.enable_web
+        self.enable_fs || self.enable_exec || self.enable_web || self.enable_rag
     }
 }
 
@@ -90,6 +92,7 @@ impl Default for ToolConfig {
             enable_fs: true,
             enable_exec: true,
             enable_web: true,
+            enable_rag: false,
             require_confirmation: true,
             max_tool_calls_per_turn: 10,
             max_iterations: 10,
@@ -122,6 +125,7 @@ impl AiConfig {
     /// | `SWEBASH_AI_TOOL_CACHE` | `true` | Enable/disable tool result caching |
     /// | `SWEBASH_AI_TOOL_CACHE_TTL` | `300` | Cache TTL in seconds |
     /// | `SWEBASH_AI_TOOL_CACHE_MAX` | `200` | Max cached entries |
+    /// | `SWEBASH_AI_TOOLS_RAG` | `false` | Enable RAG document search tools |
     /// | `SWEBASH_AI_DOCS_BASE_DIR` | _(cwd)_ | Base dir for agent docs_context source paths |
     pub fn from_env() -> Self {
         let enabled = std::env::var("SWEBASH_AI_ENABLED")
@@ -149,6 +153,9 @@ impl AiConfig {
             enable_web: std::env::var("SWEBASH_AI_TOOLS_WEB")
                 .map(|v| v != "false" && v != "0")
                 .unwrap_or(true),
+            enable_rag: std::env::var("SWEBASH_AI_TOOLS_RAG")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
             require_confirmation: std::env::var("SWEBASH_AI_TOOLS_CONFIRM")
                 .map(|v| v != "false" && v != "0")
                 .unwrap_or(true),
