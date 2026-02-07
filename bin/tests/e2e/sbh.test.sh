@@ -47,6 +47,7 @@ test_help_lists_all_commands() {
   assert_contains "$STDOUT" "build" "help should list build"
   assert_contains "$STDOUT" "run" "help should list run"
   assert_contains "$STDOUT" "test" "help should list test"
+  assert_contains "$STDOUT" "gen-aws-docs" "help should list gen-aws-docs"
 }
 
 test_help_lists_all_test_suites() {

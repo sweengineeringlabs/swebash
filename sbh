@@ -16,16 +16,18 @@ usage() {
   echo "    --debug        Run debug build (default)"
   echo "  test [suite]   Build and run tests"
   echo "    engine|host|readline|ai|scripts|all (default: all)"
+  echo "  gen-aws-docs   Generate AWS reference docs from live CLI help"
 }
 
 CMD="${1:-}"
 [ -n "$CMD" ] && shift
 
 case "$CMD" in
-  setup) exec "$REPO_ROOT/bin/setup.sh" "$@" ;;
-  build) exec "$REPO_ROOT/bin/build.sh" "$@" ;;
-  run)   exec "$REPO_ROOT/bin/run.sh"   "$@" ;;
-  test)  exec "$REPO_ROOT/bin/test.sh"  "$@" ;;
+  setup)         exec "$REPO_ROOT/bin/setup.sh"         "$@" ;;
+  build)         exec "$REPO_ROOT/bin/build.sh"         "$@" ;;
+  run)           exec "$REPO_ROOT/bin/run.sh"           "$@" ;;
+  test)          exec "$REPO_ROOT/bin/test.sh"          "$@" ;;
+  gen-aws-docs)  exec "$REPO_ROOT/bin/gen-aws-docs.sh"  "$@" ;;
   -h|--help|help|"") usage ;;
   *)
     usage

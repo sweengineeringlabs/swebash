@@ -11,6 +11,7 @@
 - [Test Checklist](#test-checklist)
 - [AI Feature Tests](#ai-feature-tests)
 - [sbh Launcher](#sbh-launcher)
+- [gen-aws-docs](#gen-aws-docs)
 - [Automated Test Suites](#automated-test-suites)
 
 
@@ -401,7 +402,7 @@ The `sbh` (and `sbh.ps1`) launcher is the primary entry point. These tests verif
 
 | Test | Command | Expected |
 |------|---------|----------|
-| Help flag | `./sbh --help` | Prints usage with all commands: setup, build, run, test |
+| Help flag | `./sbh --help` | Prints usage with all commands: setup, build, run, test, gen-aws-docs |
 | Help command | `./sbh help` | Same output as `--help` |
 | No args | `./sbh` | Prints usage and exits with code 0 (same as help) |
 | Unknown command | `./sbh foo` | Prints usage and exits with code 1 |
@@ -435,6 +436,32 @@ The project depends on a local Cargo registry for rustratify crates. The test sc
 | Release build | `./sbh build` | Builds engine WASM (release) and host (release) without errors |
 | Debug build | `./sbh build --debug` | Builds engine WASM (release) and host (debug) without errors |
 | Run | `./sbh run` | Launches shell, shows banner and prompt |
+
+### 24b. gen-aws-docs
+
+Generates AWS reference docs from live CLI help output. Writes 3 markdown files to `~/.config/swebash/docs/aws/` (or `$SWEBASH_AWS_DOCS_DIR`). Offers to install the AWS CLI if not found.
+
+> Requires `aws` CLI (v2 recommended). Optionally: `cdk`, `sam`, `terraform` for richer IaC docs.
+
+| Test | Command | Expected |
+|------|---------|----------|
+| Help lists command | `./sbh --help` | Output includes `gen-aws-docs` |
+| Dispatch works | `./sbh gen-aws-docs` | Routes to `bin/gen-aws-docs.sh`, does not show sbh usage |
+| No aws, non-interactive | `echo "" \| ./sbh gen-aws-docs` | Exits 1, prints "AWS CLI not found" and install URL |
+| No aws, interactive | `./sbh gen-aws-docs` (in terminal) | Prompts "Install AWS CLI v2?" with options [1/2/n] |
+| Install option 1 (local) | Choose `1` at install prompt | Installs to `~/.local/aws-cli`, prints version, continues to doc generation |
+| Install option n (skip) | Choose `n` at install prompt | Prints "Skipping install", exits 1 with manual install URL |
+| Full generation | `./sbh gen-aws-docs` (with aws installed) | Prints progress for 13 services, writes 3 files, prints byte counts and summary |
+| Output dir default | `./sbh gen-aws-docs` | Files written to `~/.config/swebash/docs/aws/` |
+| Output dir override | `SWEBASH_AWS_DOCS_DIR=/tmp/aws-test ./sbh gen-aws-docs` | Files written to `/tmp/aws-test/` |
+| services_reference.md | `cat ~/.config/swebash/docs/aws/services_reference.md` | Contains EC2, S3, LAMBDA, IAM, CLOUDFORMATION sections with synopsis and subcommand lists |
+| iac_patterns.md | `cat ~/.config/swebash/docs/aws/iac_patterns.md` | Contains CloudFormation (CFN), CDK, SAM, Terraform sections with deploy recipes |
+| troubleshooting.md | `cat ~/.config/swebash/docs/aws/troubleshooting.md` | Contains Authentication section (STS commands, error table) and Debugging section (--debug, env vars, CloudWatch Logs) |
+| Version provenance | `head -2 ~/.config/swebash/docs/aws/services_reference.md` | HTML comment contains `aws-cli/2.x.x` version string |
+| Budget guard | `wc -c ~/.config/swebash/docs/aws/*.md` | Total under 48k chars; each file under 16k chars |
+| Re-run is safe | Run `./sbh gen-aws-docs` twice | Second run overwrites files cleanly, no errors |
+| Live CDK help | Install `cdk`, run `./sbh gen-aws-docs` | iac_patterns.md CDK section contains live `cdk --help` output and version comment |
+| Live Terraform help | Install `terraform`, run `./sbh gen-aws-docs` | iac_patterns.md Terraform section contains live `terraform --help` output and version comment |
 
 ### 25. sbh.ps1 help (PowerShell)
 
