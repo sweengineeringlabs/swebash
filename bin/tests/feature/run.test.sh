@@ -49,9 +49,12 @@ test_release_flag_selects_release() {
 
 test_triggers_build_when_binaries_missing() {
   setup_shims
+  local empty_target
+  empty_target=$(mktemp -d)
   local out
-  out=$(run_bash "$REPO_ROOT/bin/run.sh" 2>&1) || true
+  out=$(TARGET_DIR="$empty_target" run_bash "$REPO_ROOT/bin/run.sh" 2>&1) || true
   teardown_shims
+  rm -rf "$empty_target"
   # run.sh prints "Binaries not found, building" when they're missing
   assert_match "$out" "[Bb]uild" "should trigger build when binaries missing"
 }

@@ -25,7 +25,11 @@ echo "==> Installing wasm32-unknown-unknown target..."
 rustup target add wasm32-unknown-unknown
 
 # ── Verify / set up local registry ───────────────────────────────────
-if [ "$PLATFORM" = "wsl" ]; then
+if [ -n "${CARGO_REGISTRIES_LOCAL_INDEX:-}" ]; then
+  # Registry already configured — derive paths from env
+  REGISTRY_URL="$CARGO_REGISTRIES_LOCAL_INDEX"
+  REGISTRY_DIR="${REGISTRY_URL#file://}"
+elif [ "$PLATFORM" = "wsl" ]; then
   WIN_USER=$(cmd.exe /C "echo %USERNAME%" 2>/dev/null | tr -d '\r' || echo "")
   if [ -z "$WIN_USER" ]; then
     echo "ERROR: Could not detect Windows username" >&2

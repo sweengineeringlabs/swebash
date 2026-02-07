@@ -120,4 +120,4 @@ load_env() {
 }
 
 # ── Target directory (matches .cargo/config.toml) ────────────────────
-TARGET_DIR="/tmp/swebash-target"
+TARGET_DIR="${TARGET_DIR:-/tmp/swebash-target}"

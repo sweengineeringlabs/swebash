@@ -214,6 +214,7 @@ Typing `@agent` directly from the shell prompt (without entering AI mode first w
 |------|---------|----------|
 | One-shot devops | `ai @devops how do I check running containers` | Prints `[devops] DevOps Assistant`, shows response with Docker commands, returns to shell prompt (not AI mode) |
 | One-shot review | `ai @review check main.rs` | Prints `[review] Code Reviewer`, shows code review response, returns to shell prompt |
+| One-shot awscli | `ai @awscli list my S3 buckets` | Prints `[awscli] AWS Cloud Assistant`, shows AWS CLI guidance, returns to shell prompt |
 | Agent restored | `ai @devops hello` then `ai` then `exit` | After one-shot, entering AI mode still shows `[AI:shell]` (previous agent restored) |
 
 ### 16. Auto-Detection (AI Mode)
@@ -226,6 +227,7 @@ Auto-detection switches the active agent based on keywords in the input.
 | Docker compose | `docker compose up` (while in AI mode) | Stays on devops (or switches if on another agent), shows explanation |
 | K8s keyword | `k8s get pods` | Switches to devops if not already, shows kubectl guidance |
 | Git keyword | `git rebase` | Prints "Switched to Git Assistant (git)", prompt changes to `[AI:git] >`, shows explanation |
+| AWS keyword | `aws s3 ls` | Switches to awscli agent (if user config loaded), prompt changes to `[AI:awscli] >` |
 | No match stays | `how do I list files` | No switch message, stays on current agent |
 | Prompt tracks agent | Observe prompt after each auto-switch | Prompt always reflects current agent: `[AI:shell]`, `[AI:devops]`, `[AI:git]`, etc. |
 
@@ -274,28 +276,31 @@ Agents are loaded in three layers (later layers override earlier ones):
 | Docs base dir | `export SWEBASH_AI_DOCS_BASE_DIR=/path/to/project`, restart | Project-local config is read from `/path/to/project/.swebash/agents.yaml` |
 
 <details>
-<summary>Example user agents.yaml</summary>
+<summary>Example user agents.yaml (awscli — deployed at ~/.config/swebash/agents.yaml)</summary>
 
 ```yaml
 version: 1
 agents:
-  - id: security
-    name: Security Scanner
-    description: Scans code for vulnerabilities
-    systemPrompt: |
-      You are a security scanner...
-    triggerKeywords: [security, scan, cve]
-    maxIterations: 15
+  - id: awscli
+    name: AWS Cloud Assistant
+    description: Assists with AWS CLI, CDK, SAM, CloudFormation, Terraform, and cloud infrastructure
     tools:
       fs: true
       exec: true
       web: false
+    maxIterations: 25
+    triggerKeywords: [aws, s3, ec2, lambda, iam, cloudformation, cdk, sam, ecs, rds, dynamodb, sqs, sns, route53, cloudwatch, terraform]
     docs:
-      budget: 4000
+      budget: 12000
       sources:
-        - docs/security-policy.md
-        - docs/threat-model.md
+        - docs/aws/services_reference.md
+        - docs/aws/iac_patterns.md
+        - docs/aws/troubleshooting.md
+    systemPrompt: |
+      You are an AWS Cloud assistant embedded in swebash...
 ```
+
+Docs files live at `~/.config/swebash/docs/aws/`.
 
 </details>
 
@@ -337,6 +342,7 @@ Agents can declare a `docs` section in their YAML with a `budget` (max character
 |------|-------|----------|
 | rscagent has docs | Switch to `@rscagent`, inspect system prompt via debug logging or ask agent | System prompt contains `<documentation>` block with content from its 20 source files |
 | docreview has docs | Switch to `@docreview`, inspect system prompt | System prompt contains `<documentation>` block with content from its 4 source files |
+| awscli has docs | Switch to `@awscli` (requires user config + `SWEBASH_AI_DOCS_BASE_DIR=~/.config/swebash`), inspect system prompt | System prompt contains `<documentation>` block with content from 3 AWS doc files (services_reference.md, iac_patterns.md, troubleshooting.md) |
 | Docs before prompt | Inspect `@rscagent` system prompt | `<directives>` block appears first, then `<documentation>` block, then agent's own prompt text |
 | Missing sources skipped | Set `SWEBASH_AI_DOCS_BASE_DIR` to a directory without doc files, restart | Agents start normally; missing doc sources are silently skipped |
 | Budget truncation | Create an agent YAML with `docs: { budget: 100, sources: [large-file.md] }`, restart | Documentation is truncated to approximately 100 characters |
@@ -350,6 +356,7 @@ Some agents override the global `SWEBASH_AI_TOOLS_MAX_ITER` with a per-agent `ma
 | seaaudit has 25 | Check seaaudit agent config or debug logging | `maxIterations` is 25 (vs global default of 10) |
 | rscagent has 20 | Check rscagent agent config | `maxIterations` is 20 |
 | docreview has 25 | Check docreview agent config | `maxIterations` is 25 |
+| awscli has 25 | Check awscli agent config (user-level) | `maxIterations` is 25 |
 | Default agents use global | Check shell, review, devops, git agents | `maxIterations` inherits from global config (default 10) |
 
 ### 20. DevOps Agent (Docker-specific)
@@ -363,6 +370,26 @@ Some agents override the global `SWEBASH_AI_TOOLS_MAX_ITER` with a per-agent `ma
 | Dockerfile help | `ai @devops how do I write a Dockerfile for nginx` | Provides Dockerfile example with explanation |
 | Compose guidance | `ai` then `docker compose up` | Auto-switches to devops, explains compose command |
 | K8s guidance | `ai` then `k8s get pods` | Devops agent explains kubectl, offers install instructions |
+
+### 20b. AWS Cloud Agent (User-Level)
+
+> Requires `~/.config/swebash/agents.yaml` with the `awscli` agent and `~/.config/swebash/docs/aws/` reference docs. Set `SWEBASH_AI_DOCS_BASE_DIR=~/.config/swebash` if docs are stored there.
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| Agent listed | `ai agents` | Lists 11 agents (10 built-in + awscli); awscli shows "Assists with AWS CLI, CDK, SAM, CloudFormation, Terraform, and cloud infrastructure" |
+| Switch to awscli | `ai` then `@awscli` | Prints "Switched to AWS Cloud Assistant (awscli)", prompt changes to `[AI:awscli] >` |
+| One-shot awscli | `ai @awscli how do I list S3 buckets` | Prints `[awscli] AWS Cloud Assistant`, shows `aws s3 ls` guidance, returns to shell prompt |
+| Auto-detect aws | `ai` then `aws s3 ls` | Switches to awscli agent (if not already), shows explanation |
+| Auto-detect ec2 | `ai` then `ec2 describe-instances` | Switches to awscli agent |
+| Auto-detect lambda | `ai` then `lambda invoke my-func` | Switches to awscli agent |
+| Auto-detect terraform | `ai` then `terraform plan` | Switches to awscli agent |
+| Docs loaded | Switch to `@awscli`, inspect system prompt via debug logging or ask agent | System prompt contains `<documentation>` block with content from 3 AWS doc files |
+| maxIterations is 25 | Check awscli agent config or debug logging | `maxIterations` is 25 |
+| Tools fs+exec only | Check awscli agent config | `fs: true`, `exec: true`, `web: false` |
+| 16 trigger keywords | Check awscli agent config | Keywords: aws, s3, ec2, lambda, iam, cloudformation, cdk, sam, ecs, rds, dynamodb, sqs, sns, route53, cloudwatch, terraform |
+| @awscli from shell | Type `@awscli` from shell prompt | Enters AI mode with awscli agent, prompt shows `[AI:awscli] >` |
+| Exit returns to shell | `@awscli` then `exit` then `echo hello` | Exits AI mode, `echo hello` prints `hello` normally |
 
 ---
 

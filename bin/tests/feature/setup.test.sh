@@ -58,7 +58,6 @@ if [ "$1" = "--version" ]; then echo "rustup 1.27.0 (fake)"; fi
 if [ "$1" = "target" ]; then echo "done"; fi
 SHIM
   chmod +x "$shim_dir/rustup"
-
   echo "TEST_KEY=test_value" > "$tmpdir/.env.example"
   touch "$fake_home/.bashrc"
   mkdir -p "$fake_home/.cargo/registry.local/index"
