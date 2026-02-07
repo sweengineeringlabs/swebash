@@ -21,6 +21,40 @@ export LLM_PROVIDER=anthropic
 ./sbh run
 ```
 
+### Scripted (Non-Interactive) Testing
+
+Most manual tests can be scripted by piping commands into the shell binary. This is useful for CI or quick regression checks without an interactive terminal.
+
+```bash
+# Build first
+./sbh build
+
+# Pipe commands — shell basics (no AI key needed)
+printf 'echo hello world\npwd\nls\nexit\n' | /tmp/swebash-target/release/swebash 2>/dev/null
+
+# Pipe commands — AI features (requires .env)
+set -a && source .env && set +a
+export LLM_PROVIDER=anthropic SWEBASH_AI_ENABLED=true
+{
+  echo 'ai status'
+  echo 'exit'
+} | /tmp/swebash-target/release/swebash 2>/dev/null
+
+# AI commands that call the LLM need sleep to wait for the response
+{
+  echo 'ai ask list all files'
+  sleep 10
+  echo 'n'
+  echo 'exit'
+} | /tmp/swebash-target/release/swebash 2>/dev/null
+```
+
+**Notes:**
+- Output contains ANSI escape codes. Use `cat -v` or `sed 's/\x1b\[[0-9;]*[a-zA-Z]//g'` to inspect.
+- Redirect stderr (`2>/dev/null`) to suppress tracing/warning logs.
+- LLM-dependent commands (`ai ask`, `ai explain`, `ai chat`, `ai suggest`) need `sleep` between the command and subsequent input to allow the API response to arrive.
+- Tests that require Docker (section 20) or PowerShell (`sbh.ps1` sections 25-28) cannot be scripted this way on environments without those tools.
+
 ## Test Checklist
 
 ### 1. Shell Basics
@@ -330,7 +364,7 @@ The `sbh` (and `sbh.ps1`) launcher is the primary entry point. These tests verif
 |------|---------|----------|
 | Help flag | `./sbh --help` | Prints usage with all commands: setup, build, run, test |
 | Help command | `./sbh help` | Same output as `--help` |
-| No args | `./sbh` | Prints usage and exits with code 1 |
+| No args | `./sbh` | Prints usage and exits with code 0 (same as help) |
 | Unknown command | `./sbh foo` | Prints usage and exits with code 1 |
 
 ### 22. sbh test
