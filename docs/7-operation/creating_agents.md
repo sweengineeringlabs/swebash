@@ -98,6 +98,8 @@ agents:
 
 **Note**: Tool access is intersected with global `SWEBASH_AI_TOOLS_*` env vars. An agent cannot enable a tool that is globally disabled — it can only further restrict.
 
+**Note**: Agent configuration and `docs` content are loaded once at startup. Changes to `agents.yaml` or referenced doc files require restarting swebash to take effect.
+
 ## Examples
 
 ### Add a security scanner agent

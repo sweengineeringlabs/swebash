@@ -109,6 +109,7 @@ Installation, configuration, and user-facing guides.
 | [Installation](7-operation/installation.md) | System requirements and installation steps | Users, DevOps |
 | [Configuration](7-operation/configuration.md) | Environment variables and provider setup | Users, DevOps |
 | [Creating Agents](7-operation/creating_agents.md) | Custom agent creation via YAML | Users, DevOps |
+| [@awscli Agent](7-operation/awscli_agent.md) | AWS Cloud agent setup, docs pipeline, usage | Users, DevOps |
 
 ### Reference
 
