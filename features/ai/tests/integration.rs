@@ -1906,6 +1906,7 @@ fn config_agent_inherits_defaults() {
         bypass_confirmation: None,
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1930,6 +1931,7 @@ fn config_agent_overrides_temperature_and_tokens() {
         bypass_confirmation: None,
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1953,6 +1955,7 @@ fn config_agent_tool_filter_only() {
         bypass_confirmation: None,
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -1982,6 +1985,7 @@ fn config_agent_tool_filter_none() {
         bypass_confirmation: None,
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -2007,6 +2011,7 @@ fn config_agent_tool_filter_all() {
         bypass_confirmation: None,
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -2029,6 +2034,7 @@ fn config_agent_trigger_keywords() {
         bypass_confirmation: None,
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -2053,6 +2059,7 @@ fn config_agent_system_prompt_preserved() {
         bypass_confirmation: None,
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -2068,6 +2075,7 @@ fn config_agent_inherits_custom_defaults() {
         think_first: false,
         bypass_confirmation: false,
         max_iterations: None,
+        directives: vec![],
     };
     let entry = AgentEntry {
         id: "inheritor".into(),
@@ -2082,6 +2090,7 @@ fn config_agent_inherits_custom_defaults() {
         bypass_confirmation: None,
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -2278,10 +2287,11 @@ fn yaml_builtin_docs_context_injected_when_base_dir_has_files() {
     let docreview = registry.get("docreview").unwrap();
     let prompt = docreview.system_prompt();
     assert!(
-        prompt.starts_with("<documentation>\n"),
-        "docreview prompt should start with injected docs block, got: {}",
+        prompt.starts_with("<directives>\n"),
+        "docreview prompt should start with directives block, got: {}",
         &prompt[..prompt.len().min(80)]
     );
+    assert!(prompt.contains("<documentation>\n"), "docreview prompt should contain documentation block");
     assert!(prompt.contains("Navigation here."), "should contain docs/README.md content");
     assert!(prompt.contains("Widget: a thing."), "should contain glossary.md content");
     assert!(prompt.contains("Layers."), "should contain architecture.md content");
@@ -2296,10 +2306,11 @@ fn yaml_builtin_docs_context_injected_when_base_dir_has_files() {
     let rscagent = registry.get("rscagent").unwrap();
     let rsc_prompt = rscagent.system_prompt();
     assert!(
-        rsc_prompt.starts_with("<documentation>\n"),
-        "rscagent prompt should start with injected docs block, got: {}",
+        rsc_prompt.starts_with("<directives>\n"),
+        "rscagent prompt should start with directives block, got: {}",
         &rsc_prompt[..rsc_prompt.len().min(80)]
     );
+    assert!(rsc_prompt.contains("<documentation>\n"), "rscagent prompt should contain documentation block");
     assert!(rsc_prompt.contains("Compiler pipeline."), "should contain doc/architecture.md");
     assert!(rsc_prompt.contains("RSX syntax rules."), "should contain grammar.md");
 
@@ -3015,6 +3026,7 @@ fn delegate_register_overwrite_and_cache_coherence() {
             bypass_confirmation: None,
             max_iterations: None,
             docs: None,
+            directives: None,
         },
         &AgentDefaults::default(),
     );
@@ -3361,6 +3373,7 @@ fn think_first_appends_prompt_when_enabled() {
         think_first: true,
         bypass_confirmation: false,
         max_iterations: None,
+        directives: vec![],
     };
     let entry = AgentEntry {
         id: "thinker".into(),
@@ -3375,6 +3388,7 @@ fn think_first_appends_prompt_when_enabled() {
         bypass_confirmation: None,
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3405,6 +3419,7 @@ fn think_first_does_not_append_when_disabled() {
         bypass_confirmation: None,
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3424,6 +3439,7 @@ fn think_first_agent_override_disables_default() {
         think_first: true, // globally enabled
         bypass_confirmation: false,
         max_iterations: None,
+        directives: vec![],
     };
     let entry = AgentEntry {
         id: "override".into(),
@@ -3438,6 +3454,7 @@ fn think_first_agent_override_disables_default() {
         bypass_confirmation: None,
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3464,6 +3481,7 @@ fn think_first_agent_override_enables() {
         bypass_confirmation: None,
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3482,6 +3500,7 @@ fn think_first_skipped_on_empty_prompt() {
         think_first: true,
         bypass_confirmation: false,
         max_iterations: None,
+        directives: vec![],
     };
     let entry = AgentEntry {
         id: "empty".into(),
@@ -3496,6 +3515,7 @@ fn think_first_skipped_on_empty_prompt() {
         bypass_confirmation: None,
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3563,6 +3583,7 @@ fn bypass_confirmation_inherits_from_defaults() {
         think_first: false,
         bypass_confirmation: true, // defaults enable bypass
         max_iterations: None,
+        directives: vec![],
     };
     let entry = AgentEntry {
         id: "inheritor".into(),
@@ -3577,6 +3598,7 @@ fn bypass_confirmation_inherits_from_defaults() {
         bypass_confirmation: None, // inherits from defaults
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
     assert!(agent.bypass_confirmation(), "should inherit true from defaults");
@@ -3598,6 +3620,7 @@ fn bypass_confirmation_agent_override_enables() {
         bypass_confirmation: Some(true), // agent-level override enables
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
     assert!(agent.bypass_confirmation(), "agent override should enable bypass");
@@ -3612,6 +3635,7 @@ fn bypass_confirmation_agent_override_disables() {
         think_first: false,
         bypass_confirmation: true, // defaults enable bypass
         max_iterations: None,
+        directives: vec![],
     };
     let entry = AgentEntry {
         id: "no-bypass".into(),
@@ -3626,6 +3650,7 @@ fn bypass_confirmation_agent_override_disables() {
         bypass_confirmation: Some(false), // agent-level override disables
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
     assert!(!agent.bypass_confirmation(), "agent override should disable bypass");
@@ -3745,6 +3770,7 @@ fn max_iterations_inherits_from_defaults() {
         think_first: false,
         bypass_confirmation: false,
         max_iterations: Some(20),
+        directives: vec![],
     };
     let entry = AgentEntry {
         id: "inheritor".into(),
@@ -3759,6 +3785,7 @@ fn max_iterations_inherits_from_defaults() {
         bypass_confirmation: None,
         max_iterations: None,
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
     assert_eq!(agent.max_iterations(), Some(20), "should inherit from defaults");
@@ -3780,6 +3807,7 @@ fn max_iterations_agent_override() {
         bypass_confirmation: None,
         max_iterations: Some(30),
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
     assert_eq!(agent.max_iterations(), Some(30), "agent override should take effect");
@@ -3794,6 +3822,7 @@ fn max_iterations_agent_overrides_defaults() {
         think_first: false,
         bypass_confirmation: false,
         max_iterations: Some(15),
+        directives: vec![],
     };
     let entry = AgentEntry {
         id: "override".into(),
@@ -3808,6 +3837,7 @@ fn max_iterations_agent_overrides_defaults() {
         bypass_confirmation: None,
         max_iterations: Some(50),
         docs: None,
+        directives: None,
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
     assert_eq!(agent.max_iterations(), Some(50), "agent override should beat defaults");

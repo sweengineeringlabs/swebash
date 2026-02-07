@@ -34,6 +34,8 @@ pub struct AgentDefaults {
     pub bypass_confirmation: bool,
     #[serde(default, rename = "maxIterations")]
     pub max_iterations: Option<usize>,
+    #[serde(default)]
+    pub directives: Vec<String>,
 }
 
 impl Default for AgentDefaults {
@@ -45,6 +47,7 @@ impl Default for AgentDefaults {
             think_first: false,
             bypass_confirmation: false,
             max_iterations: None,
+            directives: Vec::new(),
         }
     }
 }
@@ -102,6 +105,10 @@ pub struct AgentEntry {
     /// Document context configuration.
     #[serde(default)]
     pub docs: Option<DocsConfig>,
+    /// Per-agent directive overrides.
+    /// `None` = inherit defaults, `Some([])` = suppress, `Some([...])` = replace.
+    #[serde(default)]
+    pub directives: Option<Vec<String>>,
 }
 
 // ── Defaults helpers ───────────────────────────────────────────────
@@ -309,6 +316,21 @@ impl ConfigAgent {
             }
         }
 
+        // Prepend shared directives block (agent override or defaults).
+        let effective_directives = entry.directives
+            .as_deref()
+            .unwrap_or(&defaults.directives);
+        if !effective_directives.is_empty() {
+            let block = effective_directives
+                .iter()
+                .map(|d| format!("- {d}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            system_prompt = format!(
+                "<directives>\n{block}\n</directives>\n\n{system_prompt}"
+            );
+        }
+
         Self {
             id: entry.id,
             name: entry.name,
@@ -506,6 +528,7 @@ agents:
             bypass_confirmation: None,
             max_iterations: None,
             docs: None,
+            directives: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         assert!(matches!(agent.tool_filter(), ToolFilter::All));
@@ -530,6 +553,7 @@ agents:
             bypass_confirmation: None,
             max_iterations: None,
             docs: None,
+            directives: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -561,6 +585,7 @@ agents:
             bypass_confirmation: None,
             max_iterations: None,
             docs: None,
+            directives: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         // system_prompt() returns &str — borrow from owned field
@@ -583,6 +608,7 @@ agents:
             bypass_confirmation: None,
             max_iterations: None,
             docs: None,
+            directives: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         // trigger_keywords() returns &[String] — borrow from owned Vec
@@ -609,6 +635,7 @@ agents:
             bypass_confirmation: None,
             max_iterations: None,
             docs: None,
+            directives: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -634,6 +661,7 @@ agents:
             bypass_confirmation: None,
             max_iterations: None,
             docs: None,
+            directives: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -659,6 +687,7 @@ agents:
             bypass_confirmation: None,
             max_iterations: None,
             docs: None,
+            directives: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -686,6 +715,7 @@ agents:
             bypass_confirmation: None,
             max_iterations: None,
             docs: None,
+            directives: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         match agent.tool_filter() {
@@ -715,6 +745,7 @@ agents:
             bypass_confirmation: None,
             max_iterations: None,
             docs: None,
+            directives: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         assert_eq!(agent.system_prompt(), "");
@@ -736,6 +767,7 @@ agents:
             bypass_confirmation: None,
             max_iterations: None,
             docs: None,
+            directives: None,
         };
         let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
         assert_eq!(agent.trigger_keywords().len(), 20);
@@ -758,6 +790,7 @@ agents:
             bypass_confirmation: None,
             max_iterations: None,
             docs: None,
+            directives: None,
         };
         let entry2 = AgentEntry {
             id: "dup".into(),
@@ -772,6 +805,7 @@ agents:
             bypass_confirmation: None,
             max_iterations: None,
             docs: None,
+            directives: None,
         };
         let a1 = ConfigAgent::from_entry(entry1, &defaults);
         let a2 = ConfigAgent::from_entry(entry2, &defaults);
@@ -934,5 +968,150 @@ agents:
         assert!(text.contains("Real content."));
         assert_eq!(result.files_loaded, 1);
         assert_eq!(result.unresolved, vec!["missing/*.md"]);
+    }
+
+    // ── Directives Tests ─────────────────────────────────────────────
+
+    #[test]
+    fn test_directives_prepended_to_system_prompt() {
+        let mut defaults = AgentDefaults::default();
+        defaults.directives = vec![
+            "Be safe.".into(),
+            "Be correct.".into(),
+        ];
+        let entry = AgentEntry {
+            id: "d1".into(),
+            name: "D1".into(),
+            description: "desc".into(),
+            temperature: None,
+            max_tokens: None,
+            system_prompt: "You are helpful.".into(),
+            tools: None,
+            trigger_keywords: vec![],
+            think_first: None,
+            bypass_confirmation: None,
+            max_iterations: None,
+            docs: None,
+            directives: None,
+        };
+        let agent = ConfigAgent::from_entry(entry, &defaults);
+        let prompt = agent.system_prompt();
+        assert!(prompt.starts_with("<directives>\n- Be safe.\n- Be correct.\n</directives>"));
+        assert!(prompt.contains("You are helpful."));
+    }
+
+    #[test]
+    fn test_empty_directives_no_block() {
+        let defaults = AgentDefaults::default(); // directives = []
+        let entry = AgentEntry {
+            id: "d2".into(),
+            name: "D2".into(),
+            description: "desc".into(),
+            temperature: None,
+            max_tokens: None,
+            system_prompt: "Prompt text.".into(),
+            tools: None,
+            trigger_keywords: vec![],
+            think_first: None,
+            bypass_confirmation: None,
+            max_iterations: None,
+            docs: None,
+            directives: None,
+        };
+        let agent = ConfigAgent::from_entry(entry, &defaults);
+        assert!(!agent.system_prompt().contains("<directives>"));
+        assert_eq!(agent.system_prompt(), "Prompt text.");
+    }
+
+    #[test]
+    fn test_agent_directives_override_defaults() {
+        let mut defaults = AgentDefaults::default();
+        defaults.directives = vec!["Default directive.".into()];
+        let entry = AgentEntry {
+            id: "d3".into(),
+            name: "D3".into(),
+            description: "desc".into(),
+            temperature: None,
+            max_tokens: None,
+            system_prompt: "Agent prompt.".into(),
+            tools: None,
+            trigger_keywords: vec![],
+            think_first: None,
+            bypass_confirmation: None,
+            max_iterations: None,
+            docs: None,
+            directives: Some(vec!["Agent-specific directive.".into()]),
+        };
+        let agent = ConfigAgent::from_entry(entry, &defaults);
+        let prompt = agent.system_prompt();
+        assert!(prompt.contains("- Agent-specific directive."));
+        assert!(!prompt.contains("Default directive."));
+    }
+
+    #[test]
+    fn test_agent_empty_directives_suppresses_defaults() {
+        let mut defaults = AgentDefaults::default();
+        defaults.directives = vec!["Default directive.".into()];
+        let entry = AgentEntry {
+            id: "d4".into(),
+            name: "D4".into(),
+            description: "desc".into(),
+            temperature: None,
+            max_tokens: None,
+            system_prompt: "Agent prompt.".into(),
+            tools: None,
+            trigger_keywords: vec![],
+            think_first: None,
+            bypass_confirmation: None,
+            max_iterations: None,
+            docs: None,
+            directives: Some(vec![]),
+        };
+        let agent = ConfigAgent::from_entry(entry, &defaults);
+        assert!(!agent.system_prompt().contains("<directives>"));
+        assert_eq!(agent.system_prompt(), "Agent prompt.");
+    }
+
+    #[test]
+    fn test_directives_ordering_with_docs_and_think_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let docs_dir = dir.path().join("docs");
+        std::fs::create_dir_all(&docs_dir).unwrap();
+        std::fs::write(docs_dir.join("ref.md"), "Reference content.").unwrap();
+
+        let mut defaults = AgentDefaults::default();
+        defaults.directives = vec!["Quality first.".into()];
+        defaults.think_first = true;
+
+        let entry = AgentEntry {
+            id: "d5".into(),
+            name: "D5".into(),
+            description: "desc".into(),
+            temperature: None,
+            max_tokens: None,
+            system_prompt: "Base prompt.".into(),
+            tools: None,
+            trigger_keywords: vec![],
+            think_first: None, // inherits true from defaults
+            bypass_confirmation: None,
+            max_iterations: None,
+            docs: Some(DocsConfig {
+                budget: 8000,
+                sources: vec!["docs/ref.md".into()],
+            }),
+            directives: None,
+        };
+        let agent = ConfigAgent::from_entry_with_base_dir(entry, &defaults, Some(dir.path()));
+        let prompt = agent.system_prompt();
+
+        // Order: <directives> ... <documentation> ... {prompt + thinkFirst suffix}
+        let dir_pos = prompt.find("<directives>").expect("directives block present");
+        let doc_pos = prompt.find("<documentation>").expect("documentation block present");
+        let prompt_pos = prompt.find("Base prompt.").expect("base prompt present");
+        let think_pos = prompt.find("Always explain your reasoning").expect("thinkFirst suffix present");
+
+        assert!(dir_pos < doc_pos, "directives must come before documentation");
+        assert!(doc_pos < prompt_pos, "documentation must come before base prompt");
+        assert!(prompt_pos < think_pos, "base prompt must come before thinkFirst suffix");
     }
 }

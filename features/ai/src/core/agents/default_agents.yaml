@@ -5,6 +5,14 @@ defaults:
   maxTokens: 1024
   thinkFirst: true
   bypassConfirmation: false
+  directives:
+    - Always produce production-ready, professional, bug-free code.
+    - Never use workarounds, simplified solutions, or short-term fixes — solve problems at their root.
+    - Handle errors explicitly — no silent failures, no swallowed exceptions, no bare unwrap() in production paths.
+    - Validate all external inputs at system boundaries; never trust unvalidated data.
+    - Follow least-privilege principles; avoid exposing unnecessary public surface area.
+    - Write self-documenting code with meaningful names; avoid magic numbers and unexplained literals.
+    - Consider edge cases and failure modes; write code that is testable and verifiable.
   tools:
     fs: true
     exec: true

@@ -211,6 +211,7 @@ mod tests {
                 bypass_confirmation: None,
                 max_iterations: None,
                 docs: None,
+                directives: None,
             },
             &AgentDefaults::default(),
         )
@@ -567,6 +568,7 @@ mod tests {
                 bypass_confirmation: None,
                 max_iterations: None,
                 docs: None,
+                directives: None,
             },
             &AgentDefaults::default(),
         ));
@@ -584,6 +586,7 @@ mod tests {
                 bypass_confirmation: None,
                 max_iterations: None,
                 docs: None,
+                directives: None,
             },
             &AgentDefaults::default(),
         ));
@@ -825,6 +828,7 @@ mod tests {
                 bypass_confirmation: None,
                 max_iterations: None,
                 docs: None,
+                directives: None,
             },
             &AgentDefaults::default(),
         );

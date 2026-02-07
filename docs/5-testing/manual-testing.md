@@ -134,7 +134,7 @@ export LLM_PROVIDER=anthropic
 
 | Test | Command | Expected |
 |------|---------|----------|
-| List from shell | `ai agents` | Prints table of 4 agents (shell\*, review, devops, git) with descriptions. Active agent marked with `*`. |
+| List from shell | `ai agents` | Prints table of 8 agents (shell\*, review, devops, git, web, seaaudit, rscagent, docreview) with descriptions. Active agent marked with `*`. |
 | List from AI mode | `ai` then `agents` | Same table, shown inside AI mode |
 
 ### 14. Agent Switching (AI Mode)
@@ -200,13 +200,13 @@ Agents are loaded from an embedded YAML file compiled into the binary. Users can
 
 | Test | Steps | Expected |
 |------|-------|----------|
-| Add custom agent | Create `~/.config/swebash/agents.yaml` with a new agent (e.g. `id: security`), restart shell | `ai agents` lists 5 agents (4 defaults + custom) |
+| Add custom agent | Create `~/.config/swebash/agents.yaml` with a new agent (e.g. `id: security`), restart shell | `ai agents` lists 9 agents (8 defaults + custom) |
 | Switch to custom agent | `@security` | Prints "Switched to Security Scanner (security)", prompt shows `[AI:security] >` |
 | Custom trigger keywords | Add `triggerKeywords: [scan, cve]` to custom agent, restart, enter AI mode | Typing `scan this file` auto-detects the custom agent |
-| Override built-in agent | Add `id: shell` entry with custom `name` and `description` to user YAML, restart | `ai agents` shows custom name/description for shell agent; still 4 agents total |
-| Invalid user YAML | Write broken YAML to the config file, restart | Shell starts normally with 4 default agents (invalid file silently ignored) |
+| Override built-in agent | Add `id: shell` entry with custom `name` and `description` to user YAML, restart | `ai agents` shows custom name/description for shell agent; still 8 agents total |
+| Invalid user YAML | Write broken YAML to the config file, restart | Shell starts normally with 8 default agents (invalid file silently ignored) |
 | Env var override | `export SWEBASH_AGENTS_CONFIG=/path/to/agents.yaml`, restart shell | Agents from the specified file are loaded |
-| No config file | Ensure no user YAML exists anywhere, restart | Shell starts normally with 4 default agents |
+| No config file | Ensure no user YAML exists anywhere, restart | Shell starts normally with 8 default agents |
 
 <details>
 <summary>Example user agents.yaml</summary>
@@ -228,7 +228,37 @@ agents:
 
 </details>
 
-### 19. DevOps Agent (Docker-specific)
+### 19. Shared Directives
+
+Directives are quality standards defined in the `defaults.directives` section of `default_agents.yaml`. They are automatically prepended as a `<directives>` block to every agent's system prompt.
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| Directives present | `ai` then ask agent to describe its system prompt, or inspect via debug logging | System prompt starts with `<directives>` block containing 7 quality directives |
+| Directives before docs | Switch to `@rscagent` or `@docreview` (agents with docs) | `<directives>` block appears before `<documentation>` block in system prompt |
+| Directives before prompt | Inspect any agent's system prompt | `<directives>` block appears before the agent's own system prompt text |
+| All agents inherit | Check system prompts of shell, review, devops, git, web, seaaudit, rscagent, docreview | All agents have the same `<directives>` block from defaults |
+| Agent override | Add `directives: ["Custom rule."]` to a user agent in `agents.yaml`, restart | That agent's `<directives>` block contains only `- Custom rule.`, not the defaults |
+| Agent suppress | Add `directives: []` to a user agent in `agents.yaml`, restart | That agent has no `<directives>` block at all |
+
+<details>
+<summary>Expected directives block</summary>
+
+```
+<directives>
+- Always produce production-ready, professional, bug-free code.
+- Never use workarounds, simplified solutions, or short-term fixes — solve problems at their root.
+- Handle errors explicitly — no silent failures, no swallowed exceptions, no bare unwrap() in production paths.
+- Validate all external inputs at system boundaries; never trust unvalidated data.
+- Follow least-privilege principles; avoid exposing unnecessary public surface area.
+- Write self-documenting code with meaningful names; avoid magic numbers and unexplained literals.
+- Consider edge cases and failure modes; write code that is testable and verifiable.
+</directives>
+```
+
+</details>
+
+### 20. DevOps Agent (Docker-specific)
 
 > Requires Docker installed (`docker --version`). Permission errors are expected if user is not in the `docker` group.
 
@@ -246,7 +276,7 @@ agents:
 
 The `sbh` (and `sbh.ps1`) launcher is the primary entry point. These tests verify it delegates correctly.
 
-### 20. sbh help
+### 21. sbh help
 
 | Test | Command | Expected |
 |------|---------|----------|
@@ -255,7 +285,7 @@ The `sbh` (and `sbh.ps1`) launcher is the primary entry point. These tests verif
 | No args | `./sbh` | Prints usage and exits with code 1 |
 | Unknown command | `./sbh foo` | Prints usage and exits with code 1 |
 
-### 21. sbh test
+### 22. sbh test
 
 | Test | Command | Expected |
 |------|---------|----------|
@@ -266,7 +296,7 @@ The `sbh` (and `sbh.ps1`) launcher is the primary entry point. These tests verif
 | AI only | `./sbh test ai` | Runs AI tests only |
 | Help text matches suites | `./sbh --help` | Test suite list includes `engine|host|readline|ai|all` |
 
-### 22. Cargo registry
+### 23. Cargo registry
 
 The project depends on a local Cargo registry for rustratify crates. The test scripts verify the registry is configured and reachable before running tests.
 
@@ -276,7 +306,7 @@ The project depends on a local Cargo registry for rustratify crates. The test sc
 | Registry missing | `CARGO_REGISTRIES_LOCAL_INDEX=file:///nonexistent ./sbh test engine` | Prints `ERROR: Local registry index not found`, exits 1 |
 | Registry unset | Unset `CARGO_REGISTRIES_LOCAL_INDEX` and remove from `.bashrc`, run `./sbh test engine` | `preflight` sets fallback path; verify it resolves |
 
-### 23. sbh build & run
+### 24. sbh build & run
 
 | Test | Command | Expected |
 |------|---------|----------|
@@ -284,7 +314,7 @@ The project depends on a local Cargo registry for rustratify crates. The test sc
 | Debug build | `./sbh build --debug` | Builds engine WASM (release) and host (debug) without errors |
 | Run | `./sbh run` | Launches shell, shows banner and prompt |
 
-### 24. sbh.ps1 help (PowerShell)
+### 25. sbh.ps1 help (PowerShell)
 
 | Test | Command | Expected |
 |------|---------|----------|
@@ -294,7 +324,7 @@ The project depends on a local Cargo registry for rustratify crates. The test sc
 | No args | `.\sbh.ps1` | Prints usage, exits with code 0 |
 | Unknown command | `.\sbh.ps1 foo` | Prints usage, exits with code 1 |
 
-### 25. sbh.ps1 test (PowerShell)
+### 26. sbh.ps1 test (PowerShell)
 
 | Test | Command | Expected |
 |------|---------|----------|
@@ -304,14 +334,14 @@ The project depends on a local Cargo registry for rustratify crates. The test sc
 | Readline only | `.\sbh.ps1 test readline` | Runs readline tests only |
 | AI only | `.\sbh.ps1 test ai` | Runs AI tests only |
 
-### 26. sbh.ps1 setup (PowerShell)
+### 27. sbh.ps1 setup (PowerShell)
 
 | Test | Command | Expected |
 |------|---------|----------|
 | Setup dispatch | `.\sbh.ps1 setup` | Dispatches to `bin\setup.ps1`; checks prerequisites, registry, .env |
 | No parse errors | `.\sbh.ps1 setup` | No `ParserError` or `MissingEndCurlyBrace` errors |
 
-### 27. sbh.ps1 build & run (PowerShell)
+### 28. sbh.ps1 build & run (PowerShell)
 
 | Test | Command | Expected |
 |------|---------|----------|
@@ -338,17 +368,17 @@ cargo test -p swebash-ai -p swebash
 |-------|----------|-------|
 | Engine unit tests | `features/shell/engine/src/` | 20 |
 | Readline unit tests | `features/shell/readline/src/` | 54 |
-| Host integration | `features/shell/host/tests/integration.rs` | 54 |
+| Host integration | `features/shell/host/tests/integration.rs` | 60 |
 | Host readline tests | `features/shell/host/tests/readline_tests.rs` | 19 |
-| AI unit tests | `features/ai/src/` | 65 |
-| AI integration | `features/ai/tests/integration.rs` | 98 |
-| **Total** | | **310** |
+| AI unit tests | `features/ai/src/` | 123 |
+| AI integration | `features/ai/tests/integration.rs` | 155 |
+| **Total** | | **431** |
 
 ### Agent-Specific Automated Tests
 
 | Test | Suite | Verifies |
 |------|-------|----------|
-| `agent_list_returns_all_builtins` | AI integration | 4 agents registered |
+| `agent_list_returns_all_builtins` | AI integration | 8 agents registered |
 | `agent_default_is_shell` | AI integration | Default agent is shell |
 | `agent_switch_and_current_round_trip` | AI integration | Switch between agents and verify |
 | `agent_switch_unknown_returns_error` | AI integration | Error on unknown agent |
@@ -360,7 +390,7 @@ cargo test -p swebash-ai -p swebash
 | `agent_active_agent_id` | AI integration | Direct ID accessor |
 | `agent_engine_caching` | AI integration | Engine survives round-trip switches |
 | `agent_default_config_override` | AI integration | Custom default agent from config |
-| `ai_agents_list_command` | Host integration | `ai agents` lists all 4 agents |
+| `ai_agents_list_command` | Host integration | `ai agents` lists all 8 agents |
 | `ai_agent_switch_in_ai_mode` | Host integration | `@review` switches agent |
 | `ai_agent_list_in_ai_mode` | Host integration | `agents` command inside AI mode |
 | `ai_mode_prompt_shows_default_agent` | Host integration | Prompt shows `[AI:shell]` |
@@ -381,7 +411,7 @@ cargo test -p swebash-ai -p swebash
 | `ai_agent_switch_from_shell_exit_returns_to_shell` | Host integration | Exit after `@devops` returns to working shell |
 | `ai_agent_switch_from_shell_all_agents` | Host integration | All `@agent` shorthands enter AI mode |
 | `ai_agent_switch_from_shell_with_ai_prefix` | Host integration | `ai @devops` enters AI mode |
-| `yaml_parse_embedded_defaults` | AI integration | Embedded YAML parses with 4 agents |
+| `yaml_parse_embedded_defaults` | AI integration | Embedded YAML parses with 8 agents |
 | `yaml_parse_defaults_section` | AI integration | Defaults (temperature, maxTokens, tools) correct |
 | `yaml_parse_agent_ids_match_originals` | AI integration | shell/review/devops/git IDs present |
 | `yaml_parse_trigger_keywords_preserved` | AI integration | All keywords match original structs |
@@ -396,7 +426,7 @@ cargo test -p swebash-ai -p swebash
 | `config_agent_trigger_keywords` | AI integration | Keywords passed through correctly |
 | `config_agent_system_prompt_preserved` | AI integration | Multiline prompts preserved |
 | `config_agent_inherits_custom_defaults` | AI integration | Non-default defaults section works |
-| `yaml_registry_loads_all_default_agents` | AI integration | 4 agents via create_default_registry |
+| `yaml_registry_loads_all_default_agents` | AI integration | 8 agents via create_default_registry |
 | `yaml_registry_{shell,review,devops,git}_agent_properties` | AI integration | Properties match originals |
 | `yaml_registry_detect_agent_from_keywords` | AI integration | Keyword detection from YAML |
 | `yaml_registry_suggest_agent_from_keywords` | AI integration | Suggestion from YAML keywords |
@@ -412,3 +442,8 @@ cargo test -p swebash-ai -p swebash
 | `yaml_service_switch_to_yaml_loaded_agent` | AI integration | Switch through all YAML agents |
 | `yaml_service_auto_detect_uses_yaml_keywords` | AI integration | YAML keywords drive auto-detection |
 | `yaml_service_with_user_override_reflects_in_api` | AI integration | User override visible through service |
+| `test_directives_prepended_to_system_prompt` | AI unit | Default directives appear in `<directives>` block before system prompt |
+| `test_empty_directives_no_block` | AI unit | No `<directives>` block when defaults have no directives |
+| `test_agent_directives_override_defaults` | AI unit | Agent-level directives replace default directives |
+| `test_agent_empty_directives_suppresses_defaults` | AI unit | Agent with `directives: []` has no directives block |
+| `test_directives_ordering_with_docs_and_think_first` | AI unit | Order: `<directives>` → `<documentation>` → prompt → thinkFirst suffix |
