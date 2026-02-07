@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::process::Command;
 use wasmtime::*;
 
+use crate::spi::sandbox::{self, AccessKind};
 use crate::spi::state::HostState;
 
 pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
@@ -11,6 +12,18 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
         "env",
         "host_spawn",
         |mut caller: Caller<'_, HostState>, data_ptr: i32, data_len: i32| -> i32 {
+            // Verify current working directory is within the sandbox before
+            // spawning an external process.
+            let sandbox = &caller.data().sandbox;
+            if sandbox.enabled {
+                if let Ok(cwd) = std::env::current_dir() {
+                    let cwd_str = cwd.to_string_lossy();
+                    if sandbox::check_path(sandbox, &cwd_str, AccessKind::Read).is_err() {
+                        return -1;
+                    }
+                }
+            }
+
             let memory = caller
                 .get_export("memory")
                 .and_then(|e| e.into_memory())

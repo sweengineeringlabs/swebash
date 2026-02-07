@@ -34,6 +34,7 @@ pub fn dispatch(input: &str) {
         "head" => builtins::head::run(args),
         "tail" => builtins::tail::run(args),
         "touch" => builtins::touch::run(args),
+        "workspace" => builtins::workspace::run(args),
         "exit" => { /* handled by host REPL */ }
         _ => spawn_external(input),
     }

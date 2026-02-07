@@ -37,6 +37,7 @@ The following areas are in scope for security review:
 |------|---------|
 | **API keys** | Keys must never be logged, committed, or leaked in error output |
 | **WASM sandbox** | Engine must not escape the WASM sandbox or access host resources directly |
+| **Workspace sandbox** | Filesystem access must be restricted to configured paths and access modes |
 | **Command injection** | Shell commands must be properly sanitized before execution |
 | **Agent tool calls** | Tool execution (fs, exec, web) must respect configured permissions |
 | **Dependencies** | Third-party crates should be audited for known vulnerabilities |
@@ -47,3 +48,9 @@ The following areas are in scope for security review:
 - The WASM engine runs in `no_std` with no direct host access.
 - Host imports are explicitly defined and narrowly scoped.
 - LLM responses are never executed as shell commands without user confirmation.
+- **Workspace sandbox** enforces path-based access control at the host import layer:
+  - All filesystem operations are checked against a `SandboxPolicy` before reaching the OS.
+  - Default workspace (`~/workspace/`) starts in read-only mode.
+  - Paths are canonicalized before matching to prevent traversal attacks (`../`).
+  - External process spawning (`host_spawn`) verifies the CWD is within the sandbox.
+  - The WASM engine cannot bypass sandbox checks — it has no direct OS access.

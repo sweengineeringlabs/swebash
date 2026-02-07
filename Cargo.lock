@@ -2361,9 +2361,11 @@ dependencies = [
  "anyhow",
  "dirs",
  "dotenvy",
+ "serde",
  "swebash-ai",
  "swebash-readline",
  "tokio",
+ "toml",
  "tracing-subscriber",
  "wasmtime",
 ]

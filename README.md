@@ -15,6 +15,7 @@
 ## Features
 
 - WASM shell engine (`no_std`, `wasm32-unknown-unknown`)
+- Configurable workspace sandbox (path-based access control, TOML config)
 - Multi-agent AI chat (Anthropic, OpenAI, Gemini)
 - Agent auto-detection and switching
 - Interactive readline with history and arrow-key navigation

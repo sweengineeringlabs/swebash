@@ -75,6 +75,13 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return,
             };
 
+            if key == "SWEBASH_WORKSPACE" {
+                eprintln!(
+                    "warning: setting SWEBASH_WORKSPACE at runtime has no effect on the \
+                     sandbox policy. Use the `workspace` command instead."
+                );
+            }
+
             std::env::set_var(&key, &val);
         },
     )?;

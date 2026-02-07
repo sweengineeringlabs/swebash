@@ -56,8 +56,29 @@ User Input
        ↓
      WASM memory write → shell_eval() → engine dispatch
        ↓
-     Host imports (fs, io, env, process) → stdout/stderr
+     Host imports (fs, io, env, process)
+       ↓
+     Sandbox policy check (SandboxPolicy → check_path)
+       ↓
+     Allowed → OS syscall → stdout/stderr
+     Denied → stderr error message, -1 return
 ```
+
+### Sandbox Layer
+
+The workspace sandbox sits between the WASM engine's host imports and the OS filesystem:
+
+```
+engine (WASM)
+  ↓  host_read_file / host_write_file / host_set_cwd / ...
+host imports (fs.rs, env.rs, process.rs)
+  ↓  check_path(policy, path, Read|Write)
+sandbox.rs → resolve_path → check_access(SandboxPolicy)
+  ↓  allowed
+std::fs / std::env / std::process
+```
+
+Policy is loaded at startup from `~/.config/swebash/config.toml` (with `SWEBASH_WORKSPACE` env var override) and stored in `HostState.sandbox`. The `workspace` builtin communicates with the host via `host_workspace` to modify the policy at runtime.
 
 ## SEA Layers (ai/ crate)
 
@@ -77,3 +98,4 @@ The ai crate follows the SEA (Software Engineering Architecture) pattern:
 2. **tokio + wasmtime coexistence**: `#[tokio::main]` provides the async runtime. WASM calls remain synchronous.
 3. **Errors never crash the shell**: `create_ai_service()` returns `Option`. AI failures print an error and return to the prompt.
 4. **Single isolation file**: Only `spi/llm_provider.rs` imports from `llm-provider`. Everything else uses `AiClient`.
+5. **Sandbox at the host import layer**: Access control is enforced in the host runtime, not in the WASM engine. The engine cannot bypass sandbox checks because it has no direct OS access. See [Workspace Sandbox](workspace_sandbox.md).

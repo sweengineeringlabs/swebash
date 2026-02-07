@@ -28,39 +28,78 @@ async fn main() -> Result<()> {
         .with_writer(std::io::stderr)
         .init();
 
-    // Set initial workspace directory from SWEBASH_WORKSPACE env var.
-    // If unset or empty, defaults to home directory (~).
-    // Use SWEBASH_WORKSPACE=. to stay in the inherited working directory.
-    let workspace = std::env::var("SWEBASH_WORKSPACE")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .map(|s| {
-            if s.starts_with("~/") || s == "~" {
-                dirs::home_dir()
-                    .map(|h| h.join(s.strip_prefix("~/").unwrap_or("")))
-                    .unwrap_or_else(|| PathBuf::from(&s))
-            } else {
-                PathBuf::from(&s)
-            }
-        });
+    // Load workspace config from ~/.config/swebash/config.toml
+    let config = spi::config::load_config();
 
-    if let Some(ws) = workspace {
-        if ws.exists() {
-            let _ = std::env::set_current_dir(&ws);
+    // Check for SWEBASH_WORKSPACE env var override
+    let env_workspace = std::env::var("SWEBASH_WORKSPACE")
+        .ok()
+        .filter(|s| !s.is_empty());
+
+    let has_env_workspace = env_workspace.is_some();
+
+    // Resolve workspace root: env var > config > ~/workspace
+    let expand_tilde = |s: &str| -> PathBuf {
+        if s.starts_with("~/") || s == "~" {
+            dirs::home_dir()
+                .map(|h| h.join(s.strip_prefix("~/").unwrap_or("")))
+                .unwrap_or_else(|| PathBuf::from(s))
         } else {
+            PathBuf::from(s)
+        }
+    };
+
+    let workspace_root = if let Some(ref env_ws) = env_workspace {
+        expand_tilde(env_ws)
+    } else {
+        expand_tilde(&config.workspace.root)
+    };
+
+    // Auto-create workspace directory if it doesn't exist
+    if !workspace_root.exists() {
+        if let Err(e) = std::fs::create_dir_all(&workspace_root) {
             eprintln!(
-                "warning: SWEBASH_WORKSPACE path does not exist: {}",
-                ws.display()
+                "warning: could not create workspace directory {}: {e}",
+                workspace_root.display()
             );
         }
-    } else if let Some(home) = dirs::home_dir() {
-        let _ = std::env::set_current_dir(&home);
+    }
+
+    // Build sandbox policy from config
+    let mut policy = config.into_policy();
+
+    // If SWEBASH_WORKSPACE env var was set, override the root and default to
+    // RW mode (explicit user choice). This ensures existing tests that set
+    // the env var and perform writes continue to pass.
+    if has_env_workspace {
+        let canonical = workspace_root
+            .canonicalize()
+            .unwrap_or_else(|_| workspace_root.clone());
+        policy.workspace_root = canonical.clone();
+        policy.allowed_paths.clear();
+        policy.allowed_paths.push(spi::state::PathRule {
+            root: canonical,
+            mode: spi::state::AccessMode::ReadWrite,
+        });
+    }
+
+    // Set initial working directory
+    if workspace_root.exists() {
+        let _ = std::env::set_current_dir(&workspace_root);
+    } else {
+        eprintln!(
+            "warning: SWEBASH_WORKSPACE path does not exist: {}",
+            workspace_root.display()
+        );
+        if let Some(home) = dirs::home_dir() {
+            let _ = std::env::set_current_dir(&home);
+        }
     }
 
     // Initialize AI service (None if unconfigured — shell continues without AI)
     let ai_service = swebash_ai::create_ai_service().await.ok();
 
-    let (mut store, instance) = spi::runtime::setup()?;
+    let (mut store, instance) = spi::runtime::setup(policy)?;
 
     // Grab exported functions
     let shell_init = instance

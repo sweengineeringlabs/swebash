@@ -26,6 +26,9 @@
 
 ## A
 
+**AccessMode**
+An enum (`ReadOnly` or `ReadWrite`) that controls what level of filesystem access is granted within a sandbox path rule.
+
 **Agent**
 A specialized AI assistant with its own system prompt, tool access, and conversation memory. Each agent is optimized for a specific domain (e.g., code review, Git operations, DevOps).
 
@@ -88,6 +91,9 @@ The external Rust framework that provides swebash's agent infrastructure: `chat-
 
 ## S
 
+**SandboxPolicy**
+A Rust struct in `host/src/spi/state.rs` that controls which filesystem paths the shell may access and how. Contains a workspace root, ordered path rules, and an enabled flag. Stored in `HostState` and checked by every filesystem host import.
+
 **SEA (Stratified Encapsulation Architecture)**
 An architectural pattern that organizes code into distinct layers (L4 core infrastructure, L5 domain) with strict dependency direction. Used by the `seaaudit` agent.
 
@@ -112,6 +118,15 @@ Controls which tool categories an agent can access. `All` enables everything; `C
 Words that cause agent auto-detection. When a user types "scan this file" and the `security` agent has `triggerKeywords: [scan]`, swebash auto-switches to it.
 
 ## W
+
+**Workspace**
+The root directory for shell operations, controlled by the sandbox policy. Defaults to `~/workspace/`, overridable via `SWEBASH_WORKSPACE` env var or `~/.config/swebash/config.toml`.
+
+**`workspace` command**
+A shell builtin that displays and modifies the sandbox policy at runtime. Supports subcommands: `rw`, `ro`, `allow`, `enable`, `disable`.
+
+**Workspace Sandbox**
+A path-based access control layer in the host runtime that intercepts every filesystem host import. Enforces read-only or read-write access based on ordered path rules. Configured via TOML config file and `workspace` command.
 
 **W3H (WHO-WHAT-WHY-HOW)**
 The documentation structure pattern used across swebash docs. Every document declares its audience (WHO), scope (WHAT), motivation (WHY), and implementation (HOW).

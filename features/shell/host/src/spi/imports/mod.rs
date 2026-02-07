@@ -2,6 +2,7 @@ pub mod env;
 pub mod fs;
 pub mod io;
 pub mod process;
+pub mod workspace;
 
 use anyhow::Result;
 use wasmtime::Linker;
@@ -14,5 +15,6 @@ pub fn register_all(linker: &mut Linker<HostState>) -> Result<()> {
     fs::register(linker)?;
     env::register(linker)?;
     process::register(linker)?;
+    workspace::register(linker)?;
     Ok(())
 }

@@ -9,6 +9,23 @@
 ## [Unreleased]
 
 ### Added
+- **Configurable Workspace Sandbox** (2025-02-07)
+  - Path-based sandbox layer in the host runtime intercepts every filesystem import
+  - Default workspace: `~/workspace/` (auto-created on first launch) in read-only mode
+  - TOML config file at `~/.config/swebash/config.toml` for persistent settings
+  - `workspace` builtin command for session-level overrides:
+    - `workspace` / `workspace status` — show sandbox status
+    - `workspace rw` / `workspace ro` — toggle workspace access mode
+    - `workspace allow PATH [ro|rw]` — extend sandbox with additional paths
+    - `workspace enable` / `workspace disable` — toggle sandbox enforcement
+  - All 10 filesystem host imports enforce sandbox rules (read/write classification)
+  - `host_spawn` verifies CWD is within sandbox before spawning processes
+  - Runtime warning on `export SWEBASH_WORKSPACE=...` (use `workspace` command instead)
+  - Config precedence: `SWEBASH_WORKSPACE` env var > config file > `~/workspace/`
+  - When `SWEBASH_WORKSPACE` is set via env var, defaults to read-write (backward compatible)
+  - New host imports: `host_workspace` for engine-to-host sandbox communication
+  - Dependencies added: `serde = "1"` (derive), `toml = "0.8"`
+
 - **AI Mode with Smart Detection** (2025-02-02)
   - Interactive AI mode: type `ai` to enter, `exit` to leave
   - Smart intent detection automatically routes commands:

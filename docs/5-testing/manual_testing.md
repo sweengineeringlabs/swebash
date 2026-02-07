@@ -129,6 +129,24 @@ export LLM_PROVIDER=anthropic SWEBASH_AI_ENABLED=true
 | History file | Run a few commands, then exit | `~/.swebash_history` file exists |
 | History persistence | Restart shell | Previous commands available via arrow keys |
 
+### 6b. Workspace Sandbox
+
+| Test | Command | Expected |
+|------|---------|----------|
+| Default workspace | `./sbh run` then `pwd` | Shows `~/workspace/` (auto-created if missing) |
+| Sandbox status | `workspace` | Shows enabled, root path, allowed paths with modes |
+| Read-only default | `touch foo` | Denied: `sandbox: write access denied for '...'` |
+| Switch to RW | `workspace rw` then `touch foo` | File created successfully |
+| Switch back to RO | `workspace ro` then `touch bar` | Denied |
+| Allow path | `workspace allow /tmp rw` then `cd /tmp` then `touch test` | Allowed — /tmp added as RW |
+| Deny outside | `cd /etc` | Denied: `sandbox: read access denied for '/etc': outside workspace` |
+| Disable sandbox | `workspace disable` then `cd /etc` | Allowed — sandbox turned off |
+| Re-enable sandbox | `workspace enable` then `cd /etc` | Denied again |
+| Env var override | `SWEBASH_WORKSPACE=/tmp ./sbh run` then `pwd` | Shows `/tmp`; writes are allowed (RW mode) |
+| Config file | Create `~/.config/swebash/config.toml` with `mode = "rw"`, restart | Workspace is read-write by default |
+| LS in sandbox | `ls` | Works (read operation in workspace) |
+| Cat in sandbox | `cat <file-in-workspace>` | Works (read operation in workspace) |
+
 ---
 
 ## AI Feature Tests

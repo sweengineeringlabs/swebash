@@ -1,19 +1,81 @@
 # Configuration
 
-> **TLDR:** Environment variables for AI providers, API keys, and feature toggles — no config files required.
+> **TLDR:** Environment variables, TOML config file, and the `workspace` command for AI providers, workspace sandbox, and feature toggles.
 
 **Audience**: Users, DevOps
 
 ## Table of Contents
 
+- [Workspace Sandbox](#workspace-sandbox)
 - [Environment Variables](#environment-variables)
 - [Quick Start](#quick-start)
 - [Graceful Degradation](#graceful-degradation)
 
 
+## Workspace Sandbox
+
+The workspace sandbox controls which filesystem paths the shell can access. It defaults to `~/workspace/` in read-only mode.
+
+### Config File
+
+Persistent workspace settings are stored in `~/.config/swebash/config.toml`:
+
+```toml
+[workspace]
+root = "~/workspace"    # Workspace root directory (supports ~ expansion)
+mode = "ro"             # Default access mode: "ro" or "rw"
+enabled = true          # Whether sandbox enforcement is active
+
+[[workspace.allow]]     # Additional allowed paths (repeatable)
+path = "~/projects"
+mode = "rw"
+```
+
+### `workspace` Command
+
+Session-level overrides (do not persist across restarts):
+
+| Command | Description |
+|---------|-------------|
+| `workspace` | Show sandbox status (root, mode, allowed paths) |
+| `workspace rw` | Set workspace root to read-write |
+| `workspace ro` | Set workspace root to read-only |
+| `workspace allow PATH [ro\|rw]` | Add an allowed path (default: rw) |
+| `workspace disable` | Turn off sandbox entirely |
+| `workspace enable` | Turn on sandbox |
+
+### Precedence
+
+Workspace root is resolved in this order (first match wins):
+
+1. `SWEBASH_WORKSPACE` environment variable
+2. `root` in `~/.config/swebash/config.toml`
+3. `~/workspace/` (default)
+
+When `SWEBASH_WORKSPACE` is set via environment variable, the workspace defaults to **read-write** mode (the user explicitly chose the workspace).
+
+### Access Classification
+
+| Operation | Check |
+|-----------|-------|
+| `cat`, `ls`, `ls -l`, `head`, `tail` | Read |
+| `touch`, `mkdir`, `rm`, `cp` (dst), `mv` (src+dst) | Write |
+| `cp` (src) | Read |
+| `cd` | Read (path must be in sandbox) |
+| `pwd` | Always allowed |
+| External commands (`host_spawn`) | CWD must be in sandbox |
+
+Denied operations print to stderr: `sandbox: write access denied for '/path': read-only workspace`
+
 ## Environment Variables
 
-All configuration is done via environment variables. No config files are required.
+Configuration is done via environment variables and the TOML config file.
+
+### Workspace
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SWEBASH_WORKSPACE` | *(unset)* | Override workspace root directory. Defaults to RW mode when set. Use `.` to stay in the inherited working directory |
 
 ### AI Feature Control
 

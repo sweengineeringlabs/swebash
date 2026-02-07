@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use wasmtime::*;
 
-use super::state::HostState;
+use super::state::{HostState, SandboxPolicy};
 
 /// Engine WASM bytes embedded at compile time by build.rs.
 const EMBEDDED_ENGINE_WASM: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/engine.wasm"));
@@ -12,7 +12,7 @@ const EMBEDDED_ENGINE_WASM: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/en
 /// If the `ENGINE_WASM` environment variable is set at runtime, the module is
 /// loaded from that file path (useful during development).  Otherwise the
 /// compile-time embedded bytes are used.
-pub fn setup() -> Result<(Store<HostState>, Instance)> {
+pub fn setup(sandbox: SandboxPolicy) -> Result<(Store<HostState>, Instance)> {
     let engine = Engine::default();
 
     let module = if let Ok(path) = std::env::var("ENGINE_WASM") {
@@ -25,6 +25,7 @@ pub fn setup() -> Result<(Store<HostState>, Instance)> {
     let state = HostState {
         response_buf_ptr: 0,
         response_buf_cap: 0,
+        sandbox,
     };
     let mut store = Store::new(&engine, state);
     let mut linker = Linker::new(&engine);

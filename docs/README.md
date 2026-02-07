@@ -57,6 +57,7 @@ Architecture decisions and system design.
 | Document | Description | Audience |
 |----------|-------------|----------|
 | [Architecture](3-design/architecture.md) | Three-crate architecture overview | Developers, architects |
+| [Workspace Sandbox](3-design/workspace_sandbox.md) | Path-based access control and config | Developers, architects |
 | [Agent Architecture](3-design/agent_architecture.md) | Agent framework: prompts, tools, memory isolation | Developers, architects |
 | [AI Integration](3-design/ai_integration.md) | LLM isolation boundary and provider abstraction | Developers, architects |
 | [Command Design](3-design/command_design.md) | AI command triggers and shell-mode dispatch | Developers, architects |

@@ -47,4 +47,7 @@ extern "C" {
 
     // Process
     pub fn host_spawn(data_ptr: *const u8, data_len: usize) -> i32;
+
+    // Workspace sandbox
+    pub fn host_workspace(cmd_ptr: *const u8, cmd_len: usize) -> i32;
 }

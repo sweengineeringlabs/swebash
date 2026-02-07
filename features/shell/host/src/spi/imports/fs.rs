@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 use wasmtime::*;
 
+use crate::spi::sandbox::{check_path, AccessKind};
 use crate::spi::state::HostState;
 
 /// Helper: read a string from wasm memory at (ptr, len).
@@ -88,6 +89,10 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return -1,
             };
 
+            if check_path(&caller.data().sandbox, &path, AccessKind::Read).is_err() {
+                return -1;
+            }
+
             match fs::read(&path) {
                 Ok(contents) => write_response(&mut caller, &contents),
                 Err(_) => -1,
@@ -108,6 +113,10 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 Some(p) => p,
                 None => return -1,
             };
+
+            if check_path(&caller.data().sandbox, &path, AccessKind::Read).is_err() {
+                return -1;
+            }
 
             let entries = match fs::read_dir(&path) {
                 Ok(rd) => rd,
@@ -141,6 +150,10 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 Some(p) => p,
                 None => return -1,
             };
+
+            if check_path(&caller.data().sandbox, &path, AccessKind::Read).is_err() {
+                return -1;
+            }
 
             let meta = match fs::metadata(&path) {
                 Ok(m) => m,
@@ -192,6 +205,10 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 Some(p) => p,
                 None => return -1,
             };
+
+            if check_path(&caller.data().sandbox, &path, AccessKind::Write).is_err() {
+                return -1;
+            }
 
             let content = if data_len > 0 {
                 match read_bytes(&memory, &caller, data_ptr, data_len) {
@@ -249,6 +266,10 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return -1,
             };
 
+            if check_path(&caller.data().sandbox, &path, AccessKind::Write).is_err() {
+                return -1;
+            }
+
             let p = Path::new(&path);
             let result = if p.is_dir() {
                 if recursive != 0 {
@@ -290,6 +311,14 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return -1,
             };
 
+            let sandbox = &caller.data().sandbox;
+            if check_path(sandbox, &src, AccessKind::Read).is_err() {
+                return -1;
+            }
+            if check_path(sandbox, &dst, AccessKind::Write).is_err() {
+                return -1;
+            }
+
             match fs::copy(&src, &dst) {
                 Ok(_) => 0,
                 Err(_) => -1,
@@ -320,6 +349,14 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return -1,
             };
 
+            let sandbox = &caller.data().sandbox;
+            if check_path(sandbox, &src, AccessKind::Write).is_err() {
+                return -1;
+            }
+            if check_path(sandbox, &dst, AccessKind::Write).is_err() {
+                return -1;
+            }
+
             match fs::rename(&src, &dst) {
                 Ok(_) => 0,
                 Err(_) => -1,
@@ -344,6 +381,10 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 Some(p) => p,
                 None => return -1,
             };
+
+            if check_path(&caller.data().sandbox, &path, AccessKind::Write).is_err() {
+                return -1;
+            }
 
             let result = if recursive != 0 {
                 fs::create_dir_all(&path)
@@ -386,6 +427,10 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 Some(p) => p,
                 None => return -1,
             };
+
+            if check_path(&caller.data().sandbox, &path, AccessKind::Read).is_err() {
+                return -1;
+            }
 
             match std::env::set_current_dir(&path) {
                 Ok(_) => 0,

@@ -11,3 +11,4 @@ pub mod pwd;
 pub mod rm;
 pub mod tail;
 pub mod touch;
+pub mod workspace;

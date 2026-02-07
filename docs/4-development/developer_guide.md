@@ -74,8 +74,9 @@ New AI functionality goes in L4 Core. Public API changes go in L3 API first, the
 ### WASM Boundary
 
 - The engine crate is `no_std` — no filesystem, no networking, no allocation beyond what the WASM runtime provides.
-- All host capabilities are exposed through explicitly defined imports (`fs`, `io`, `env`, `process`).
+- All host capabilities are exposed through explicitly defined imports (`fs`, `io`, `env`, `process`, `workspace`).
 - AI commands are intercepted in the host **before** reaching the WASM engine.
+- **Sandbox enforcement**: All filesystem host imports pass through `sandbox::check_path()` before reaching the OS. The WASM engine cannot bypass this — it has no direct syscall access.
 
 ### Error Handling
 
@@ -95,9 +96,21 @@ New AI functionality goes in L4 Core. Public API changes go in L3 API first, the
 ### Adding a Shell Builtin
 
 1. Add the command handler in `features/shell/engine/src/builtins/`.
-2. Register it in the builtin dispatch table.
-3. Add tests in the engine crate: `./sbh test engine`.
-4. Build the WASM module: `./sbh build`.
+2. Register it in the builtin dispatch table (`dispatch.rs`).
+3. If the builtin requires a new host import, add the extern in `engine/src/spi/host.rs` and the implementation in `host/src/spi/imports/`.
+4. Add tests in the engine crate: `./sbh test engine`.
+5. Build the WASM module: `./sbh build`.
+
+### Adding a Host Import with Sandbox
+
+When adding new filesystem-related host imports:
+
+1. Implement the import in `host/src/spi/imports/`.
+2. Call `sandbox::check_path(&caller.data().sandbox, &path, AccessKind::Read|Write)` **before** any OS operation.
+3. Return `-1` if `check_path()` returns `Err`.
+4. Register the import in `host/src/spi/imports/mod.rs`.
+5. Add the extern declaration in `engine/src/spi/host.rs`.
+6. See [Workspace Sandbox](../3-design/workspace_sandbox.md) for the access classification table.
 
 ### Adding an AI Agent
 
