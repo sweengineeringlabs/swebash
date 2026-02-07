@@ -7,6 +7,7 @@
 1. Rust toolchain with `wasm32-unknown-unknown` target installed
 2. An LLM API key for AI feature testing (Anthropic, OpenAI, or Gemini)
 3. `.env` file with credentials (see `.env.example`)
+4. (Optional) `SWEBASH_AI_DOCS_BASE_DIR` — base directory for resolving agent `docs` source paths and project-local config (defaults to cwd)
 
 ## Running the Shell
 
@@ -189,14 +190,28 @@ Auto-detection switches the active agent based on keywords in the input.
 | Isolated history | `ai` → chat with shell → `@review` → chat with review → `@shell` | Returning to shell still has shell's conversation context, review has its own |
 | Clear history | `clear` then `history` | Shows "(no chat history)" for active agent only |
 
+### 17b. History and Clear Commands
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| History shows messages | `ai` → send a few messages → `history` | Prints numbered list of recent user/assistant messages for the active agent |
+| History empty | `ai` → `@review` → `history` | Shows "(no chat history)" since review agent has no messages yet |
+| Clear resets agent | `ai` → send a message → `clear` → `history` | Shows "(no chat history)" — only active agent's history is cleared |
+| Clear does not affect others | `ai` → chat with shell → `@review` → `clear` → `@shell` → `history` | Shell agent history is still intact after clearing review |
+
 ### 18. User-Configurable Agents (YAML)
 
 Agents are loaded from an embedded YAML file compiled into the binary. Users can add or override agents via a config file.
 
+Agents are loaded in three layers (later layers override earlier ones):
+
 **Config file lookup order:**
-1. `$SWEBASH_AGENTS_CONFIG` (env var, highest priority)
-2. `~/.config/swebash/agents.yaml`
-3. `~/.swebash/agents.yaml`
+1. Built-in (`default_agents.yaml` embedded in binary)
+2. Project-local (`<SWEBASH_AI_DOCS_BASE_DIR>/.swebash/agents.yaml`, if present)
+3. User-level (first match wins):
+   - `$SWEBASH_AGENTS_CONFIG` (env var, highest priority)
+   - `~/.config/swebash/agents.yaml`
+   - `~/.swebash/agents.yaml`
 
 | Test | Steps | Expected |
 |------|-------|----------|
@@ -207,6 +222,10 @@ Agents are loaded from an embedded YAML file compiled into the binary. Users can
 | Invalid user YAML | Write broken YAML to the config file, restart | Shell starts normally with 8 default agents (invalid file silently ignored) |
 | Env var override | `export SWEBASH_AGENTS_CONFIG=/path/to/agents.yaml`, restart shell | Agents from the specified file are loaded |
 | No config file | Ensure no user YAML exists anywhere, restart | Shell starts normally with 8 default agents |
+| Project-local config | Create `.swebash/agents.yaml` in project root with a new agent (e.g. `id: projbot`), restart shell | `ai agents` lists 9 agents (8 defaults + project agent) |
+| Project-local override | Add `id: shell` entry to `.swebash/agents.yaml` with custom name, restart | Shell agent shows custom name (project layer overrides built-in) |
+| User overrides project | Same `id` in both project-local and user-level config, restart | User-level config wins (loaded last) |
+| Docs base dir | `export SWEBASH_AI_DOCS_BASE_DIR=/path/to/project`, restart | Project-local config is read from `/path/to/project/.swebash/agents.yaml` |
 
 <details>
 <summary>Example user agents.yaml</summary>
@@ -220,10 +239,16 @@ agents:
     systemPrompt: |
       You are a security scanner...
     triggerKeywords: [security, scan, cve]
+    maxIterations: 15
     tools:
       fs: true
       exec: true
       web: false
+    docs:
+      budget: 4000
+      sources:
+        - docs/security-policy.md
+        - docs/threat-model.md
 ```
 
 </details>
@@ -257,6 +282,29 @@ Directives are quality standards defined in the `defaults.directives` section of
 ```
 
 </details>
+
+### 19b. Agent docs_context
+
+Agents can declare a `docs` section in their YAML with a `budget` (max characters) and a list of `sources` (file globs resolved relative to `SWEBASH_AI_DOCS_BASE_DIR`). Matching files are loaded and prepended to the system prompt inside a `<documentation>` block.
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| rscagent has docs | Switch to `@rscagent`, inspect system prompt via debug logging or ask agent | System prompt contains `<documentation>` block with content from its 20 source files |
+| docreview has docs | Switch to `@docreview`, inspect system prompt | System prompt contains `<documentation>` block with content from its 4 source files |
+| Docs before prompt | Inspect `@rscagent` system prompt | `<directives>` block appears first, then `<documentation>` block, then agent's own prompt text |
+| Missing sources skipped | Set `SWEBASH_AI_DOCS_BASE_DIR` to a directory without doc files, restart | Agents start normally; missing doc sources are silently skipped |
+| Budget truncation | Create an agent YAML with `docs: { budget: 100, sources: [large-file.md] }`, restart | Documentation is truncated to approximately 100 characters |
+
+### 19c. Agent maxIterations
+
+Some agents override the global `SWEBASH_AI_TOOLS_MAX_ITER` with a per-agent `maxIterations` value in YAML. This limits how many tool-calling iterations the agent performs per turn.
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| seaaudit has 25 | Check seaaudit agent config or debug logging | `maxIterations` is 25 (vs global default of 10) |
+| rscagent has 20 | Check rscagent agent config | `maxIterations` is 20 |
+| docreview has 25 | Check docreview agent config | `maxIterations` is 25 |
+| Default agents use global | Check shell, review, devops, git agents | `maxIterations` inherits from global config (default 10) |
 
 ### 20. DevOps Agent (Docker-specific)
 
@@ -294,7 +342,8 @@ The `sbh` (and `sbh.ps1`) launcher is the primary entry point. These tests verif
 | Host only | `./sbh test host` | Runs host tests only |
 | Readline only | `./sbh test readline` | Runs readline tests only |
 | AI only | `./sbh test ai` | Runs AI tests only |
-| Help text matches suites | `./sbh --help` | Test suite list includes `engine|host|readline|ai|all` |
+| Scripts only | `./sbh test scripts` | Runs bash script tests via `bin/tests/runner.sh` (feature + e2e `*.test.sh` files) |
+| Help text matches suites | `./sbh --help` | Test suite list includes `engine|host|readline|ai|scripts|all` |
 
 ### 23. Cargo registry
 
@@ -333,6 +382,7 @@ The project depends on a local Cargo registry for rustratify crates. The test sc
 | Host only | `.\sbh.ps1 test host` | Runs host tests only |
 | Readline only | `.\sbh.ps1 test readline` | Runs readline tests only |
 | AI only | `.\sbh.ps1 test ai` | Runs AI tests only |
+| Scripts only | `.\sbh.ps1 test scripts` | Runs Pester script tests (feature + e2e) |
 
 ### 27. sbh.ps1 setup (PowerShell)
 
