@@ -1,6 +1,18 @@
 # Manual Testing Guide
 
+> **TLDR:** Step-by-step manual testing checklist covering shell basics, AI features, agent config, and the sbh launcher.
+
 **Audience**: Developers, QA
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Running the Shell](#running-the-shell)
+- [Test Checklist](#test-checklist)
+- [AI Feature Tests](#ai-feature-tests)
+- [sbh Launcher](#sbh-launcher)
+- [Automated Test Suites](#automated-test-suites)
+
 
 ## Prerequisites
 

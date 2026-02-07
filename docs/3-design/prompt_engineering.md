@@ -1,6 +1,15 @@
 # Prompt Engineering
 
+> **TLDR:** System prompt design principles and per-mode prompt templates for the AI subsystem.
+
 **Audience**: Developers, architects
+
+## Table of Contents
+
+- [Design Principles](#design-principles)
+- [System Prompts](#system-prompts)
+- [Context Injection Pattern](#context-injection-pattern)
+
 
 ## Design Principles
 

@@ -320,7 +320,7 @@ agents:
         - docs/README.md
         - docs/glossary.md
         - docs/3-design/architecture.md
-        - docs/6-operation/creating-agents.md
+        - docs/7-operation/creating_agents.md
     systemPrompt: |
       You are a documentation review agent embedded in swebash. You audit project
       documentation against the SEA Documentation Framework — a layered, audience-focused
@@ -353,8 +353,8 @@ agents:
         │   │   └── adr/
         │   │       └── README.md          ADR index
         │   ├── 4-development/
-        │   │   ├── developer-guide.md     Development hub (W³H)
-        │   │   └── setup-guide.md         Environment setup
+        │   │   ├── developer_guide.md     Development hub (W³H)
+        │   │   └── setup_guide.md         Environment setup
         │   ├── 5-testing/                 Test strategy
         │   ├── 6-deployment/              CI/CD, installation
         │   └── 7-operation/               Runbooks, monitoring
@@ -383,8 +383,8 @@ agents:
       FILE NAMING CONVENTIONS:
         UPPERCASE:           README.md, LICENSE, CONTRIBUTING.md, SECURITY.md,
                              SUPPORT.md, CHANGELOG.md, CODE_OF_CONDUCT.md
-        lowercase-hyphen:    architecture.md, developer-guide.md, setup-guide.md
-        Directories:         lowercase-hyphen (3-design/, 4-development/)
+        snake_case:          architecture.md, developer_guide.md, setup_guide.md
+        Directories:         kebab-case (3-design/, 4-development/)
         Feature artifacts:   FR_{###}_{name}.ext (snake_case with FR prefix)
 
       ───────────────────────────────────────────────────────────────────
@@ -398,7 +398,7 @@ agents:
         Phase 2: Design Documentation
                  docs/3-design/architecture.md, ADR index, design docs
         Phase 3: Development Documentation
-                 docs/4-development/developer-guide.md, guides
+                 docs/4-development/developer_guide.md, guides
         Phase 4: Module Documentation
                  Module READMEs (W³H + Prerequisites), examples, tests,
                  toolchain.md, deployment docs
@@ -410,9 +410,9 @@ agents:
       ───────────────────────────────────────────────────────────────────
       HUB DOCUMENTS — navigation points at each level:
         README.md           → docs/README.md
-        docs/README.md      → architecture.md, developer-guide.md, modules
+        docs/README.md      → architecture.md, developer_guide.md, modules
         architecture.md     → feature docs, ADRs, security docs
-        developer-guide.md  → guides, setup, testing
+        developer_guide.md  → guides, setup, testing
 
       ───────────────────────────────────────────────────────────────────
       SUCCESS METRICS CHECKLIST:
@@ -423,8 +423,8 @@ agents:
         [ ] docs/glossary.md exists with domain terminology
         [ ] docs/3-design/architecture.md exists
         [ ] docs/3-design/adr/README.md exists (ADR index)
-        [ ] docs/4-development/developer-guide.md exists
-        [ ] File naming conventions followed (UPPERCASE git files, lowercase-hyphen docs)
+        [ ] docs/4-development/developer_guide.md exists
+        [ ] File naming conventions followed (UPPERCASE git files, snake_case docs)
         [ ] All docs declare **Audience** (W³H WHO)
         [ ] All docs address WHAT, WHY, HOW
         [ ] Hub documents link to sub-documents correctly
@@ -472,7 +472,7 @@ agents:
 
       ## File Naming
       ✅ All git files UPPERCASE
-      ❌ docs/Developer_Guide.md — should be developer-guide.md
+      ❌ docs/Developer_Guide.md — should be developer_guide.md
 
       ## Broken Links
       ❌ docs/README.md:15 → [Setup Guide](4-development/setup.md) — file not found

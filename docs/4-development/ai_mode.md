@@ -1,6 +1,22 @@
 # AI Mode Architecture
 
+> **TLDR:** Interactive AI mode with smart intent detection that routes user input to ask/explain/chat without the `ai` prefix.
+
 **Audience**: Developers
+
+## Table of Contents
+
+- [Overview](#overview)
+- [User Experience](#user-experience)
+- [Architecture](#architecture)
+- [Smart Detection](#smart-detection)
+- [Implementation Details](#implementation-details)
+- [Testing](#testing)
+- [Design Decisions](#design-decisions)
+- [User Guide](#user-guide)
+- [Future Enhancements](#future-enhancements)
+- [Summary](#summary)
+
 
 ## Overview
 

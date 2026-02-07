@@ -1,6 +1,18 @@
 # AI Integration Design
 
+> **TLDR:** LLM isolation boundary via the `AiClient` trait, provider abstraction, and error mapping strategy.
+
 **Audience**: Developers, architects
+
+## Table of Contents
+
+- [Isolation Boundary](#isolation-boundary)
+- [Current Implementation](#current-implementation)
+- [Future: llm-provider Integration](#future-llm-provider-integration)
+- [Type Conversions](#type-conversions)
+- [Provider-Specific Handling](#provider-specific-handling)
+- [Error Mapping](#error-mapping)
+
 
 ## Isolation Boundary
 

@@ -1,6 +1,22 @@
 # swebash Installation Guide
 
+> **TLDR:** System requirements, build-from-source instructions, and AI feature setup for swebash.
+
 **Audience**: Users, DevOps
+
+## Table of Contents
+
+- [System Requirements](#system-requirements)
+- [Prerequisites](#prerequisites)
+- [Building from Source](#building-from-source)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [AI Features Setup](#ai-features-setup)
+- [Running Tests](#running-tests)
+- [Production Deployment Notes](#production-deployment-notes)
+- [Uninstallation](#uninstallation)
+- [Troubleshooting](#troubleshooting)
+
 
 ## System Requirements
 

@@ -1,8 +1,21 @@
 # Agent Architecture
 
+> **TLDR:** Multi-agent framework with isolated memory, tool filters, and YAML-configurable system prompts.
+
 **Audience**: Developers, architects
 
 Specialized AI agents, each with its own system prompt, tool access, and conversation memory.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Built-in Agents](#built-in-agents)
+- [Usage](#usage)
+- [Architecture](#architecture)
+- [Key Design Decisions](#key-design-decisions)
+- [Configuration](#configuration)
+- [Extending](#extending)
+
 
 ## Overview
 

@@ -1,6 +1,26 @@
 # E2E/Integration Testing - Complete Implementation
 
+> **TLDR:** End-to-end and integration test suite for arrow key navigation, validating unit through shell-level behavior.
+
 **Audience**: Developers, QA
+
+## Table of Contents
+
+- [Overview](#overview)
+- [What Was Delivered](#what-was-delivered)
+- [Test Results](#test-results)
+- [Test Execution](#test-execution)
+- [Test Coverage](#test-coverage)
+- [Files Modified/Created](#files-modifiedcreated)
+- [Key Achievements](#key-achievements)
+- [Verification Steps](#verification-steps)
+- [Documentation](#documentation)
+- [Continuous Integration Ready](#continuous-integration-ready)
+- [Comparison: Before vs After](#comparison-before-vs-after)
+- [Test Quality Metrics](#test-quality-metrics)
+- [Future Enhancements (Optional)](#future-enhancements-optional)
+- [Conclusion](#conclusion)
+
 
 ## Overview
 

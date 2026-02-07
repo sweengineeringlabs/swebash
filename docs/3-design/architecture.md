@@ -1,6 +1,17 @@
 # swebash Architecture
 
+> **TLDR:** Three-crate architecture (engine + host + ai) with WASM isolation and SEA-layered AI integration.
+
 **Audience**: Developers, architects
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Crate Relationships](#crate-relationships)
+- [Data Flow](#data-flow)
+- [SEA Layers (ai/ crate)](#sea-layers-ai-crate)
+- [Key Design Decisions](#key-design-decisions)
+
 
 ## Overview
 

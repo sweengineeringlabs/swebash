@@ -1,5 +1,7 @@
 # Glossary
 
+> **TLDR:** Definitions of domain terms used across swebash documentation.
+
 **Audience**: All team members
 
 **WHAT**: Definitions of domain terms used across swebash documentation
@@ -7,6 +9,20 @@
 **HOW**: Alphabetical term list with concise definitions
 
 ---
+
+## Table of Contents
+
+- [A](#a)
+- [C](#c)
+- [H](#h)
+- [L](#l)
+- [O](#o)
+- [P](#p)
+- [R](#r)
+- [S](#s)
+- [T](#t)
+- [W](#w)
+
 
 ## A
 

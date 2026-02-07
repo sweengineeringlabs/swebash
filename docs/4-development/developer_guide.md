@@ -1,5 +1,7 @@
 # swebash Developer Guide
 
+> **TLDR:** Day-to-day development workflow, conventions, and common tasks for swebash contributors.
+
 **Audience**: Contributors, developers
 
 **WHAT**: Day-to-day development guide for working on swebash
@@ -7,6 +9,15 @@
 **HOW**: Organized by topic with links to detailed documents
 
 ---
+
+## Table of Contents
+
+- [Workspace Structure](#workspace-structure)
+- [Development Workflow](#development-workflow)
+- [Key Conventions](#key-conventions)
+- [Common Tasks](#common-tasks)
+- [See Also](#see-also)
+
 
 ## Workspace Structure
 
@@ -36,7 +47,7 @@ swebash/
 
 ## Development Workflow
 
-1. **Setup** — run `./sbh setup && source ~/.bashrc` (one-time). See [Setup Guide](setup-guide.md).
+1. **Setup** — run `./sbh setup && source ~/.bashrc` (one-time). See [Setup Guide](setup_guide.md).
 2. **Branch** — create from `main` using `feature/`, `fix/`, `docs/` prefixes. See [CONTRIBUTING](../../CONTRIBUTING.md).
 3. **Implement** — edit the appropriate crate. See [Architecture](../3-design/architecture.md) for layer guidance.
 4. **Build** — `./sbh build` (release) or `./sbh build --debug`.
@@ -90,7 +101,7 @@ New AI functionality goes in L4 Core. Public API changes go in L3 API first, the
 
 ### Adding an AI Agent
 
-1. Define the agent in YAML (see [Creating Agents](../6-operation/creating-agents.md)).
+1. Define the agent in YAML (see [Creating Agents](../7-operation/creating_agents.md)).
 2. Set the `systemPrompt`, `tools`, and `maxIterations`.
 3. Optionally add a `docs` section for pre-loaded documentation context (see [ADR-001](../3-design/ADR-001-agent-doc-context.md)).
 4. Test with `./sbh test ai`.
@@ -106,14 +117,14 @@ New AI functionality goes in L4 Core. Public API changes go in L3 API first, the
 
 1. Implement `AiClient` (L2 SPI) for the new provider.
 2. Add the provider variant to the factory in `create_ai_service()`.
-3. Document the required environment variables in [Configuration](../6-operation/configuration.md).
+3. Document the required environment variables in [Configuration](../7-operation/configuration.md).
 4. Test with `./sbh test ai`.
 
 ## See Also
 
-- [Setup Guide](setup-guide.md) — Environment setup, build, troubleshooting
+- [Setup Guide](setup_guide.md) — Environment setup, build, troubleshooting
 - [Architecture](../3-design/architecture.md) — Three-crate design, data flow
-- [Agent Architecture](../3-design/agent-architecture.md) — Agent framework details
-- [Test Strategy](../5-testing/strategy.md) — Test coverage and approach
+- [Agent Architecture](../3-design/agent_architecture.md) — Agent framework details
+- [Test Strategy](../5-testing/testing_strategy.md) — Test coverage and approach
 - [Backlog](backlog.md) — Development backlog and task tracking
 - [Contributing](../../CONTRIBUTING.md) — Branch, commit, and PR conventions

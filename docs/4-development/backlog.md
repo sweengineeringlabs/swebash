@@ -1,6 +1,28 @@
 # Development Backlog
 
+> **TLDR:** Phase-by-phase task tracking for swebash feature development.
+
 **Audience**: Developers, project leads
+
+## Table of Contents
+
+- [Phase 1: Foundation (Complete)](#phase-1-foundation-complete)
+- [Phase 2: NL → Shell Commands (Complete)](#phase-2-nl-shell-commands-complete)
+- [Phase 3: Command Explanation (Complete)](#phase-3-command-explanation-complete)
+- [Phase 4: Conversational Assistant (Complete)](#phase-4-conversational-assistant-complete)
+- [Phase 5: Autocomplete (Complete)](#phase-5-autocomplete-complete)
+- [Phase 6: Polish (Complete)](#phase-6-polish-complete)
+- [Phase 7: Rustyline Enhancements - Tab Completion (✅ Complete - Simplified)](#phase-7-rustyline-enhancements-tab-completion-complete-simplified)
+- [Phase 8: Rustyline Enhancements - Syntax Highlighting](#phase-8-rustyline-enhancements-syntax-highlighting)
+- [Phase 9: Rustyline Enhancements - History Hints](#phase-9-rustyline-enhancements-history-hints)
+- [Phase 10: Rustyline Enhancements - Vi Mode](#phase-10-rustyline-enhancements-vi-mode)
+- [Phase 11: Rustyline Enhancements - Multi-line Editing](#phase-11-rustyline-enhancements-multi-line-editing)
+- [Phase 12: Rustyline Configuration System](#phase-12-rustyline-configuration-system)
+- [Phase 13: Agent Infrastructure — Delegate to Rustratify (SRP)](#phase-13-agent-infrastructure-delegate-to-rustratify-srp)
+- [Backlog: Migrate bash tests from Git Bash to WSL/Linux](#backlog-migrate-bash-tests-from-git-bash-to-wsllinux)
+- [Backlog: Agent documentation context injection](#backlog-agent-documentation-context-injection)
+- [Future Work](#future-work)
+
 
 ## Phase 1: Foundation (Complete)
 - [x] 1.1 Create `ai/` crate with Cargo.toml, add to workspace

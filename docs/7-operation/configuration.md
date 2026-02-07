@@ -1,6 +1,15 @@
 # Configuration
 
+> **TLDR:** Environment variables for AI providers, API keys, and feature toggles — no config files required.
+
 **Audience**: Users, DevOps
+
+## Table of Contents
+
+- [Environment Variables](#environment-variables)
+- [Quick Start](#quick-start)
+- [Graceful Degradation](#graceful-degradation)
+
 
 ## Environment Variables
 

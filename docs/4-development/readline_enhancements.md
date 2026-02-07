@@ -1,6 +1,25 @@
 # Rustyline Enhancements - Technical Design
 
+> **TLDR:** Technical design for advanced readline features: tab completion, history hints, multi-line editing, and configuration.
+
 **Audience**: Developers
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Phase 7: Tab Completion](#phase-7-tab-completion)
+- [Phase 8: Syntax Highlighting](#phase-8-syntax-highlighting)
+- [Phase 9: History Hints](#phase-9-history-hints)
+- [Phase 10: Vi Mode](#phase-10-vi-mode)
+- [Phase 11: Multi-line Editing](#phase-11-multi-line-editing)
+- [Phase 12: Configuration System](#phase-12-configuration-system)
+- [Testing Strategy](#testing-strategy)
+- [Performance Considerations](#performance-considerations)
+- [Compatibility](#compatibility)
+- [Documentation Requirements](#documentation-requirements)
+- [Success Criteria](#success-criteria)
+
 
 ## Overview
 

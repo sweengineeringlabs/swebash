@@ -1,6 +1,24 @@
 # AI Mode Test Suite
 
+> **TLDR:** 38-test suite covering AI mode smart detection, mode transitions, and edge cases.
+
 **Audience**: Developers, QA
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Test Summary](#test-summary)
+- [Unit Tests (29)](#unit-tests-29)
+- [Integration Tests (9)](#integration-tests-9)
+- [Test Examples](#test-examples)
+- [Edge Cases Covered](#edge-cases-covered)
+- [Running Tests](#running-tests)
+- [Test Results](#test-results)
+- [Coverage Analysis](#coverage-analysis)
+- [Continuous Integration](#continuous-integration)
+- [Future Test Additions](#future-test-additions)
+- [Conclusion](#conclusion)
+
 
 ## Overview
 

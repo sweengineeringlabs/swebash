@@ -2260,12 +2260,12 @@ fn yaml_builtin_docs_context_injected_when_base_dir_has_files() {
 
     // @docreview sources
     std::fs::create_dir_all(dir.join("docs/3-design")).unwrap();
-    std::fs::create_dir_all(dir.join("docs/6-operation")).unwrap();
+    std::fs::create_dir_all(dir.join("docs/7-operation")).unwrap();
     std::fs::write(dir.join("docs/README.md"), "# Docs Hub\nNavigation here.").unwrap();
     std::fs::write(dir.join("docs/glossary.md"), "# Glossary\nWidget: a thing.").unwrap();
     std::fs::write(dir.join("docs/3-design/architecture.md"), "# Architecture\nLayers.").unwrap();
     std::fs::write(
-        dir.join("docs/6-operation/creating-agents.md"),
+        dir.join("docs/7-operation/creating_agents.md"),
         "# Creating Agents\nYAML.",
     )
     .unwrap();
@@ -2295,7 +2295,7 @@ fn yaml_builtin_docs_context_injected_when_base_dir_has_files() {
     assert!(prompt.contains("Navigation here."), "should contain docs/README.md content");
     assert!(prompt.contains("Widget: a thing."), "should contain glossary.md content");
     assert!(prompt.contains("Layers."), "should contain architecture.md content");
-    assert!(prompt.contains("YAML."), "should contain creating-agents.md content");
+    assert!(prompt.contains("YAML."), "should contain creating_agents.md content");
     assert!(prompt.contains("</documentation>"), "should have closing tag");
     assert!(
         prompt.contains("documentation review agent"),

@@ -1,6 +1,18 @@
 # Command Design
 
+> **TLDR:** AI command triggers, parsing rules, and dispatch flows for ask/explain/chat/suggest modes.
+
 **Audience**: Developers, architects
+
+## Table of Contents
+
+- [AI Command Triggers](#ai-command-triggers)
+- [Parsing Rules](#parsing-rules)
+- [Ask Flow (with confirmation)](#ask-flow-with-confirmation)
+- [Explain Flow](#explain-flow)
+- [Chat Flow](#chat-flow)
+- [Suggest Flow](#suggest-flow)
+
 
 ## AI Command Triggers
 

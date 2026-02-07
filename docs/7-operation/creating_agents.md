@@ -1,11 +1,25 @@
 # Creating Custom Agents
 
+> **TLDR:** Define custom AI agents via YAML config — no code changes or recompilation required.
+
 **Audience**: Users, DevOps
 **WHAT**: How to define, configure, and manage custom AI agents in swebash
 **WHY**: The 7 built-in agents cover common tasks, but teams often need domain-specific agents with tailored prompts, tool access, and trigger keywords
 **HOW**: Create a YAML config file with agent definitions — no code changes or recompilation required
 
 ---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Config File Location](#config-file-location)
+- [YAML Schema](#yaml-schema)
+- [Examples](#examples)
+- [Usage](#usage)
+- [Prompt Design Tips](#prompt-design-tips)
+- [Troubleshooting](#troubleshooting)
+- [Environment Variables](#environment-variables)
+
 
 ## Overview
 

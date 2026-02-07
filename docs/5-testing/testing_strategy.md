@@ -1,6 +1,24 @@
 # Arrow Key Navigation - Testing Documentation
 
+> **TLDR:** Test coverage summary and strategy for arrow key navigation (138 tests across unit, integration, and E2E layers).
+
 **Audience**: Developers, QA
+
+## Table of Contents
+
+- [Test Coverage Summary](#test-coverage-summary)
+- [Unit Tests (host/src/readline/editor.rs)](#unit-tests-hostsrcreadlineeditorrs)
+- [Integration Tests (host/tests/readline_tests.rs)](#integration-tests-hosttestsreadline_testsrs)
+- [Test Implementation Details](#test-implementation-details)
+- [Running Tests](#running-tests)
+- [Test Results](#test-results)
+- [Coverage Analysis](#coverage-analysis)
+- [Manual Testing Checklist](#manual-testing-checklist)
+- [Known Limitations](#known-limitations)
+- [Future Test Enhancements](#future-test-enhancements)
+- [Continuous Integration](#continuous-integration)
+- [Conclusion](#conclusion)
+
 
 ## Test Coverage Summary
 

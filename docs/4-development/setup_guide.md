@@ -1,6 +1,24 @@
 # swebash Development Setup Guide
 
+> **TLDR:** Environment setup, build, run, and test instructions for swebash development.
+
 **Audience**: Contributors, developers
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Environment Configuration](#environment-configuration)
+- [Project Structure](#project-structure)
+- [Building the Project](#building-the-project)
+- [Running swebash](#running-swebash)
+- [Running Tests](#running-tests)
+- [API Configuration](#api-configuration)
+- [Common Issues and Troubleshooting](#common-issues-and-troubleshooting)
+- [Development Workflow](#development-workflow)
+- [IDE Setup](#ide-setup)
+- [Quick Reference](#quick-reference)
+
 
 ## Prerequisites
 

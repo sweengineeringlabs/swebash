@@ -1,5 +1,7 @@
 # Architecture Decision Records
 
+> **TLDR:** Index and template for all swebash architecture decision records (ADRs).
+
 **Audience**: Developers, architects
 
 **WHAT**: Index of architecture decision records (ADRs) for swebash
@@ -7,6 +9,17 @@
 **HOW**: Table listing each ADR with status, date, and summary
 
 ---
+
+## Table of Contents
+
+- [ADR Index](#adr-index)
+- [Creating a New ADR](#creating-a-new-adr)
+- [Context](#context)
+- [Decision Drivers](#decision-drivers)
+- [Options Considered](#options-considered)
+- [Decision](#decision)
+- [Consequences](#consequences)
+
 
 ## ADR Index
 

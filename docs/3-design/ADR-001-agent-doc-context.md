@@ -1,10 +1,23 @@
 # ADR-001: Agent Documentation Context Strategy
 
+> **TLDR:** Decision to inject documentation files into agent system prompts via a `docs` YAML config block.
+
 **Audience**: Developers, architects
 **Status:** Proposed
 **Date:** 2026-02-05
 **Authors:** Architecture Team
 **Reviewers:** —
+
+## Table of Contents
+
+- [Context](#context)
+- [Decision Drivers](#decision-drivers)
+- [Options Considered](#options-considered)
+- [Decision](#decision)
+- [Implementation Outline](#implementation-outline)
+- [Consequences](#consequences)
+- [Migration Path](#migration-path)
+
 
 ## Context
 

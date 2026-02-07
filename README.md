@@ -26,9 +26,9 @@
 |----------|-------------|
 | [Overview](docs/README.md) | Central documentation hub |
 | [Architecture](docs/3-design/architecture.md) | System design (three-crate + SEA) |
-| [Setup Guide](docs/4-development/setup-guide.md) | Dev environment setup |
-| [Developer Guide](docs/4-development/developer-guide.md) | Day-to-day workflow and conventions |
-| [Installation](docs/6-operation/installation.md) | User install instructions |
+| [Setup Guide](docs/4-development/setup_guide.md) | Dev environment setup |
+| [Developer Guide](docs/4-development/developer_guide.md) | Day-to-day workflow and conventions |
+| [Installation](docs/7-operation/installation.md) | User install instructions |
 
 ## Workspace Crates
 
@@ -46,6 +46,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, commit conventions, an
 ## Security
 
 See [SECURITY.md](SECURITY.md) for vulnerability reporting.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
 
 ## Support
 

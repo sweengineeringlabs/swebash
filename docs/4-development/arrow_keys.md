@@ -1,6 +1,21 @@
 # Arrow Key Navigation Implementation
 
+> **TLDR:** Crossterm-based arrow key navigation and readline-style line editing for swebash.
+
 **Audience**: Developers
+
+## Table of Contents
+
+- [Summary](#summary)
+- [What Was Implemented](#what-was-implemented)
+- [How Arrow Keys Work](#how-arrow-keys-work)
+- [Testing](#testing)
+- [Code Structure](#code-structure)
+- [Key Implementation Details](#key-implementation-details)
+- [Verification](#verification)
+- [Dependencies Fixed](#dependencies-fixed)
+- [Next Steps (Optional Enhancements)](#next-steps-optional-enhancements)
+
 
 ## Summary
 

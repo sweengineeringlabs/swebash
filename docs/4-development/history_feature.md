@@ -1,6 +1,20 @@
 # Command History Feature
 
+> **TLDR:** Persistent command history with smart filtering, auto-save, and configurable size limits.
+
 **Audience**: Developers
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Changes Made](#changes-made)
+- [Usage](#usage)
+- [Testing](#testing)
+- [Technical Details](#technical-details)
+- [Future Enhancements](#future-enhancements)
+- [Troubleshooting](#troubleshooting)
+- [Summary](#summary)
+
 
 ## Overview
 Added command history support to swebash with a custom, in-house implementation:
