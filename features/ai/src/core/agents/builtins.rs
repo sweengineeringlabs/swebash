@@ -136,6 +136,7 @@ pub fn create_default_registry(llm: Arc<dyn LlmService>, mut config: AiConfig) -
 
     // Phase 3: Create RAG manager with final config.
     let rag_manager = create_rag_manager(&config);
+    let rag_available = rag_manager.is_some();
     let mut manager = AgentManager::new(llm, config, rag_manager);
 
     // Phase 4: Register agents from all YAML sources.
@@ -146,6 +147,7 @@ pub fn create_default_registry(llm: Arc<dyn LlmService>, mut config: AiConfig) -
                 entry,
                 &defaults,
                 source.base_dir.as_deref(),
+                rag_available,
             );
             manager.register(agent);
         }
@@ -232,7 +234,7 @@ pub(crate) fn register_from_yaml(
             let defaults = parsed.defaults;
             for entry in parsed.agents {
                 let agent =
-                    ConfigAgent::from_entry_with_base_dir(entry, &defaults, base_dir);
+                    ConfigAgent::from_entry_with_base_dir(entry, &defaults, base_dir, false);
                 manager.register(agent);
             }
         }

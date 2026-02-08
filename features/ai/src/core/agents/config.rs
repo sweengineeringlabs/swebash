@@ -349,21 +349,37 @@ impl ConfigAgent {
     /// If `base_dir` is provided and the entry has a `docs` section,
     /// document content is loaded and prepended to the system prompt.
     pub fn from_entry(entry: AgentEntry, defaults: &AgentDefaults) -> Self {
-        Self::from_entry_with_base_dir(entry, defaults, None)
+        Self::from_entry_with_base_dir(entry, defaults, None, false)
     }
 
     /// Build a `ConfigAgent` with an optional base directory for doc loading.
+    ///
+    /// When `rag_available` is `false` and the agent's docs strategy is `Rag`,
+    /// the strategy is downgraded to `Preload` with a warning.  This allows
+    /// builds without the `rag-local` feature to still serve documentation.
     pub fn from_entry_with_base_dir(
         entry: AgentEntry,
         defaults: &AgentDefaults,
         base_dir: Option<&Path>,
+        rag_available: bool,
     ) -> Self {
         let tools = entry.tools.as_ref().unwrap_or(&defaults.tools);
-        let docs_strategy = entry
-            .docs
-            .as_ref()
-            .map(|d| d.strategy.clone())
-            .unwrap_or_default();
+        let docs_strategy = {
+            let requested = entry
+                .docs
+                .as_ref()
+                .map(|d| d.strategy.clone())
+                .unwrap_or_default();
+            if requested == DocsStrategy::Rag && !rag_available {
+                tracing::warn!(
+                    agent = %entry.id,
+                    "RAG strategy requested but no embedding provider available, falling back to preload"
+                );
+                DocsStrategy::Preload
+            } else {
+                requested
+            }
+        };
         let docs_sources = entry
             .docs
             .as_ref()
@@ -1264,7 +1280,7 @@ agents:
             }),
             directives: None,
         };
-        let agent = ConfigAgent::from_entry_with_base_dir(entry, &defaults, Some(dir.path()));
+        let agent = ConfigAgent::from_entry_with_base_dir(entry, &defaults, Some(dir.path()), false);
         let prompt = agent.system_prompt();
 
         // Order: <directives> ... <documentation> ... {prompt + thinkFirst suffix}

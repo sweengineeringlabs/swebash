@@ -4445,7 +4445,7 @@ agents:
 
     let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
     let entry = parsed.agents.into_iter().next().unwrap();
-    let agent = ConfigAgent::from_entry_with_base_dir(entry, &parsed.defaults, Some(dir.path()));
+    let agent = ConfigAgent::from_entry_with_base_dir(entry, &parsed.defaults, Some(dir.path()), false);
 
     let prompt = agent.system_prompt();
     assert!(prompt.contains("<documentation>"), "preload should inject <documentation> block");
@@ -4477,7 +4477,7 @@ agents:
 
     let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
     let entry = parsed.agents.into_iter().next().unwrap();
-    let agent = ConfigAgent::from_entry_with_base_dir(entry, &parsed.defaults, Some(dir.path()));
+    let agent = ConfigAgent::from_entry_with_base_dir(entry, &parsed.defaults, Some(dir.path()), true);
 
     let prompt = agent.system_prompt();
     assert!(!prompt.contains("<documentation>"), "rag should NOT inject <documentation> block");
@@ -4508,7 +4508,7 @@ agents:
 
     let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
     let entry = parsed.agents.into_iter().next().unwrap();
-    let agent = ConfigAgent::from_entry(entry, &parsed.defaults);
+    let agent = ConfigAgent::from_entry_with_base_dir(entry, &parsed.defaults, None, true);
 
     match agent.tool_filter() {
         ToolFilter::Categories(cats) => {
@@ -4573,7 +4573,7 @@ agents:
 
     let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
     let entry = parsed.agents.into_iter().next().unwrap();
-    let agent = ConfigAgent::from_entry(entry, &parsed.defaults);
+    let agent = ConfigAgent::from_entry_with_base_dir(entry, &parsed.defaults, None, true);
 
     assert_eq!(agent.docs_strategy(), &DocsStrategy::Rag);
     assert_eq!(agent.docs_sources(), &["docs/*.md".to_string()]);
@@ -4614,7 +4614,7 @@ agents:
     let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
     let mut agents: Vec<ConfigAgent> = parsed.agents
         .into_iter()
-        .map(|e| ConfigAgent::from_entry_with_base_dir(e, &parsed.defaults, Some(dir.path())))
+        .map(|e| ConfigAgent::from_entry_with_base_dir(e, &parsed.defaults, Some(dir.path()), true))
         .collect();
 
     let rag_agent = agents.pop().unwrap();
