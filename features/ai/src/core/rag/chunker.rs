@@ -299,4 +299,90 @@ mod tests {
             assert!(!chunk.content.is_empty());
         }
     }
+
+    #[test]
+    fn single_oversized_sentence_falls_back_to_raw_chunking() {
+        // One long sentence (no periods except at end) that exceeds chunk_size.
+        // Without the fix, this would return a single chunk with all content.
+        let text = "This is one very long sentence without any breaks ".repeat(20);
+        let config = ChunkerConfig {
+            chunk_size: 100,
+            overlap: 20,
+        };
+        let chunks = chunk_text(&text, "long.txt", "a", &config);
+
+        // Should produce multiple chunks via raw fallback, not one huge chunk.
+        assert!(
+            chunks.len() > 1,
+            "expected multiple chunks from raw fallback, got {}",
+            chunks.len()
+        );
+
+        // Each chunk should respect approximate chunk_size (with some tolerance for overlap).
+        for chunk in &chunks {
+            assert!(
+                chunk.content.len() <= config.chunk_size + config.overlap,
+                "chunk too large: {} bytes",
+                chunk.content.len()
+            );
+        }
+    }
+
+    #[test]
+    fn sentences_larger_than_chunk_size_do_not_infinite_loop() {
+        // Multiple sentences, each larger than chunk_size.
+        // Without the fix to find_overlap_start, this would infinite loop.
+        let text = "First sentence that is definitely longer than twenty chars. \
+                    Second sentence also exceeds the small chunk size limit. \
+                    Third sentence completes our test of the overlap logic.";
+        let config = ChunkerConfig {
+            chunk_size: 20,
+            overlap: 10,
+        };
+
+        // This should complete without hanging.
+        let chunks = chunk_text(text, "big_sentences.md", "a", &config);
+
+        assert!(!chunks.is_empty(), "should produce at least one chunk");
+        // Verify we covered all sentences (content should span the text).
+        let total_unique_content: String = chunks.iter().map(|c| c.content.as_str()).collect();
+        assert!(
+            total_unique_content.contains("First") && total_unique_content.contains("Third"),
+            "chunks should cover the full text"
+        );
+    }
+
+    #[test]
+    fn find_overlap_start_guarantees_forward_progress() {
+        let sentences = &["Short. ", "Another short one. ", "And a third. "];
+
+        // When overlap would put us at or before chunk_start, we must advance.
+        let result = find_overlap_start(sentences, 1, 2, 1000);
+        assert!(
+            result > 1,
+            "find_overlap_start must return > chunk_start, got {}",
+            result
+        );
+
+        // Normal case: overlap within bounds.
+        let result = find_overlap_start(sentences, 0, 2, 5);
+        assert!(
+            result > 0,
+            "find_overlap_start must return > chunk_start, got {}",
+            result
+        );
+    }
+
+    #[test]
+    fn overlap_larger_than_chunk_still_progresses() {
+        // Edge case: overlap >= chunk_size (misconfiguration, but shouldn't hang).
+        let text = "One sentence here. Two sentence here. Three sentence here.";
+        let config = ChunkerConfig {
+            chunk_size: 20,
+            overlap: 50, // overlap larger than chunk_size
+        };
+
+        let chunks = chunk_text(text, "edge.md", "a", &config);
+        assert!(!chunks.is_empty(), "should produce chunks even with large overlap");
+    }
 }
