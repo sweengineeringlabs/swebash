@@ -6,14 +6,14 @@ REPO_ROOT="$(cd "$TESTS_DIR/../.." && pwd)"
 
 # -- detect_platform --------------------------------------------------
 
-test_detect_platform_returns_wsl_or_linux() {
+test_detect_platform_returns_valid_platform() {
   local result
   result=$(
     set +euo pipefail
     source "$REPO_ROOT/lib/common.sh"
     detect_platform
   )
-  assert_match "$result" "^(wsl|linux)$" "detect_platform should return wsl or linux"
+  assert_match "$result" "^(wsl|linux|mingw)$" "detect_platform should return wsl, linux, or mingw"
 }
 
 # -- verify_registry ---------------------------------------------------

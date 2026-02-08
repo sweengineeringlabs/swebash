@@ -7,11 +7,18 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # ── Platform detection ───────────────────────────────────────────────
 detect_platform() {
-  if grep -qi microsoft /proc/version 2>/dev/null; then
-    echo "wsl"
-  else
-    echo "linux"
-  fi
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      echo "mingw"
+      ;;
+    *)
+      if grep -qi microsoft /proc/version 2>/dev/null; then
+        echo "wsl"
+      else
+        echo "linux"
+      fi
+      ;;
+  esac
 }
 
 # ── Preflight checks ──────────────────────────────────────────────────
@@ -29,18 +36,26 @@ ensure_registry() {
   if [ -z "${CARGO_REGISTRIES_LOCAL_INDEX:-}" ]; then
     local platform
     platform=$(detect_platform)
-    if [ "$platform" = "wsl" ]; then
-      # WSL: Windows home may differ from Linux home
-      local win_user
-      win_user=$(cmd.exe /C "echo %USERNAME%" 2>/dev/null | tr -d '\r' || echo "")
-      if [ -n "$win_user" ]; then
-        export CARGO_REGISTRIES_LOCAL_INDEX="file:///mnt/c/Users/$win_user/.cargo/registry.local/index"
-      else
+    case "$platform" in
+      wsl)
+        # WSL: Windows home may differ from Linux home
+        local win_user
+        win_user=$(cmd.exe /C "echo %USERNAME%" 2>/dev/null | tr -d '\r' || echo "")
+        if [ -n "$win_user" ]; then
+          export CARGO_REGISTRIES_LOCAL_INDEX="file:///mnt/c/Users/$win_user/.cargo/registry.local/index"
+        else
+          export CARGO_REGISTRIES_LOCAL_INDEX="file://$HOME/.cargo/registry.local/index"
+        fi
+        ;;
+      mingw)
+        # MINGW/Git Bash: $HOME is already Windows path in MINGW format
         export CARGO_REGISTRIES_LOCAL_INDEX="file://$HOME/.cargo/registry.local/index"
-      fi
-    else
-      export CARGO_REGISTRIES_LOCAL_INDEX="file://$HOME/.cargo/registry.local/index"
-    fi
+        ;;
+      *)
+        # Linux: use $HOME directly
+        export CARGO_REGISTRIES_LOCAL_INDEX="file://$HOME/.cargo/registry.local/index"
+        ;;
+    esac
   fi
 
   # Sync config.json dl path to match current platform
