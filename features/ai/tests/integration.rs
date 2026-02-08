@@ -4303,6 +4303,310 @@ agents:
     assert_eq!(rag.chunk_overlap, 200, "chunk_overlap should use default");
 }
 
+// ── DocsStrategy SPI Tests ──────────────────────────────────────────────
+
+#[test]
+fn docs_strategy_yaml_parses_preload() {
+    let yaml = r#"
+version: 1
+agents:
+  - id: preload-agent
+    name: Preload Agent
+    description: Agent using preload strategy
+    systemPrompt: You are helpful.
+    docs:
+      budget: 8000
+      strategy: preload
+      sources:
+        - "docs/*.md"
+"#;
+
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let entry = &parsed.agents[0];
+    let docs = entry.docs.as_ref().expect("docs should be present");
+
+    assert_eq!(docs.strategy, DocsStrategy::Preload);
+    assert_eq!(docs.budget, 8000);
+}
+
+#[test]
+fn docs_strategy_yaml_parses_rag() {
+    let yaml = r#"
+version: 1
+agents:
+  - id: rag-agent
+    name: RAG Agent
+    description: Agent using rag strategy
+    systemPrompt: You are helpful.
+    docs:
+      budget: 8000
+      strategy: rag
+      top_k: 10
+      sources:
+        - "docs/*.md"
+"#;
+
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let entry = &parsed.agents[0];
+    let docs = entry.docs.as_ref().expect("docs should be present");
+
+    assert_eq!(docs.strategy, DocsStrategy::Rag);
+    assert_eq!(docs.top_k, 10);
+}
+
+#[test]
+fn docs_strategy_defaults_to_preload() {
+    let yaml = r#"
+version: 1
+agents:
+  - id: default-agent
+    name: Default Agent
+    description: Agent with default strategy
+    systemPrompt: You are helpful.
+    docs:
+      budget: 8000
+      sources:
+        - "docs/*.md"
+"#;
+
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let entry = &parsed.agents[0];
+    let docs = entry.docs.as_ref().expect("docs should be present");
+
+    assert_eq!(docs.strategy, DocsStrategy::Preload, "default strategy should be preload");
+}
+
+#[test]
+fn docs_strategy_top_k_defaults_to_5() {
+    let yaml = r#"
+version: 1
+agents:
+  - id: rag-default-topk
+    name: RAG Default TopK
+    description: RAG agent without explicit top_k
+    systemPrompt: You are helpful.
+    docs:
+      budget: 8000
+      strategy: rag
+      sources:
+        - "docs/*.md"
+"#;
+
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let entry = &parsed.agents[0];
+    let docs = entry.docs.as_ref().expect("docs should be present");
+
+    assert_eq!(docs.top_k, 5, "top_k should default to 5");
+}
+
+#[test]
+fn docs_strategy_preload_injects_docs_into_prompt() {
+    let dir = tempfile::tempdir().unwrap();
+    let docs_dir = dir.path().join("docs");
+    std::fs::create_dir_all(&docs_dir).unwrap();
+    std::fs::write(docs_dir.join("reference.md"), "# API Reference\nThis is the API docs.").unwrap();
+
+    let yaml = r#"
+version: 1
+agents:
+  - id: preload-test
+    name: Preload Test
+    description: Test preload injection
+    systemPrompt: You are a helpful assistant.
+    docs:
+      budget: 8000
+      strategy: preload
+      sources:
+        - "docs/*.md"
+"#;
+
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let entry = parsed.agents.into_iter().next().unwrap();
+    let agent = ConfigAgent::from_entry_with_base_dir(entry, &parsed.defaults, Some(dir.path()));
+
+    let prompt = agent.system_prompt();
+    assert!(prompt.contains("<documentation>"), "preload should inject <documentation> block");
+    assert!(prompt.contains("API Reference"), "preload should include doc content");
+    assert!(prompt.contains("This is the API docs."), "preload should include doc content");
+    assert!(prompt.contains("You are a helpful assistant."), "original prompt should be preserved");
+}
+
+#[test]
+fn docs_strategy_rag_does_not_inject_docs_into_prompt() {
+    let dir = tempfile::tempdir().unwrap();
+    let docs_dir = dir.path().join("docs");
+    std::fs::create_dir_all(&docs_dir).unwrap();
+    std::fs::write(docs_dir.join("reference.md"), "# API Reference\nThis is the API docs.").unwrap();
+
+    let yaml = r#"
+version: 1
+agents:
+  - id: rag-test
+    name: RAG Test
+    description: Test rag strategy
+    systemPrompt: You are a helpful assistant.
+    docs:
+      budget: 8000
+      strategy: rag
+      sources:
+        - "docs/*.md"
+"#;
+
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let entry = parsed.agents.into_iter().next().unwrap();
+    let agent = ConfigAgent::from_entry_with_base_dir(entry, &parsed.defaults, Some(dir.path()));
+
+    let prompt = agent.system_prompt();
+    assert!(!prompt.contains("<documentation>"), "rag should NOT inject <documentation> block");
+    assert!(!prompt.contains("This is the API docs."), "rag should NOT inject doc content");
+    assert!(prompt.contains("rag_search"), "rag should mention rag_search tool");
+    assert!(prompt.contains("You are a helpful assistant."), "original prompt should be preserved");
+}
+
+#[test]
+fn docs_strategy_rag_auto_enables_rag_tool_category() {
+    let yaml = r#"
+version: 1
+agents:
+  - id: rag-tools
+    name: RAG Tools
+    description: Test rag enables tool
+    systemPrompt: You are helpful.
+    tools:
+      fs: true
+      exec: false
+      web: false
+    docs:
+      budget: 8000
+      strategy: rag
+      sources:
+        - "docs/*.md"
+"#;
+
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let entry = parsed.agents.into_iter().next().unwrap();
+    let agent = ConfigAgent::from_entry(entry, &parsed.defaults);
+
+    match agent.tool_filter() {
+        ToolFilter::Categories(cats) => {
+            assert!(cats.contains(&"fs".to_string()), "fs should be enabled");
+            assert!(cats.contains(&"rag".to_string()), "rag should be auto-enabled for rag strategy");
+            assert!(!cats.contains(&"exec".to_string()), "exec should be disabled");
+            assert!(!cats.contains(&"web".to_string()), "web should be disabled");
+        }
+        _ => panic!("Expected ToolFilter::Categories"),
+    }
+}
+
+#[test]
+fn docs_strategy_preload_does_not_enable_rag_tool() {
+    let yaml = r#"
+version: 1
+agents:
+  - id: preload-tools
+    name: Preload Tools
+    description: Test preload does not enable rag tool
+    systemPrompt: You are helpful.
+    tools:
+      fs: true
+      exec: false
+      web: false
+    docs:
+      budget: 8000
+      strategy: preload
+      sources:
+        - "docs/*.md"
+"#;
+
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let entry = parsed.agents.into_iter().next().unwrap();
+    let agent = ConfigAgent::from_entry(entry, &parsed.defaults);
+
+    match agent.tool_filter() {
+        ToolFilter::Categories(cats) => {
+            assert!(cats.contains(&"fs".to_string()), "fs should be enabled");
+            assert!(!cats.contains(&"rag".to_string()), "rag should NOT be enabled for preload strategy");
+        }
+        _ => panic!("Expected ToolFilter::Categories"),
+    }
+}
+
+#[test]
+fn docs_strategy_config_agent_exposes_strategy() {
+    let yaml = r#"
+version: 1
+agents:
+  - id: strategy-getter
+    name: Strategy Getter
+    description: Test strategy getter
+    systemPrompt: You are helpful.
+    docs:
+      budget: 8000
+      strategy: rag
+      top_k: 7
+      sources:
+        - "docs/*.md"
+"#;
+
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let entry = parsed.agents.into_iter().next().unwrap();
+    let agent = ConfigAgent::from_entry(entry, &parsed.defaults);
+
+    assert_eq!(agent.docs_strategy(), &DocsStrategy::Rag);
+    assert_eq!(agent.docs_sources(), &["docs/*.md".to_string()]);
+    assert_eq!(agent.docs_top_k(), 7);
+}
+
+#[test]
+#[serial]
+fn docs_strategy_integration_both_strategies_in_same_registry() {
+    let dir = tempfile::tempdir().unwrap();
+    let docs_dir = dir.path().join("docs");
+    std::fs::create_dir_all(&docs_dir).unwrap();
+    std::fs::write(docs_dir.join("shared.md"), "# Shared Docs\nContent here.").unwrap();
+
+    let yaml = r#"
+version: 1
+agents:
+  - id: preload-agent
+    name: Preload Agent
+    description: Uses preload
+    systemPrompt: Preload base prompt.
+    docs:
+      budget: 8000
+      strategy: preload
+      sources:
+        - "docs/*.md"
+  - id: rag-agent
+    name: RAG Agent
+    description: Uses rag
+    systemPrompt: RAG base prompt.
+    docs:
+      budget: 8000
+      strategy: rag
+      sources:
+        - "docs/*.md"
+"#;
+
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let mut agents: Vec<ConfigAgent> = parsed.agents
+        .into_iter()
+        .map(|e| ConfigAgent::from_entry_with_base_dir(e, &parsed.defaults, Some(dir.path())))
+        .collect();
+
+    let rag_agent = agents.pop().unwrap();
+    let preload_agent = agents.pop().unwrap();
+
+    // Preload agent should have docs in prompt
+    assert!(preload_agent.system_prompt().contains("<documentation>"));
+    assert!(preload_agent.system_prompt().contains("Shared Docs"));
+
+    // RAG agent should NOT have docs in prompt, but should mention rag_search
+    assert!(!rag_agent.system_prompt().contains("<documentation>"));
+    assert!(!rag_agent.system_prompt().contains("Shared Docs"));
+    assert!(rag_agent.system_prompt().contains("rag_search"));
+}
+
 // ── Error propagation tests ─────────────────────────────────────────────
 
 #[test]
