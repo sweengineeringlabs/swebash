@@ -1,16 +1,11 @@
-# Local registry: Linux-native copy for reliable checksums
+# Local registry: Windows-native path for native Windows testing
 [registries.local]
-index = "file:///home/adentic/.cargo/registry.local/index"
+index = "file:///C:/Users/elvis/.cargo/registry.local/index"
 
-# Redirect old NTFS registry path to the Linux-native copy
-[source.old-ntfs-local]
-registry = "file:///mnt/c/Users/elvis/.cargo/registry.local/index"
-replace-with = "linux-local"
+# No source replacement needed for native Windows
+# [source.old-ntfs-local]
+# [source.linux-local]
 
-[source.linux-local]
-registry = "file:///home/adentic/.cargo/registry.local/index"
-
-# WSL/Linux: build artifacts on native filesystem to avoid NTFS I/O overhead
-# Native Windows: this path is ignored; cargo uses default target/ directory
-[build]
-target-dir = "/tmp/swebash-target"
+# Native Windows: use default target directory
+# [build]
+# target-dir = "/tmp/swebash-target"

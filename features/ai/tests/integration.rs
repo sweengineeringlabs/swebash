@@ -27,7 +27,7 @@ use swebash_ai::core::agents::builtins::{builtin_agent_count, create_default_reg
 fn builtin_count() -> usize {
     builtin_agent_count()
 }
-use swebash_ai::core::agents::config::{AgentDefaults, AgentEntry, AgentsYaml, ConfigAgent, DocsConfig, ToolsConfig, load_docs_context};
+use swebash_ai::core::agents::config::{AgentDefaults, AgentEntry, AgentsYaml, ConfigAgent, DocsConfig, DocsStrategy, ToolsConfig, load_docs_context};
 use swebash_ai::core::agents::{AgentDescriptor, ToolFilter};
 use swebash_ai::core::DefaultAiService;
 use swebash_ai::spi::chat_provider::ChatProviderClient;
@@ -1088,6 +1088,7 @@ fn tool_config_enabled_no_tools() {
         enable_fs: false,
         enable_exec: false,
         enable_web: false,
+        enable_rag: false,
         require_confirmation: false,
         max_tool_calls_per_turn: 10,
         max_iterations: 10,
@@ -1104,6 +1105,7 @@ fn tool_config_enabled_partial() {
         enable_fs: true,
         enable_exec: false,
         enable_web: false,
+        enable_rag: false,
         require_confirmation: true,
         max_tool_calls_per_turn: 10,
         max_iterations: 10,
@@ -1370,6 +1372,7 @@ fn config_fs_only() -> AiConfig {
             enable_fs: true,
             enable_exec: false,
             enable_web: false,
+            enable_rag: false,
             require_confirmation: false,
             max_tool_calls_per_turn: 10,
             max_iterations: 10,
@@ -1396,6 +1399,7 @@ fn config_exec_only() -> AiConfig {
             enable_fs: false,
             enable_exec: true,
             enable_web: false,
+            enable_rag: false,
             require_confirmation: false,
             max_tool_calls_per_turn: 10,
             max_iterations: 10,
@@ -1951,7 +1955,7 @@ fn config_agent_tool_filter_only() {
         temperature: None,
         max_tokens: None,
         system_prompt: "Restricted.".into(),
-        tools: Some(ToolsConfig { fs: true, exec: false, web: false }),
+        tools: Some(ToolsConfig { fs: true, exec: false, web: false, rag: false }),
         trigger_keywords: vec![],
         think_first: None,
         bypass_confirmation: None,
@@ -1981,7 +1985,7 @@ fn config_agent_tool_filter_none() {
         temperature: None,
         max_tokens: None,
         system_prompt: "Chat only.".into(),
-        tools: Some(ToolsConfig { fs: false, exec: false, web: false }),
+        tools: Some(ToolsConfig { fs: false, exec: false, web: false, rag: false }),
         trigger_keywords: vec![],
         think_first: None,
         bypass_confirmation: None,
@@ -2007,7 +2011,7 @@ fn config_agent_tool_filter_all() {
         temperature: None,
         max_tokens: None,
         system_prompt: "Full.".into(),
-        tools: Some(ToolsConfig { fs: true, exec: true, web: true }),
+        tools: Some(ToolsConfig { fs: true, exec: true, web: true, rag: false }),
         trigger_keywords: vec![],
         think_first: None,
         bypass_confirmation: None,
@@ -2073,7 +2077,7 @@ fn config_agent_inherits_custom_defaults() {
     let defaults = AgentDefaults {
         temperature: 0.8,
         max_tokens: 2048,
-        tools: ToolsConfig { fs: true, exec: false, web: true },
+        tools: ToolsConfig { fs: true, exec: false, web: true, rag: false },
         think_first: false,
         bypass_confirmation: false,
         max_iterations: None,
@@ -3094,7 +3098,7 @@ fn delegate_register_overwrite_and_cache_coherence() {
             temperature: Some(0.1),
             max_tokens: Some(256),
             system_prompt: "Custom prompt.".into(),
-            tools: Some(ToolsConfig { fs: false, exec: false, web: false }),
+            tools: Some(ToolsConfig { fs: false, exec: false, web: false, rag: false }),
             trigger_keywords: vec!["custom".into()],
             think_first: None,
             bypass_confirmation: None,
@@ -4206,6 +4210,8 @@ fn yaml_docs_context_warns_on_unresolved_sources() {
 
     let config = DocsConfig {
         budget: 8000,
+        strategy: DocsStrategy::default(),
+        top_k: 5,
         sources: vec![
             "nonexistent/path/*.md".to_string(),
             "also/missing/*.txt".to_string(),
@@ -4229,6 +4235,8 @@ fn yaml_docs_context_partial_resolution_loads_available() {
 
     let config = DocsConfig {
         budget: 8000,
+        strategy: DocsStrategy::default(),
+        top_k: 5,
         sources: vec![
             "docs/real.md".to_string(),
             "missing/nothing/*.md".to_string(),

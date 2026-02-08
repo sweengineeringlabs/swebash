@@ -50,6 +50,13 @@ pub fn chunk_text(
         return chunk_raw(text, source_path, agent_id, config);
     }
 
+    // If we have only one "sentence" that exceeds chunk_size, fall back to
+    // raw chunking. This handles text with no real sentence boundaries where
+    // unicode_sentences returns the entire text as one segment.
+    if sentences.len() == 1 && sentences[0].len() > config.chunk_size {
+        return chunk_raw(text, source_path, agent_id, config);
+    }
+
     let mut chunks = Vec::new();
     let mut idx = 0; // index into `sentences`
 
@@ -102,7 +109,7 @@ pub fn chunk_text(
 /// are repeated.
 fn find_overlap_start(
     sentences: &[&str],
-    _chunk_start: usize,
+    chunk_start: usize,
     chunk_end: usize,
     overlap: usize,
 ) -> usize {
@@ -115,11 +122,13 @@ fn find_overlap_start(
             break;
         }
     }
-    // Ensure forward progress: never start at the same or earlier position.
-    if start < chunk_end {
-        start.max(1)
+    // Ensure forward progress: the next chunk must start after chunk_start.
+    // If overlap would put us at or before the current start, advance by one
+    // sentence instead.
+    if start <= chunk_start {
+        chunk_start + 1
     } else {
-        chunk_end
+        start
     }
 }
 

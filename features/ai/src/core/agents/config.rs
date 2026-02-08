@@ -962,6 +962,8 @@ agents:
 
         let config = DocsConfig {
             budget: 8000,
+            strategy: DocsStrategy::default(),
+            top_k: 5,
             sources: vec!["docs/*.md".to_string()],
         };
 
@@ -980,6 +982,8 @@ agents:
 
         let config = DocsConfig {
             budget: 8000,
+            strategy: DocsStrategy::default(),
+            top_k: 5,
             sources: vec!["nonexistent/*.md".to_string()],
         };
 
@@ -1000,6 +1004,8 @@ agents:
 
         let config = DocsConfig {
             budget: 100, // 100 tokens = 400 chars
+            strategy: DocsStrategy::default(),
+            top_k: 5,
             sources: vec!["docs/*.md".to_string()],
         };
 
@@ -1015,6 +1021,8 @@ agents:
 
         let config = DocsConfig {
             budget: 8000,
+            strategy: DocsStrategy::default(),
+            top_k: 5,
             sources: vec![],
         };
 
@@ -1034,6 +1042,8 @@ agents:
 
         let config = DocsConfig {
             budget: 8000,
+            strategy: DocsStrategy::default(),
+            top_k: 5,
             sources: vec!["crates/compiler/*/README.md".to_string()],
         };
 
@@ -1053,6 +1063,8 @@ agents:
 
         let config = DocsConfig {
             budget: 8000,
+            strategy: DocsStrategy::default(),
+            top_k: 5,
             sources: vec![
                 "docs/exists.md".to_string(),
                 "missing/*.md".to_string(),
@@ -1194,6 +1206,8 @@ agents:
             max_iterations: None,
             docs: Some(DocsConfig {
                 budget: 8000,
+                strategy: DocsStrategy::default(),
+                top_k: 5,
                 sources: vec!["docs/ref.md".into()],
             }),
             directives: None,

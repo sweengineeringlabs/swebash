@@ -282,6 +282,7 @@ mod tests {
         let factory = SwebashEngineFactory {
             llm: Arc::new(MockLlmService::new()),
             config: config.clone(),
+            rag_index_manager: None,
         };
 
         // ToolFilter::Categories(empty) disables everything
@@ -694,6 +695,7 @@ mod tests {
         let factory = SwebashEngineFactory {
             llm: Arc::new(MockLlmService::new()),
             config: config.clone(),
+            rag_index_manager: None,
         };
 
         // AllowList is unused by swebash, should pass-through global config

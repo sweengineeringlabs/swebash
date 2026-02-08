@@ -228,8 +228,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.content.contains("Result 1"));
-        assert!(result.content.contains("score:"));
+        let text = result.content.as_str().expect("content should be a string");
+        assert!(text.contains("Result 1"));
+        assert!(text.contains("score:"));
     }
 
     #[tokio::test]
