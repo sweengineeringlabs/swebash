@@ -53,6 +53,7 @@ fn anthropic_config() -> AiConfig {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     }
 }
 
@@ -112,6 +113,7 @@ fn config_has_api_key_known_provider() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     };
     assert!(config.has_api_key());
     std::env::remove_var("OPENAI_API_KEY");
@@ -131,6 +133,7 @@ fn config_has_api_key_missing() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     };
     assert!(!config.has_api_key());
 }
@@ -147,6 +150,7 @@ fn config_has_api_key_unknown_provider() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     };
     assert!(!config.has_api_key());
 }
@@ -225,6 +229,7 @@ async fn service_status_model_matches_config() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     };
     match try_create_service_with_config(config).await {
         Ok(service) => assert_eq!(service.status().await.model, expected_model),
@@ -609,6 +614,7 @@ async fn chat_history_respects_capacity() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -885,6 +891,7 @@ async fn service_disabled_rejects_requests() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -919,6 +926,7 @@ async fn error_bad_api_key_propagates() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     };
 
     // The error may surface at client creation or at the first API call —
@@ -963,6 +971,7 @@ async fn error_invalid_model_propagates() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -993,6 +1002,7 @@ async fn error_disabled_service_propagates_through_chat() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -1160,6 +1170,7 @@ fn factory_creates_engine_with_cache_enabled() {
         tools: ToolConfig::default(), // cache enabled by default
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     };
     let llm: Arc<dyn LlmService> = Arc::new(MockLlmService::new());
     let registry = swebash_ai::core::agents::builtins::create_default_registry(llm, config);
@@ -1185,6 +1196,7 @@ fn factory_creates_engine_with_cache_disabled() {
         },
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     };
     let llm: Arc<dyn LlmService> = Arc::new(MockLlmService::new());
     let registry = swebash_ai::core::agents::builtins::create_default_registry(llm, config);
@@ -1390,6 +1402,7 @@ fn config_fs_only() -> AiConfig {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     }
 }
 
@@ -1417,6 +1430,7 @@ fn config_exec_only() -> AiConfig {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     }
 }
 
@@ -2131,6 +2145,7 @@ fn mock_config() -> AiConfig {
         tools: ToolConfig::default(),
         log_dir: None,
         docs_base_dir: None,
+        rag: swebash_ai::spi::config::RagConfig::default(),
     }
 }
 
@@ -3187,6 +3202,7 @@ agents:
 
 /// End-to-end: service layer uses delegate infrastructure correctly.
 #[tokio::test]
+#[serial]
 async fn delegate_e2e_service_layer_round_trip() {
     match try_create_service().await {
         Ok(service) => {

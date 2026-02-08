@@ -38,7 +38,7 @@ pub fn builtin_agent_count() -> usize {
 /// 3. User-level config file (whole-agent replacement by ID)
 pub fn create_default_registry(llm: Arc<dyn LlmService>, config: AiConfig) -> AgentManager {
     let docs_base_dir = config.docs_base_dir.clone();
-    let rag_manager = create_rag_manager();
+    let rag_manager = create_rag_manager(&config);
     let mut manager = AgentManager::new(llm, config, rag_manager);
 
     // 1. Parse and register embedded default agents.
@@ -93,27 +93,46 @@ pub fn create_default_registry(llm: Arc<dyn LlmService>, config: AiConfig) -> Ag
     manager
 }
 
-/// Create a RAG index manager with the default embedding provider and in-memory store.
+/// Create a RAG index manager with the configured embedding provider and vector store.
 ///
 /// Returns `Some` when a local embedding provider is available (the `rag-local` feature),
 /// `None` otherwise. When `None`, agents configured with `strategy: rag` will fall back
 /// to preload behavior.
-fn create_rag_manager() -> Option<Arc<RagIndexManager>> {
+///
+/// The vector store backend is selected via `config.rag.vector_store`:
+/// - `Memory` (default): ephemeral in-memory store
+/// - `File { path }`: JSON file persistence
+/// - `Sqlite { path }`: SQLite database (requires `rag-sqlite` feature)
+fn create_rag_manager(config: &AiConfig) -> Option<Arc<RagIndexManager>> {
     #[cfg(feature = "rag-local")]
     {
         use crate::core::rag::chunker::ChunkerConfig;
         use crate::core::rag::embeddings::FastEmbedProvider;
-        use crate::core::rag::stores::InMemoryVectorStore;
 
         match FastEmbedProvider::new() {
             Ok(embedder) => {
-                let store = Arc::new(InMemoryVectorStore::new());
+                let store = match config.rag.vector_store.build() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to build vector store, RAG disabled");
+                        return None;
+                    }
+                };
+                let chunker_config = ChunkerConfig {
+                    chunk_size: config.rag.chunk_size,
+                    overlap: config.rag.chunk_overlap,
+                };
                 let manager = RagIndexManager::new(
                     Arc::new(embedder),
                     store,
-                    ChunkerConfig::default(),
+                    chunker_config,
                 );
-                tracing::info!("RAG index manager initialized with FastEmbed + InMemoryVectorStore");
+                tracing::info!(
+                    store = ?config.rag.vector_store,
+                    chunk_size = config.rag.chunk_size,
+                    chunk_overlap = config.rag.chunk_overlap,
+                    "RAG index manager initialized"
+                );
                 Some(Arc::new(manager))
             }
             Err(e) => {
@@ -125,6 +144,7 @@ fn create_rag_manager() -> Option<Arc<RagIndexManager>> {
 
     #[cfg(not(feature = "rag-local"))]
     {
+        let _ = config; // suppress unused warning
         tracing::debug!("rag-local feature not enabled, RAG disabled");
         None
     }
@@ -302,6 +322,7 @@ agents:
             tools: crate::spi::config::ToolConfig::default(),
             log_dir: None,
             docs_base_dir: None,
+            rag: crate::spi::config::RagConfig::default(),
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -345,6 +366,7 @@ agents:
             tools: crate::spi::config::ToolConfig::default(),
             log_dir: None,
             docs_base_dir: None,
+            rag: crate::spi::config::RagConfig::default(),
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -369,6 +391,7 @@ agents:
             tools: crate::spi::config::ToolConfig::default(),
             log_dir: None,
             docs_base_dir: None,
+            rag: crate::spi::config::RagConfig::default(),
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);

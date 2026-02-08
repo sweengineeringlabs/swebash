@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use crate::core::rag::stores::VectorStoreConfig;
+
 /// AI service configuration.
 #[derive(Debug, Clone)]
 pub struct AiConfig {
@@ -27,6 +29,29 @@ pub struct AiConfig {
     /// their source globs resolved relative to this directory.
     /// Defaults to the current working directory when not explicitly set.
     pub docs_base_dir: Option<PathBuf>,
+    /// RAG (Retrieval-Augmented Generation) configuration.
+    pub rag: RagConfig,
+}
+
+/// RAG (Retrieval-Augmented Generation) configuration.
+#[derive(Debug, Clone)]
+pub struct RagConfig {
+    /// Vector store backend configuration.
+    pub vector_store: VectorStoreConfig,
+    /// Chunk size for document splitting (characters).
+    pub chunk_size: usize,
+    /// Overlap between chunks (characters).
+    pub chunk_overlap: usize,
+}
+
+impl Default for RagConfig {
+    fn default() -> Self {
+        Self {
+            vector_store: VectorStoreConfig::Memory,
+            chunk_size: 2000,
+            chunk_overlap: 200,
+        }
+    }
 }
 
 /// Tool calling configuration.
@@ -127,6 +152,10 @@ impl AiConfig {
     /// | `SWEBASH_AI_TOOL_CACHE_MAX` | `200` | Max cached entries |
     /// | `SWEBASH_AI_TOOLS_RAG` | `false` | Enable RAG document search tools |
     /// | `SWEBASH_AI_DOCS_BASE_DIR` | _(cwd)_ | Base dir for agent docs_context source paths |
+    /// | `SWEBASH_AI_RAG_STORE` | `memory` | Vector store: memory, file, sqlite |
+    /// | `SWEBASH_AI_RAG_STORE_PATH` | `.swebash/rag` | Path for file/sqlite store |
+    /// | `SWEBASH_AI_RAG_CHUNK_SIZE` | `2000` | Document chunk size (chars) |
+    /// | `SWEBASH_AI_RAG_CHUNK_OVERLAP` | `200` | Chunk overlap (chars) |
     pub fn from_env() -> Self {
         let enabled = std::env::var("SWEBASH_AI_ENABLED")
             .map(|v| v != "false" && v != "0")
@@ -205,6 +234,39 @@ impl AiConfig {
             .map(PathBuf::from)
             .or_else(|| std::env::current_dir().ok());
 
+        // RAG configuration
+        let vector_store = match std::env::var("SWEBASH_AI_RAG_STORE")
+            .unwrap_or_else(|_| "memory".to_string())
+            .to_lowercase()
+            .as_str()
+        {
+            "file" => {
+                let path = std::env::var("SWEBASH_AI_RAG_STORE_PATH")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| PathBuf::from(".swebash/rag"));
+                VectorStoreConfig::File { path }
+            }
+            "sqlite" => {
+                let path = std::env::var("SWEBASH_AI_RAG_STORE_PATH")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| PathBuf::from(".swebash/rag.db"));
+                VectorStoreConfig::Sqlite { path }
+            }
+            _ => VectorStoreConfig::Memory,
+        };
+
+        let rag = RagConfig {
+            vector_store,
+            chunk_size: std::env::var("SWEBASH_AI_RAG_CHUNK_SIZE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(2000),
+            chunk_overlap: std::env::var("SWEBASH_AI_RAG_CHUNK_OVERLAP")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(200),
+        };
+
         Self {
             enabled,
             provider,
@@ -215,6 +277,7 @@ impl AiConfig {
             agent_auto_detect,
             log_dir,
             docs_base_dir,
+            rag,
         }
     }
 
