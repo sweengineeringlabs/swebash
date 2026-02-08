@@ -10,6 +10,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[cfg(feature = "rag-sqlite")]
+use std::path::Path;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -21,9 +24,16 @@ use crate::spi::rag::{DocChunk, SearchResult, VectorStore};
 
 /// Compute cosine similarity between two vectors.
 ///
-/// Returns 0.0 if either vector has zero magnitude.
+/// Returns 0.0 if vectors have mismatched dimensions or zero magnitude.
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    debug_assert_eq!(a.len(), b.len(), "vector dimensions must match");
+    if a.len() != b.len() {
+        tracing::warn!(
+            a_dim = a.len(),
+            b_dim = b.len(),
+            "cosine_similarity: dimension mismatch, returning 0.0"
+        );
+        return 0.0;
+    }
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
     let mag_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let mag_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -456,6 +466,68 @@ impl VectorStore for SqliteVectorStore {
     }
 }
 
+// ── VectorStoreConfig ──────────────────────────────────────────────
+
+/// Configuration for selecting and initializing a vector store backend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum VectorStoreConfig {
+    /// Ephemeral in-memory store (default). Data is lost on restart.
+    Memory,
+    /// JSON file-based persistence. Each agent gets a separate file.
+    File {
+        /// Directory to store index files.
+        path: PathBuf,
+    },
+    /// SQLite-based persistence (requires `rag-sqlite` feature).
+    Sqlite {
+        /// Path to the SQLite database file.
+        path: PathBuf,
+    },
+}
+
+impl Default for VectorStoreConfig {
+    fn default() -> Self {
+        Self::Memory
+    }
+}
+
+impl VectorStoreConfig {
+    /// Create a vector store from this configuration.
+    ///
+    /// Returns an error if the configuration is invalid or if the required
+    /// feature is not enabled (e.g., `rag-sqlite` for SQLite stores).
+    pub fn build(&self) -> AiResult<Arc<dyn VectorStore>> {
+        match self {
+            VectorStoreConfig::Memory => Ok(Arc::new(InMemoryVectorStore::new())),
+            VectorStoreConfig::File { path } => Ok(Arc::new(FileVectorStore::new(path))),
+            #[cfg(feature = "rag-sqlite")]
+            VectorStoreConfig::Sqlite { path } => {
+                Ok(Arc::new(SqliteVectorStore::new(path)?))
+            }
+            #[cfg(not(feature = "rag-sqlite"))]
+            VectorStoreConfig::Sqlite { .. } => Err(AiError::NotConfigured(
+                "SQLite vector store requires the 'rag-sqlite' feature".to_string(),
+            )),
+        }
+    }
+
+    /// Create a memory-backed store (convenience constructor).
+    pub fn memory() -> Self {
+        Self::Memory
+    }
+
+    /// Create a file-backed store at the given path.
+    pub fn file(path: impl Into<PathBuf>) -> Self {
+        Self::File { path: path.into() }
+    }
+
+    /// Create a SQLite-backed store at the given path.
+    pub fn sqlite(path: impl Into<PathBuf>) -> Self {
+        Self::Sqlite { path: path.into() }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -503,6 +575,13 @@ mod tests {
     fn cosine_zero_vector_returns_zero() {
         let a = vec![1.0, 2.0];
         let b = vec![0.0, 0.0];
+        assert_eq!(cosine_similarity(&a, &b), 0.0);
+    }
+
+    #[test]
+    fn cosine_dimension_mismatch_returns_zero() {
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![1.0, 2.0]; // different length
         assert_eq!(cosine_similarity(&a, &b), 0.0);
     }
 
@@ -644,5 +723,199 @@ mod tests {
         store.delete_agent("a1").await.unwrap();
         assert!(!store.has_index("a1").await.unwrap());
         assert!(!dir.path().join("a1.index.json").is_file());
+    }
+
+    // ── VectorStoreConfig ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn config_builds_memory_store() {
+        let config = VectorStoreConfig::memory();
+        let store = config.build().unwrap();
+
+        let chunks = make_chunks("a1", 2);
+        let embeddings = make_embeddings(2, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        assert!(store.has_index("a1").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn config_builds_file_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = VectorStoreConfig::file(dir.path());
+        let store = config.build().unwrap();
+
+        let chunks = make_chunks("a1", 2);
+        let embeddings = make_embeddings(2, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        assert!(dir.path().join("a1.index.json").is_file());
+    }
+
+    #[test]
+    fn config_default_is_memory() {
+        let config = VectorStoreConfig::default();
+        assert!(matches!(config, VectorStoreConfig::Memory));
+    }
+
+    #[test]
+    fn config_serializes_memory() {
+        let config = VectorStoreConfig::memory();
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("\"type\":\"memory\""));
+    }
+
+    #[test]
+    fn config_serializes_file() {
+        let config = VectorStoreConfig::file("/tmp/rag");
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("\"type\":\"file\""));
+        assert!(json.contains("/tmp/rag"));
+    }
+
+    #[test]
+    fn config_serializes_sqlite() {
+        let config = VectorStoreConfig::sqlite("/tmp/rag.db");
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("\"type\":\"sqlite\""));
+        assert!(json.contains("/tmp/rag.db"));
+    }
+
+    #[test]
+    fn config_deserializes_memory() {
+        let json = r#"{"type":"memory"}"#;
+        let config: VectorStoreConfig = serde_json::from_str(json).unwrap();
+        assert!(matches!(config, VectorStoreConfig::Memory));
+    }
+
+    #[test]
+    fn config_deserializes_file() {
+        let json = r#"{"type":"file","path":"/data/rag"}"#;
+        let config: VectorStoreConfig = serde_json::from_str(json).unwrap();
+        match config {
+            VectorStoreConfig::File { path } => {
+                assert_eq!(path, PathBuf::from("/data/rag"));
+            }
+            _ => panic!("expected File config"),
+        }
+    }
+
+    #[cfg(not(feature = "rag-sqlite"))]
+    #[test]
+    fn config_sqlite_without_feature_errors() {
+        let config = VectorStoreConfig::sqlite("/tmp/rag.db");
+        let result = config.build();
+        assert!(result.is_err());
+    }
+
+    // ── SqliteVectorStore (feature-gated) ──────────────────────────────
+
+    #[cfg(feature = "rag-sqlite")]
+    #[tokio::test]
+    async fn sqlite_store_upsert_and_search() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let store = SqliteVectorStore::new(&db_path).unwrap();
+
+        let chunks = make_chunks("a1", 3);
+        let embeddings = make_embeddings(3, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        let results = store.search(&embeddings[0], "a1", 2).await.unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].chunk.id, chunks[0].id);
+        assert!((results[0].score - 1.0).abs() < 1e-6);
+    }
+
+    #[cfg(feature = "rag-sqlite")]
+    #[tokio::test]
+    async fn sqlite_store_has_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let store = SqliteVectorStore::new(&db_path).unwrap();
+
+        assert!(!store.has_index("a1").await.unwrap());
+
+        let chunks = make_chunks("a1", 1);
+        let embeddings = make_embeddings(1, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        assert!(store.has_index("a1").await.unwrap());
+        assert!(!store.has_index("other").await.unwrap());
+    }
+
+    #[cfg(feature = "rag-sqlite")]
+    #[tokio::test]
+    async fn sqlite_store_delete_agent() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let store = SqliteVectorStore::new(&db_path).unwrap();
+
+        let chunks = make_chunks("a1", 2);
+        let embeddings = make_embeddings(2, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        store.delete_agent("a1").await.unwrap();
+        assert!(!store.has_index("a1").await.unwrap());
+    }
+
+    #[cfg(feature = "rag-sqlite")]
+    #[tokio::test]
+    async fn sqlite_store_persists_across_instances() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+
+        // Write with first instance.
+        {
+            let store = SqliteVectorStore::new(&db_path).unwrap();
+            let chunks = make_chunks("a1", 2);
+            let embeddings = make_embeddings(2, 4);
+            store.upsert(&chunks, &embeddings).await.unwrap();
+        }
+
+        // Read with a fresh instance.
+        {
+            let store = SqliteVectorStore::new(&db_path).unwrap();
+            assert!(store.has_index("a1").await.unwrap());
+            let results = store.search(&make_embeddings(1, 4)[0], "a1", 10).await.unwrap();
+            assert_eq!(results.len(), 2);
+        }
+    }
+
+    #[cfg(feature = "rag-sqlite")]
+    #[tokio::test]
+    async fn sqlite_store_agents_are_isolated() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let store = SqliteVectorStore::new(&db_path).unwrap();
+
+        let chunks_a = make_chunks("a1", 2);
+        let chunks_b = make_chunks("b1", 3);
+        let emb_a = make_embeddings(2, 4);
+        let emb_b = make_embeddings(3, 4);
+
+        store.upsert(&chunks_a, &emb_a).await.unwrap();
+        store.upsert(&chunks_b, &emb_b).await.unwrap();
+
+        let results = store.search(&emb_a[0], "a1", 10).await.unwrap();
+        assert_eq!(results.len(), 2); // only a1's chunks
+
+        store.delete_agent("a1").await.unwrap();
+        assert!(store.has_index("b1").await.unwrap());
+    }
+
+    #[cfg(feature = "rag-sqlite")]
+    #[tokio::test]
+    async fn config_builds_sqlite_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let config = VectorStoreConfig::sqlite(&db_path);
+        let store = config.build().unwrap();
+
+        let chunks = make_chunks("a1", 2);
+        let embeddings = make_embeddings(2, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        assert!(store.has_index("a1").await.unwrap());
     }
 }
