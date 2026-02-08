@@ -31,6 +31,12 @@ use swebash_ai::core::agents::config::{AgentDefaults, AgentEntry, AgentsYaml, Co
 use swebash_ai::core::agents::{AgentDescriptor, ToolFilter};
 use swebash_ai::core::DefaultAiService;
 use swebash_ai::spi::chat_provider::ChatProviderClient;
+use swebash_ai::core::rag::chunker::ChunkerConfig;
+use swebash_ai::core::rag::index::RagIndexManager;
+use swebash_ai::core::rag::stores::InMemoryVectorStore;
+use swebash_ai::core::rag::tool::RagTool;
+use swebash_ai::spi::rag::{EmbeddingProvider, VectorStore};
+use tool::Tool;
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -4251,4 +4257,262 @@ fn yaml_docs_context_partial_resolution_loads_available() {
     assert_eq!(result.files_loaded, 1);
     // Missing source should be unresolved
     assert_eq!(result.unresolved, vec!["missing/nothing/*.md"]);
+}
+
+// ── RAG Integration Tests ───────────────────────────────────────────────
+
+/// Mock embedding provider for RAG integration tests.
+struct MockEmbedder;
+
+#[async_trait::async_trait]
+impl EmbeddingProvider for MockEmbedder {
+    async fn embed(&self, texts: &[String]) -> AiResult<Vec<Vec<f32>>> {
+        // Return unique vectors based on text content hash for deterministic search.
+        Ok(texts
+            .iter()
+            .map(|t| {
+                let hash = t.bytes().fold(0u32, |acc, b| acc.wrapping_add(b as u32));
+                let mut v = vec![0.0f32; 8];
+                v[(hash as usize) % 8] = 1.0;
+                v[((hash >> 4) as usize) % 8] += 0.5;
+                v
+            })
+            .collect())
+    }
+
+    fn dimension(&self) -> usize {
+        8
+    }
+
+    fn model_name(&self) -> &str {
+        "mock-embedder"
+    }
+}
+
+#[tokio::test]
+async fn rag_index_handles_documents_without_sentence_boundaries() {
+    // Document with no periods — exercises the raw chunking fallback.
+    let dir = tempfile::tempdir().unwrap();
+    let docs_dir = dir.path().join("docs");
+    std::fs::create_dir_all(&docs_dir).unwrap();
+
+    // Long text without sentence-ending punctuation.
+    let content = "word ".repeat(500); // 2500 chars, no sentences
+    std::fs::write(docs_dir.join("no_sentences.txt"), &content).unwrap();
+
+    let store = Arc::new(InMemoryVectorStore::new());
+    let embedder: Arc<dyn EmbeddingProvider> = Arc::new(MockEmbedder);
+    let config = ChunkerConfig {
+        chunk_size: 200,
+        overlap: 50,
+    };
+    let manager = RagIndexManager::new(embedder, store.clone(), config);
+
+    // Should not hang or panic — exercises the fix for single oversized sentence.
+    manager
+        .ensure_index("test-agent", &["docs/*.txt".to_string()], dir.path())
+        .await
+        .unwrap();
+
+    assert!(store.has_index("test-agent").await.unwrap());
+
+    // Search should return results from the chunked content.
+    let results = manager.search("test-agent", "word", 5).await.unwrap();
+    assert!(!results.is_empty(), "should find chunks from raw-chunked content");
+}
+
+#[tokio::test]
+async fn rag_index_handles_oversized_sentences() {
+    // Document with sentences larger than chunk_size.
+    let dir = tempfile::tempdir().unwrap();
+    let docs_dir = dir.path().join("docs");
+    std::fs::create_dir_all(&docs_dir).unwrap();
+
+    // Three sentences, each ~100 chars, but chunk_size is 50.
+    let content = "This is the first sentence that is definitely longer than fifty characters in total length. \
+                   This is the second sentence that also exceeds the configured chunk size limit. \
+                   This is the third sentence completing our test of the chunker overlap fix.";
+    std::fs::write(docs_dir.join("big_sentences.md"), content).unwrap();
+
+    let store = Arc::new(InMemoryVectorStore::new());
+    let embedder: Arc<dyn EmbeddingProvider> = Arc::new(MockEmbedder);
+    let config = ChunkerConfig {
+        chunk_size: 50,
+        overlap: 20,
+    };
+    let manager = RagIndexManager::new(embedder, store.clone(), config);
+
+    // Should complete without infinite loop — exercises find_overlap_start fix.
+    manager
+        .ensure_index("test-agent", &["docs/*.md".to_string()], dir.path())
+        .await
+        .unwrap();
+
+    assert!(store.has_index("test-agent").await.unwrap());
+}
+
+#[tokio::test]
+async fn rag_index_handles_multibyte_unicode_documents() {
+    let dir = tempfile::tempdir().unwrap();
+    let docs_dir = dir.path().join("docs");
+    std::fs::create_dir_all(&docs_dir).unwrap();
+
+    // Unicode content with multibyte characters.
+    let content = "Héllo wörld, this is ünïcödé. \
+                   日本語テキストもサポートします。 \
+                   Ещё один пример на русском языке.";
+    std::fs::write(docs_dir.join("unicode.md"), content).unwrap();
+
+    let store = Arc::new(InMemoryVectorStore::new());
+    let embedder: Arc<dyn EmbeddingProvider> = Arc::new(MockEmbedder);
+    let config = ChunkerConfig {
+        chunk_size: 30,
+        overlap: 10,
+    };
+    let manager = RagIndexManager::new(embedder, store.clone(), config);
+
+    // Should handle multibyte boundaries correctly.
+    manager
+        .ensure_index("test-agent", &["docs/*.md".to_string()], dir.path())
+        .await
+        .unwrap();
+
+    assert!(store.has_index("test-agent").await.unwrap());
+
+    let results = manager.search("test-agent", "unicode", 5).await.unwrap();
+    assert!(!results.is_empty());
+}
+
+// ── RAG E2E Tests (RagTool) ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn rag_tool_e2e_searches_chunked_documents() {
+    let dir = tempfile::tempdir().unwrap();
+    let docs_dir = dir.path().join("docs");
+    std::fs::create_dir_all(&docs_dir).unwrap();
+
+    std::fs::write(
+        docs_dir.join("api.md"),
+        "# API Reference\n\nThe API endpoint is /v1/users. It returns a JSON list of users.\n\n\
+         ## Authentication\n\nUse Bearer tokens in the Authorization header.",
+    )
+    .unwrap();
+
+    let store = Arc::new(InMemoryVectorStore::new());
+    let embedder: Arc<dyn EmbeddingProvider> = Arc::new(MockEmbedder);
+    let manager = Arc::new(RagIndexManager::new(
+        embedder,
+        store,
+        ChunkerConfig::default(),
+    ));
+
+    manager
+        .ensure_index("api-agent", &["docs/*.md".to_string()], dir.path())
+        .await
+        .unwrap();
+
+    let tool = RagTool::new("api-agent", manager, 5);
+
+    // Execute search via the Tool interface.
+    let result = tool
+        .execute(serde_json::json!({"query": "API endpoint"}))
+        .await
+        .unwrap();
+
+    let text = result.content.as_str().expect("should be text output");
+    assert!(text.contains("Result 1"), "should have at least one result");
+    assert!(text.contains("score:"), "should include relevance score");
+}
+
+#[tokio::test]
+async fn rag_tool_e2e_handles_no_results() {
+    let dir = tempfile::tempdir().unwrap();
+    let docs_dir = dir.path().join("docs");
+    std::fs::create_dir_all(&docs_dir).unwrap();
+
+    std::fs::write(docs_dir.join("readme.md"), "This is a simple readme file.").unwrap();
+
+    let store = Arc::new(InMemoryVectorStore::new());
+    let embedder: Arc<dyn EmbeddingProvider> = Arc::new(MockEmbedder);
+    let manager = Arc::new(RagIndexManager::new(
+        embedder,
+        store,
+        ChunkerConfig::default(),
+    ));
+
+    manager
+        .ensure_index("readme-agent", &["docs/*.md".to_string()], dir.path())
+        .await
+        .unwrap();
+
+    let tool = RagTool::new("readme-agent", manager, 5);
+
+    // Search for something not in the document.
+    let result = tool
+        .execute(serde_json::json!({"query": "quantum entanglement physics"}))
+        .await
+        .unwrap();
+
+    let text = result.content.as_str().expect("should be text output");
+    // May return results (mock embedder isn't semantic) or "no relevant documentation"
+    // The key assertion is that it completes without error.
+    assert!(!text.is_empty());
+}
+
+#[tokio::test]
+async fn rag_tool_e2e_with_large_documents() {
+    let dir = tempfile::tempdir().unwrap();
+    let docs_dir = dir.path().join("docs");
+    std::fs::create_dir_all(&docs_dir).unwrap();
+
+    // Large document that will be split into many chunks.
+    let paragraph = "This is paragraph number N. It contains some text for testing. ";
+    let content: String = (1..=100)
+        .map(|n| paragraph.replace("N", &n.to_string()))
+        .collect();
+    std::fs::write(docs_dir.join("large.md"), &content).unwrap();
+
+    let store = Arc::new(InMemoryVectorStore::new());
+    let embedder: Arc<dyn EmbeddingProvider> = Arc::new(MockEmbedder);
+    let config = ChunkerConfig {
+        chunk_size: 500,
+        overlap: 100,
+    };
+    let manager = Arc::new(RagIndexManager::new(embedder, store, config));
+
+    manager
+        .ensure_index("large-doc-agent", &["docs/*.md".to_string()], dir.path())
+        .await
+        .unwrap();
+
+    let tool = RagTool::new("large-doc-agent", manager, 3);
+
+    let result = tool
+        .execute(serde_json::json!({"query": "paragraph testing"}))
+        .await
+        .unwrap();
+
+    let text = result.content.as_str().expect("should be text output");
+    assert!(text.contains("Result"), "should return results from large document");
+}
+
+#[tokio::test]
+async fn rag_tool_e2e_validates_query_parameter() {
+    let store = Arc::new(InMemoryVectorStore::new());
+    let embedder: Arc<dyn EmbeddingProvider> = Arc::new(MockEmbedder);
+    let manager = Arc::new(RagIndexManager::new(
+        embedder,
+        store,
+        ChunkerConfig::default(),
+    ));
+
+    let tool = RagTool::new("test-agent", manager, 5);
+
+    // Missing query parameter.
+    let result = tool.execute(serde_json::json!({})).await;
+    assert!(result.is_err(), "should error on missing query");
+
+    // Empty query parameter.
+    let result = tool.execute(serde_json::json!({"query": "   "})).await;
+    assert!(result.is_err(), "should error on empty query");
 }

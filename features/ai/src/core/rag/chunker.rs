@@ -139,7 +139,12 @@ fn byte_offset_of(text: &str, sentences: &[&str], idx: usize) -> usize {
     // Find the actual byte position — sentence boundaries may have
     // whitespace that concat skips, so search for the first sentence
     // in the text after the prefix length.
-    text.find(&sentences[idx][..sentences[idx].len().min(40)])
+    //
+    // Take a prefix of the sentence by characters (not bytes) to avoid
+    // slicing in the middle of a multibyte UTF-8 character.
+    let sentence = sentences[idx];
+    let search_prefix: String = sentence.chars().take(40).collect();
+    text.find(&search_prefix)
         .unwrap_or(prefix.len())
         .max(if idx == 0 { 0 } else { prefix.len().saturating_sub(idx) })
 }
