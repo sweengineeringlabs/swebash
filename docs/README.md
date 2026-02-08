@@ -91,7 +91,11 @@ Test strategy, suites, and manual testing procedures.
 | [Test Strategy](5-testing/testing_strategy.md) | Arrow key navigation test coverage | Developers, QA |
 | [E2E Testing](5-testing/e2e_testing.md) | End-to-end and integration test implementation | Developers, QA |
 | [AI Mode Tests](5-testing/ai_mode_tests.md) | AI mode test suite (38 tests) | Developers, QA |
-| [Manual Testing](5-testing/manual_testing.md) | Manual testing guide with prerequisites and procedures | Developers, QA |
+| [Manual Testing](5-testing/manual_testing.md) | Manual testing hub: prerequisites, setup, automated suites | Developers, QA |
+| [Manual Shell Tests](5-testing/manual_shell_tests.md) | Shell basics, file ops, history, workspace sandbox | Developers, QA |
+| [Manual AI Tests](5-testing/manual_ai_tests.md) | AI commands, agents, config, memory, docs context | Developers, QA |
+| [Manual RAG Tests](5-testing/manual_rag_tests.md) | RAG indexing, retrieval, staleness, vector stores | Developers, QA |
+| [Manual sbh Tests](5-testing/manual_sbh_tests.md) | sbh/sbh.ps1 launcher, build, test, gen-aws-docs | Developers, QA |
 
 ### 6-Deployment
 

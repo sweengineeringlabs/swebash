@@ -131,27 +131,97 @@ Use this table to decide which strategy fits an agent's documentation profile.
 
 Triggered once per agent at engine startup (or on agent switch) via `RagIndexManager::ensure_index()`.
 
-| Step | Operation | Input | Output |
-|------|-----------|-------|--------|
-| 1 | **Glob resolution** | `docs.sources` patterns + `base_dir` | `Vec<(PathBuf, String)>` — absolute path + relative display path |
-| 2 | **Fingerprint** | File paths, mtimes, sizes | SHA-256 hex string |
-| 3 | **Staleness check** | Current fingerprint vs cached fingerprint | Skip (match) or rebuild (mismatch) |
-| 4 | **Clear stale data** | `store.delete_agent(agent_id)` | Old chunks removed |
-| 5 | **Chunk** | File content, source path, agent ID, `ChunkerConfig` | `Vec<DocChunk>` — sentence-aware, overlapping chunks |
-| 6 | **Embed** | Chunk text content (batched) | `Vec<Vec<f32>>` — 384-dimensional vectors |
-| 7 | **Upsert** | Chunks + embeddings | Stored in vector store, indexed by agent ID |
-| 8 | **Cache fingerprint** | agent_id -> fingerprint | `HashMap<String, String>` in `RwLock` |
+```
+docs.sources           base_dir
+  ["docs/*.md"]        /home/user/project
+       │                    │
+       ▼                    ▼
+┌─────────────────────────────────┐
+│  1. resolve_sources()           │
+│     glob patterns ──▶ file list │
+└────────────────┬────────────────┘
+                 │  Vec<(PathBuf, String)>
+                 ▼
+┌─────────────────────────────────┐
+│  2. compute_fingerprint()       │
+│     SHA-256(path + mtime + size)│
+└────────────────┬────────────────┘
+                 │  fingerprint hex string
+                 ▼
+        ┌────────────────┐
+        │ 3. fingerprint │──── match ────▶ SKIP (return Ok)
+        │    == cached?  │
+        └───────┬────────┘
+                │ mismatch (or first run)
+                ▼
+┌─────────────────────────────────┐
+│  4. store.delete_agent()        │
+│     clear stale chunks          │
+└────────────────┬────────────────┘
+                 ▼
+┌─────────────────────────────────┐
+│  5. chunker::chunk_text()       │
+│     sentence-aware splitting    │
+│     2000 chars / 200 overlap    │
+└────────────────┬────────────────┘
+                 │  Vec<DocChunk>
+                 ▼
+┌─────────────────────────────────┐
+│  6. embedder.embed(texts)       │
+│     BAAI/bge-small-en-v1.5      │
+│     batch ──▶ 384-dim vectors   │
+└────────────────┬────────────────┘
+                 │  Vec<Vec<f32>>
+                 ▼
+┌─────────────────────────────────┐
+│  7. store.upsert(chunks, embs)  │
+│     Memory | File | SQLite      │
+└────────────────┬────────────────┘
+                 ▼
+┌─────────────────────────────────┐
+│  8. cache fingerprint           │
+│     index_state[agent_id] = fp  │
+└─────────────────────────────────┘
+```
 
 ### Query Pipeline (Read Path)
 
 Triggered each time the LLM calls the `rag_search` tool during a conversation.
 
-| Step | Operation | Input | Output |
-|------|-----------|-------|--------|
-| 1 | **Tool invocation** | LLM calls `rag_search({ "query": "..." })` | Query string |
-| 2 | **Query embedding** | `embedder.embed([query])` | Single 384-dim vector |
-| 3 | **Cosine search** | `store.search(query_vec, agent_id, top_k)` | `Vec<SearchResult>` — chunks sorted by score descending |
-| 4 | **Format** | Results formatted with score, source path, content | Text block returned to LLM |
+```
+User message
+     │
+     ▼
+┌──────────┐     tool call: rag_search({ "query": "..." })
+│   LLM    │────────────────────────────┐
+└──────────┘                            │
+     ▲                                  ▼
+     │                   ┌──────────────────────────────┐
+     │                   │  1. RagTool.execute()         │
+     │                   └──────────────┬───────────────┘
+     │                                  ▼
+     │                   ┌──────────────────────────────┐
+     │                   │  2. embedder.embed([query])   │
+     │                   │     ──▶ 384-dim query vector  │
+     │                   └──────────────┬───────────────┘
+     │                                  ▼
+     │                   ┌──────────────────────────────┐
+     │                   │  3. store.search(             │
+     │                   │       query_vec,              │
+     │                   │       agent_id,               │
+     │                   │       top_k)                  │
+     │                   │     brute-force cosine sim    │
+     │                   │     ──▶ Vec<SearchResult>     │
+     │                   └──────────────┬───────────────┘
+     │                                  ▼
+     │                   ┌──────────────────────────────┐
+     │                   │  4. Format results            │
+     │                   │  "--- Result 1 (score: 0.82,  │
+     │                   │   source: ref.md) ---"        │
+     │  tool result      │  {chunk content}              │
+     └───────────────────┤                               │
+                         └──────────────────────────────┘
+```
 
 
 ## Component Reference
