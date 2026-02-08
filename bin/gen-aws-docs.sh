@@ -12,6 +12,12 @@ source "$(cd "$(dirname "$0")/.." && pwd)/lib/common.sh"
 # ── Configuration ─────────────────────────────────────────────────────
 OUTPUT_DIR="${SWEBASH_AWS_DOCS_DIR:-$HOME/.config/swebash/docs/aws}"
 
+# AWS CLI installer URLs (override for mirrors/proxies/specific versions)
+AWS_CLI_URL_LINUX_X64="${SWEBASH_AWS_CLI_URL_LINUX_X64:-https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip}"
+AWS_CLI_URL_LINUX_ARM="${SWEBASH_AWS_CLI_URL_LINUX_ARM:-https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip}"
+AWS_CLI_URL_MACOS="${SWEBASH_AWS_CLI_URL_MACOS:-https://awscli.amazonaws.com/AWSCLIV2.pkg}"
+AWS_CLI_URL_WINDOWS="${SWEBASH_AWS_CLI_URL_WINDOWS:-https://awscli.amazonaws.com/AWSCLIV2.msi}"
+
 # Services to document (order determines output order)
 SERVICES=(
   ec2 s3 lambda iam cloudformation
@@ -39,13 +45,18 @@ install_aws_cli() {
   local platform
   platform=$(uname -s)
 
-  # Determine download URL
+  # Normalize platform for Windows (MINGW64, MSYS, CYGWIN all report differently)
+  case "$platform" in
+    MINGW*|MSYS*|CYGWIN*) platform="Windows" ;;
+  esac
+
+  # Determine download URL (use env overrides if set)
   local zip_url=""
   case "$platform" in
     Linux)
       case "$arch" in
-        x86_64)  zip_url="https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" ;;
-        aarch64) zip_url="https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" ;;
+        x86_64)  zip_url="$AWS_CLI_URL_LINUX_X64" ;;
+        aarch64) zip_url="$AWS_CLI_URL_LINUX_ARM" ;;
         *)
           echo "ERROR: Unsupported architecture: $arch" >&2
           return 1
@@ -53,7 +64,10 @@ install_aws_cli() {
       esac
       ;;
     Darwin)
-      zip_url="https://awscli.amazonaws.com/AWSCLIV2.pkg"
+      zip_url="$AWS_CLI_URL_MACOS"
+      ;;
+    Windows)
+      zip_url="$AWS_CLI_URL_WINDOWS"
       ;;
     *)
       echo "ERROR: Unsupported platform: $platform" >&2
@@ -62,43 +76,61 @@ install_aws_cli() {
       ;;
   esac
 
-  # Check prerequisites
-  for dep in curl unzip; do
-    if ! command -v "$dep" &>/dev/null; then
-      echo "ERROR: $dep is required for installation but not found." >&2
-      return 1
-    fi
-  done
+  # Check prerequisites (unzip not needed on Windows/macOS)
+  if ! command -v curl &>/dev/null; then
+    echo "ERROR: curl is required for installation but not found." >&2
+    return 1
+  fi
+  if [ "$platform" = "Linux" ] && ! command -v unzip &>/dev/null; then
+    echo "ERROR: unzip is required for Linux installation but not found." >&2
+    return 1
+  fi
 
-  # Choose install mode
-  local install_dir="$HOME/.local/aws-cli"
-  local bin_dir="$HOME/.local/bin"
-  local use_sudo=false
+  # Windows installs to Program Files (no choice needed)
+  if [ "$platform" = "Windows" ]; then
+    echo ""
+    echo "Install AWS CLI v2 to Program Files?"
+    echo "  [y] Yes — install (may prompt for elevation)"
+    echo "  [n] No — skip installation"
+    echo ""
+    read -rp "Choice [y/n]: " choice
+    case "$choice" in
+      [yY]*) : ;; # continue
+      *) echo "Skipping install."; return 1 ;;
+    esac
+    # Windows doesn't use install_dir/bin_dir variables
+    local install_dir="" bin_dir="" use_sudo=false
+  else
+    # Choose install mode (Linux/macOS)
+    local install_dir="$HOME/.local/aws-cli"
+    local bin_dir="$HOME/.local/bin"
+    local use_sudo=false
 
-  echo ""
-  echo "Install AWS CLI v2?"
-  echo "  [1] Local install to ~/.local  (no sudo required) — recommended"
-  echo "  [2] System install to /usr/local  (requires sudo)"
-  echo "  [n] Skip — exit without installing"
-  echo ""
-  read -rp "Choice [1/2/n]: " choice
+    echo ""
+    echo "Install AWS CLI v2?"
+    echo "  [1] Local install to ~/.local  (no sudo required) — recommended"
+    echo "  [2] System install to /usr/local  (requires sudo)"
+    echo "  [n] Skip — exit without installing"
+    echo ""
+    read -rp "Choice [1/2/n]: " choice
 
-  case "$choice" in
-    1)
-      use_sudo=false
-      install_dir="$HOME/.local/aws-cli"
-      bin_dir="$HOME/.local/bin"
-      ;;
-    2)
-      use_sudo=true
-      install_dir="/usr/local/aws-cli"
-      bin_dir="/usr/local/bin"
-      ;;
-    *)
-      echo "Skipping install."
-      return 1
-      ;;
-  esac
+    case "$choice" in
+      1)
+        use_sudo=false
+        install_dir="$HOME/.local/aws-cli"
+        bin_dir="$HOME/.local/bin"
+        ;;
+      2)
+        use_sudo=true
+        install_dir="/usr/local/aws-cli"
+        bin_dir="/usr/local/bin"
+        ;;
+      *)
+        echo "Skipping install."
+        return 1
+        ;;
+    esac
+  fi
 
   # macOS uses .pkg installer with different flow
   if [ "$platform" = "Darwin" ]; then
@@ -113,6 +145,45 @@ install_aws_cli() {
     fi
     rm -f "$pkg_file"
     echo "==> AWS CLI installed (macOS). Run 'aws --version' to verify."
+    return 0
+  fi
+
+  # Windows uses .msi installer
+  if [ "$platform" = "Windows" ]; then
+    echo "==> Windows detected — downloading .msi installer..."
+    local msi_file
+    msi_file="$TEMP/AWSCLIV2.msi"
+    curl -fSL "$zip_url" -o "$msi_file"
+
+    echo "==> Running MSI installer (may require elevation)..."
+    # Use msiexec to install - /passive shows progress, /qn is fully silent
+    if command -v msiexec.exe &>/dev/null; then
+      msiexec.exe /i "$(cygpath -w "$msi_file")" /passive
+    elif command -v cmd.exe &>/dev/null; then
+      cmd.exe /c "msiexec /i \"$(cygpath -w "$msi_file")\" /passive"
+    else
+      echo "ERROR: Cannot find msiexec.exe to run installer" >&2
+      echo "  Install manually by running: $msi_file" >&2
+      return 1
+    fi
+
+    rm -f "$msi_file"
+
+    # AWS CLI installs to Program Files, add to PATH for this session
+    local win_aws_path="/c/Program Files/Amazon/AWSCLIV2"
+    if [ -d "$win_aws_path" ]; then
+      export PATH="$win_aws_path:$PATH"
+    fi
+
+    # Verify installation
+    if command -v aws &>/dev/null || [ -x "$win_aws_path/aws.exe" ]; then
+      echo "==> AWS CLI installed (Windows). Run 'aws --version' to verify."
+      echo ""
+      echo "NOTE: You may need to restart your terminal for PATH changes to take effect."
+    else
+      echo "WARNING: Installation completed but 'aws' not immediately available."
+      echo "  Restart your terminal and run 'aws --version' to verify."
+    fi
     return 0
   fi
 
@@ -151,6 +222,89 @@ install_aws_cli() {
     echo "  Add to your shell profile:"
     echo "    echo 'export PATH=\"$bin_dir:\$PATH\"' >> ~/.bashrc"
   fi
+}
+
+# Non-interactive AWS CLI installer (for --install flag / CI)
+install_aws_cli_noninteractive() {
+  local arch platform
+  arch=$(uname -m)
+  platform=$(uname -s)
+
+  # Normalize platform
+  case "$platform" in
+    MINGW*|MSYS*|CYGWIN*) platform="Windows" ;;
+  esac
+
+  echo "==> Auto-installing AWS CLI v2 ($platform/$arch)..."
+
+  case "$platform" in
+    Windows)
+      local msi_file="$TEMP/AWSCLIV2.msi"
+      echo "==> Downloading from $AWS_CLI_URL_WINDOWS..."
+      curl -fSL "$AWS_CLI_URL_WINDOWS" -o "$msi_file"
+
+      echo "==> Running MSI installer..."
+      if command -v msiexec.exe &>/dev/null; then
+        msiexec.exe /i "$(cygpath -w "$msi_file")" /passive
+      elif command -v cmd.exe &>/dev/null; then
+        cmd.exe /c "msiexec /i \"$(cygpath -w "$msi_file")\" /passive"
+      else
+        echo "ERROR: Cannot find msiexec.exe" >&2
+        return 1
+      fi
+      rm -f "$msi_file"
+
+      # Add to PATH for this session
+      local win_aws_path="/c/Program Files/Amazon/AWSCLIV2"
+      if [ -d "$win_aws_path" ]; then
+        export PATH="$win_aws_path:$PATH"
+      fi
+
+      if command -v aws &>/dev/null; then
+        echo "==> Installed: $(aws --version)"
+      else
+        echo "==> Installation complete. Restart terminal if 'aws' not found."
+      fi
+      ;;
+
+    Darwin)
+      local pkg_file
+      pkg_file=$(mktemp /tmp/awscli-XXXXXX.pkg)
+      echo "==> Downloading from $AWS_CLI_URL_MACOS..."
+      curl -fSL "$AWS_CLI_URL_MACOS" -o "$pkg_file"
+      echo "==> Installing (user-level)..."
+      installer -pkg "$pkg_file" -target CurrentUserHomeDirectory
+      rm -f "$pkg_file"
+      echo "==> AWS CLI installed (macOS)."
+      ;;
+
+    Linux)
+      local tmp_dir zip_url
+      tmp_dir=$(mktemp -d /tmp/awscli-install-XXXXXX)
+      trap 'rm -rf "$tmp_dir"' RETURN
+
+      case "$arch" in
+        x86_64)  zip_url="$AWS_CLI_URL_LINUX_X64" ;;
+        aarch64) zip_url="$AWS_CLI_URL_LINUX_ARM" ;;
+        *) echo "ERROR: Unsupported architecture: $arch" >&2; return 1 ;;
+      esac
+
+      echo "==> Downloading from $zip_url..."
+      curl -fSL "$zip_url" -o "$tmp_dir/awscliv2.zip"
+      echo "==> Extracting..."
+      unzip -q "$tmp_dir/awscliv2.zip" -d "$tmp_dir"
+      echo "==> Installing to ~/.local..."
+      mkdir -p "$HOME/.local/bin"
+      "$tmp_dir/aws/install" --install-dir "$HOME/.local/aws-cli" --bin-dir "$HOME/.local/bin" --update
+      export PATH="$HOME/.local/bin:$PATH"
+      echo "==> Installed: $(aws --version)"
+      ;;
+
+    *)
+      echo "ERROR: Unsupported platform: $platform" >&2
+      return 1
+      ;;
+  esac
 }
 
 # Capture aws help output (bypasses pager)
@@ -497,6 +651,45 @@ generate_troubleshooting() {
 
 # ── Main ──────────────────────────────────────────────────────────────
 main() {
+  # Parse flags
+  local auto_install=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --install|-y)
+        auto_install=true
+        shift
+        ;;
+      --help|-h)
+        echo "Usage: gen-aws-docs.sh [--install|-y]"
+        echo ""
+        echo "Generate AWS reference docs from live CLI help output."
+        echo ""
+        echo "Options:"
+        echo "  --install, -y   Auto-install AWS CLI if not found (non-interactive)"
+        echo ""
+        echo "Environment:"
+        echo "  SWEBASH_AWS_INSTALL=yes       Same as --install flag"
+        echo "  SWEBASH_AWS_DOCS_DIR          Output directory (default: ~/.config/swebash/docs/aws)"
+        echo ""
+        echo "  AWS CLI installer URLs (for mirrors/proxies/specific versions):"
+        echo "  SWEBASH_AWS_CLI_URL_LINUX_X64   Linux x86_64 .zip"
+        echo "  SWEBASH_AWS_CLI_URL_LINUX_ARM   Linux aarch64 .zip"
+        echo "  SWEBASH_AWS_CLI_URL_MACOS       macOS .pkg"
+        echo "  SWEBASH_AWS_CLI_URL_WINDOWS     Windows .msi"
+        exit 0
+        ;;
+      *)
+        echo "Unknown option: $1" >&2
+        exit 1
+        ;;
+    esac
+  done
+
+  # Check for env var override
+  if [[ "${SWEBASH_AWS_INSTALL:-}" == "yes" ]]; then
+    auto_install=true
+  fi
+
   echo "==> Generating AWS docs to $OUTPUT_DIR"
 
   if ! command -v aws &>/dev/null; then
@@ -510,9 +703,19 @@ main() {
         echo "Install manually: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
         exit 1
       }
+    elif [ "$auto_install" = true ]; then
+      # Non-interactive but --install flag given — auto-install
+      echo "Auto-installing AWS CLI (--install flag)..."
+      install_aws_cli_noninteractive || {
+        echo ""
+        echo "Cannot generate docs without AWS CLI."
+        echo "Install manually: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
+        exit 1
+      }
     else
       # Non-interactive (piped/CI) — just fail
-      echo "Install AWS CLI first, or run interactively for guided install."
+      echo "Install AWS CLI first, or run with --install flag for auto-install."
+      echo "  ./sbh gen-aws-docs --install"
       echo "  https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
       exit 1
     fi

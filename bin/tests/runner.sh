@@ -88,8 +88,25 @@ skip_test() {
 # Runs a bash script with stdout/stderr inherited.  Tests that need raw
 # invocation (e.g. with custom env vars or redirects) use this instead of
 # run_script.
+#
+# On Windows/MINGW, direct 'bash script.sh' can fail silently in some
+# environments (e.g., Claude Code). We use 'bash -c' with the script
+# content, passing $0 as the script path so dirname resolution works.
 run_bash() {
-  bash "$@"
+  local script="$1"; shift
+  local abs_script
+  abs_script=$(cd "$(dirname "$script")" && pwd)/$(basename "$script")
+
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      # Windows: read script content and execute via bash -c
+      # Pass the absolute script path as $0 so dirname resolution works
+      bash -c "$(cat "$abs_script")" "$abs_script" "$@"
+      ;;
+    *)
+      bash "$script" "$@"
+      ;;
+  esac
 }
 
 # -- Script runner helper ----------------------------------------------

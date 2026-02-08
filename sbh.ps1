@@ -13,16 +13,19 @@ function Show-Usage {
     Write-Host "    -Debug         Run debug build (default)"
     Write-Host "  test [suite]   Build and run tests"
     Write-Host "    engine|host|readline|ai|scripts|all (default: all)"
+    Write-Host "  gen-aws-docs   Generate AWS reference docs from live CLI help"
+    Write-Host "    -Install       Auto-install AWS CLI if not found"
 }
 
 $Command = if ($args.Count -gt 0) { $args[0] } else { "" }
 $Rest = @($args | Select-Object -Skip 1)
 
 switch ($Command) {
-    "setup" { & "$RepoRoot\bin\setup.ps1" @Rest }
-    "build" { & "$RepoRoot\bin\build.ps1" @Rest }
-    "run"   { & "$RepoRoot\bin\run.ps1"   @Rest }
-    "test"  { & "$RepoRoot\bin\test.ps1"  @Rest }
+    "setup"        { & "$RepoRoot\bin\setup.ps1" @Rest }
+    "build"        { & "$RepoRoot\bin\build.ps1" @Rest }
+    "run"          { & "$RepoRoot\bin\run.ps1"   @Rest }
+    "test"         { & "$RepoRoot\bin\test.ps1"  @Rest }
+    "gen-aws-docs" { & "$RepoRoot\bin\gen-aws-docs.ps1" @Rest }
     { $_ -in "help", "-h", "--help", "" } { Show-Usage }
     default {
         Show-Usage

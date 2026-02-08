@@ -7,6 +7,23 @@ REPO_ROOT="$(cd "$TESTS_DIR/../.." && pwd)"
 SCRIPT="$REPO_ROOT/bin/gen-aws-docs.sh"
 SBH="$REPO_ROOT/sbh"
 
+# -- Helper: run script (Windows-compatible) ---------------------------
+# On Windows/MINGW, direct 'bash script.sh' fails silently. Use bash -c instead.
+_run_script() {
+  local script="$1"; shift
+  local abs_script
+  abs_script=$(cd "$(dirname "$script")" && pwd)/$(basename "$script")
+
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      bash -c "$(cat "$abs_script")" "$abs_script" "$@"
+      ;;
+    *)
+      bash "$script" "$@"
+      ;;
+  esac
+}
+
 # -- Helper: source script functions without executing main ------------
 # Sources lib/common.sh and all function definitions from gen-aws-docs.sh
 # but skips the `source` line (we handle it) and the `main "$@"` call.
@@ -408,13 +425,13 @@ test_noninteractive_exits_1_without_aws() {
 
 test_noninteractive_prints_install_url() {
   local combined
-  combined=$( (bash "$SCRIPT" < /dev/null) 2>&1 ) || true
+  combined=$( (_run_script "$SCRIPT" < /dev/null) 2>&1 ) || true
   assert_contains "$combined" "docs.aws.amazon.com" "should print AWS install URL"
 }
 
 test_noninteractive_mentions_aws_cli_not_found() {
   local combined
-  combined=$( (bash "$SCRIPT" < /dev/null) 2>&1 ) || true
+  combined=$( (_run_script "$SCRIPT" < /dev/null) 2>&1 ) || true
   assert_contains "$combined" "AWS CLI not found" "should say AWS CLI not found"
 }
 
@@ -429,7 +446,7 @@ test_mock_aws_generates_three_files() {
 
   local combined ec
   combined=$(
-    PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" bash "$SCRIPT" 2>&1
+    PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" _run_script "$SCRIPT" 2>&1
   ) || true
   ec=$?
 
@@ -450,7 +467,7 @@ test_mock_services_reference_contains_expected_sections() {
   mock_dir=$(_create_aws_mock)
   out_dir=$(mktemp -d)
 
-  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" bash "$SCRIPT" >/dev/null 2>&1 || true
+  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" _run_script "$SCRIPT" >/dev/null 2>&1 || true
 
   local content=""
   [ -f "$out_dir/services_reference.md" ] && content=$(cat "$out_dir/services_reference.md")
@@ -466,7 +483,7 @@ test_mock_services_reference_contains_subcommands() {
   mock_dir=$(_create_aws_mock)
   out_dir=$(mktemp -d)
 
-  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" bash "$SCRIPT" >/dev/null 2>&1 || true
+  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" _run_script "$SCRIPT" >/dev/null 2>&1 || true
 
   local content=""
   [ -f "$out_dir/services_reference.md" ] && content=$(cat "$out_dir/services_reference.md")
@@ -481,7 +498,7 @@ test_mock_services_reference_has_version_comment() {
   mock_dir=$(_create_aws_mock)
   out_dir=$(mktemp -d)
 
-  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" bash "$SCRIPT" >/dev/null 2>&1 || true
+  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" _run_script "$SCRIPT" >/dev/null 2>&1 || true
 
   local content=""
   [ -f "$out_dir/services_reference.md" ] && content=$(cat "$out_dir/services_reference.md")
@@ -495,7 +512,7 @@ test_mock_iac_patterns_contains_cdk_sam_terraform() {
   mock_dir=$(_create_aws_mock)
   out_dir=$(mktemp -d)
 
-  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" bash "$SCRIPT" >/dev/null 2>&1 || true
+  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" _run_script "$SCRIPT" >/dev/null 2>&1 || true
 
   local content=""
   [ -f "$out_dir/iac_patterns.md" ] && content=$(cat "$out_dir/iac_patterns.md")
@@ -511,7 +528,7 @@ test_mock_iac_patterns_contains_cloudformation_recipes() {
   mock_dir=$(_create_aws_mock)
   out_dir=$(mktemp -d)
 
-  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" bash "$SCRIPT" >/dev/null 2>&1 || true
+  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" _run_script "$SCRIPT" >/dev/null 2>&1 || true
 
   local content=""
   [ -f "$out_dir/iac_patterns.md" ] && content=$(cat "$out_dir/iac_patterns.md")
@@ -526,7 +543,7 @@ test_mock_troubleshooting_contains_auth_section() {
   mock_dir=$(_create_aws_mock)
   out_dir=$(mktemp -d)
 
-  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" bash "$SCRIPT" >/dev/null 2>&1 || true
+  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" _run_script "$SCRIPT" >/dev/null 2>&1 || true
 
   local content=""
   [ -f "$out_dir/troubleshooting.md" ] && content=$(cat "$out_dir/troubleshooting.md")
@@ -541,7 +558,7 @@ test_mock_troubleshooting_contains_debug_section() {
   mock_dir=$(_create_aws_mock)
   out_dir=$(mktemp -d)
 
-  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" bash "$SCRIPT" >/dev/null 2>&1 || true
+  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" _run_script "$SCRIPT" >/dev/null 2>&1 || true
 
   local content=""
   [ -f "$out_dir/troubleshooting.md" ] && content=$(cat "$out_dir/troubleshooting.md")
@@ -556,7 +573,7 @@ test_mock_troubleshooting_contains_error_tables() {
   mock_dir=$(_create_aws_mock)
   out_dir=$(mktemp -d)
 
-  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" bash "$SCRIPT" >/dev/null 2>&1 || true
+  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" _run_script "$SCRIPT" >/dev/null 2>&1 || true
 
   local content=""
   [ -f "$out_dir/troubleshooting.md" ] && content=$(cat "$out_dir/troubleshooting.md")
@@ -575,7 +592,7 @@ test_output_dir_override_via_env_var() {
   mock_dir=$(_create_aws_mock)
   out_dir=$(mktemp -d)/custom/path
 
-  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" bash "$SCRIPT" >/dev/null 2>&1 || true
+  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" _run_script "$SCRIPT" >/dev/null 2>&1 || true
 
   local exists=0
   [ -d "$out_dir" ] && exists=1
@@ -591,7 +608,7 @@ test_output_prints_byte_counts() {
 
   local combined
   combined=$(
-    PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" bash "$SCRIPT" 2>&1
+    PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" _run_script "$SCRIPT" 2>&1
   ) || true
 
   rm -rf "$mock_dir" "$out_dir"
@@ -625,7 +642,7 @@ test_services_reference_stays_within_budget() {
   mock_dir=$(_create_aws_mock)
   out_dir=$(mktemp -d)
 
-  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" bash "$SCRIPT" >/dev/null 2>&1 || true
+  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" _run_script "$SCRIPT" >/dev/null 2>&1 || true
 
   local size=0
   [ -f "$out_dir/services_reference.md" ] && size=$(wc -c < "$out_dir/services_reference.md")
@@ -645,7 +662,7 @@ test_total_output_within_48k_budget() {
   mock_dir=$(_create_aws_mock)
   out_dir=$(mktemp -d)
 
-  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" bash "$SCRIPT" >/dev/null 2>&1 || true
+  PATH="$mock_dir:$PATH" SWEBASH_AWS_DOCS_DIR="$out_dir" _run_script "$SCRIPT" >/dev/null 2>&1 || true
 
   local total=0
   for f in "$out_dir"/*.md; do
@@ -659,4 +676,115 @@ test_total_output_within_48k_budget() {
     return 1
   fi
   assert_eq 0 0 "total output ($total bytes) within 48k budget"
+}
+
+# =====================================================================
+# Configurable URL tests
+# =====================================================================
+
+test_help_shows_url_env_vars() {
+  local combined
+  combined=$( (_run_script "$SCRIPT" --help) 2>&1 ) || true
+  assert_contains "$combined" "SWEBASH_AWS_CLI_URL_LINUX_X64" "help should list Linux x64 URL env var"
+  assert_contains "$combined" "SWEBASH_AWS_CLI_URL_LINUX_ARM" "help should list Linux ARM URL env var"
+  assert_contains "$combined" "SWEBASH_AWS_CLI_URL_MACOS" "help should list macOS URL env var"
+  assert_contains "$combined" "SWEBASH_AWS_CLI_URL_WINDOWS" "help should list Windows URL env var"
+}
+
+test_url_vars_default_to_aws_urls() {
+  local result
+  result=$(
+    _load_functions
+    echo "$AWS_CLI_URL_LINUX_X64"
+  )
+  assert_contains "$result" "awscli.amazonaws.com" "Linux x64 URL should default to AWS"
+  assert_contains "$result" "x86_64" "Linux x64 URL should contain x86_64"
+}
+
+test_url_vars_linux_arm_default() {
+  local result
+  result=$(
+    _load_functions
+    echo "$AWS_CLI_URL_LINUX_ARM"
+  )
+  assert_contains "$result" "awscli.amazonaws.com" "Linux ARM URL should default to AWS"
+  assert_contains "$result" "aarch64" "Linux ARM URL should contain aarch64"
+}
+
+test_url_vars_macos_default() {
+  local result
+  result=$(
+    _load_functions
+    echo "$AWS_CLI_URL_MACOS"
+  )
+  assert_contains "$result" "awscli.amazonaws.com" "macOS URL should default to AWS"
+  assert_contains "$result" ".pkg" "macOS URL should be .pkg"
+}
+
+test_url_vars_windows_default() {
+  local result
+  result=$(
+    _load_functions
+    echo "$AWS_CLI_URL_WINDOWS"
+  )
+  assert_contains "$result" "awscli.amazonaws.com" "Windows URL should default to AWS"
+  assert_contains "$result" ".msi" "Windows URL should be .msi"
+}
+
+test_url_override_via_env_var() {
+  local result
+  result=$(
+    export SWEBASH_AWS_CLI_URL_LINUX_X64="https://mirror.example.com/aws-cli.zip"
+    _load_functions
+    echo "$AWS_CLI_URL_LINUX_X64"
+  )
+  assert_eq "https://mirror.example.com/aws-cli.zip" "$result" "should use custom URL from env var"
+}
+
+test_url_override_macos_via_env_var() {
+  local result
+  result=$(
+    export SWEBASH_AWS_CLI_URL_MACOS="https://corp.mirror/AWSCLIV2.pkg"
+    _load_functions
+    echo "$AWS_CLI_URL_MACOS"
+  )
+  assert_eq "https://corp.mirror/AWSCLIV2.pkg" "$result" "should use custom macOS URL from env var"
+}
+
+test_url_override_windows_via_env_var() {
+  local result
+  result=$(
+    export SWEBASH_AWS_CLI_URL_WINDOWS="https://internal/AWSCLIV2.msi"
+    _load_functions
+    echo "$AWS_CLI_URL_WINDOWS"
+  )
+  assert_eq "https://internal/AWSCLIV2.msi" "$result" "should use custom Windows URL from env var"
+}
+
+# =====================================================================
+# Help flag tests
+# =====================================================================
+
+test_help_flag_exits_0() {
+  run_script "$SCRIPT" --help
+  assert_exit_code 0 "$EXIT_CODE" "--help should exit 0"
+}
+
+test_h_flag_exits_0() {
+  run_script "$SCRIPT" -h
+  assert_exit_code 0 "$EXIT_CODE" "-h should exit 0"
+}
+
+test_help_shows_install_flag() {
+  local combined
+  combined=$( (_run_script "$SCRIPT" --help) 2>&1 ) || true
+  assert_contains "$combined" "--install" "help should mention --install flag"
+  assert_contains "$combined" "-y" "help should mention -y alias"
+}
+
+test_help_shows_env_vars() {
+  local combined
+  combined=$( (_run_script "$SCRIPT" --help) 2>&1 ) || true
+  assert_contains "$combined" "SWEBASH_AWS_INSTALL" "help should mention SWEBASH_AWS_INSTALL"
+  assert_contains "$combined" "SWEBASH_AWS_DOCS_DIR" "help should mention SWEBASH_AWS_DOCS_DIR"
 }
