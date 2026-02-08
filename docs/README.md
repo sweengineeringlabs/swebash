@@ -62,6 +62,7 @@ Architecture decisions and system design.
 | [AI Integration](3-design/ai_integration.md) | LLM isolation boundary and provider abstraction | Developers, architects |
 | [Command Design](3-design/command_design.md) | AI command triggers and shell-mode dispatch | Developers, architects |
 | [Prompt Engineering](3-design/prompt_engineering.md) | System prompt design principles | Developers, architects |
+| [RAG Architecture](3-design/rag_architecture.md) | RAG subsystem: chunking, embeddings, vector stores, rag_search tool | Developers, architects |
 | [ADR-001](3-design/ADR-001-agent-doc-context.md) | Agent documentation context strategy | Developers, architects |
 | [ADR Index](3-design/adr/README.md) | Architecture decision record index and template | Developers, architects |
 
