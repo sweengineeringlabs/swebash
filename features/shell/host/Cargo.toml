@@ -3,6 +3,9 @@ name = "swebash"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+rag-sqlite = ["swebash-ai/rag-sqlite"]
+
 [dependencies]
 wasmtime = "29"
 anyhow = "1"

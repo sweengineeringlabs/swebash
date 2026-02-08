@@ -81,4 +81,17 @@ pub trait VectorStore: Send + Sync {
 
     /// Check whether any chunks exist for the given agent.
     async fn has_index(&self, agent_id: &str) -> AiResult<bool>;
+
+    /// Load the persisted fingerprint for an agent's index.
+    ///
+    /// Returns `Ok(None)` if no fingerprint has been persisted (e.g.,
+    /// ephemeral stores or first run).  Persistent backends should return
+    /// `Ok(Some(hex))` when a valid index + fingerprint exist on disk.
+    async fn load_fingerprint(&self, agent_id: &str) -> AiResult<Option<String>>;
+
+    /// Persist the fingerprint after a successful index build.
+    ///
+    /// Ephemeral stores may no-op.  Persistent backends must store the
+    /// fingerprint alongside their vector data so it survives process restarts.
+    async fn save_fingerprint(&self, agent_id: &str, fingerprint: &str) -> AiResult<()>;
 }

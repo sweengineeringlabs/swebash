@@ -141,6 +141,14 @@ impl VectorStore for InMemoryVectorStore {
         let data = self.data.read().await;
         Ok(data.get(agent_id).map_or(false, |v| !v.is_empty()))
     }
+
+    async fn load_fingerprint(&self, _agent_id: &str) -> AiResult<Option<String>> {
+        Ok(None)
+    }
+
+    async fn save_fingerprint(&self, _agent_id: &str, _fingerprint: &str) -> AiResult<()> {
+        Ok(())
+    }
 }
 
 // ── FileVectorStore ─────────────────────────────────────────────────
@@ -175,6 +183,11 @@ impl FileVectorStore {
     /// Path to the index file for a given agent.
     fn index_path(&self, agent_id: &str) -> PathBuf {
         self.store_dir.join(format!("{}.index.json", agent_id))
+    }
+
+    /// Path to the fingerprint sidecar file for a given agent.
+    fn fingerprint_path(&self, agent_id: &str) -> PathBuf {
+        self.store_dir.join(format!("{}.fingerprint", agent_id))
     }
 
     /// Load an agent's index from disk into the in-memory cache.
@@ -311,6 +324,12 @@ impl VectorStore for FileVectorStore {
         if path.is_file() {
             let _ = std::fs::remove_file(&path);
         }
+
+        let fp_path = self.fingerprint_path(agent_id);
+        if fp_path.is_file() {
+            let _ = std::fs::remove_file(&fp_path);
+        }
+
         Ok(())
     }
 
@@ -318,6 +337,45 @@ impl VectorStore for FileVectorStore {
         self.ensure_loaded(agent_id).await?;
         let cache = self.cache.read().await;
         Ok(cache.get(agent_id).map_or(false, |v| !v.is_empty()))
+    }
+
+    async fn load_fingerprint(&self, agent_id: &str) -> AiResult<Option<String>> {
+        let fp_path = self.fingerprint_path(agent_id);
+        let index_path = self.index_path(agent_id);
+
+        // Only return a fingerprint if both the sidecar AND the index file exist.
+        // If vectors were deleted but the fingerprint wasn't, don't claim current.
+        if !fp_path.is_file() || !index_path.is_file() {
+            return Ok(None);
+        }
+
+        let fingerprint = std::fs::read_to_string(&fp_path).map_err(|e| {
+            AiError::IndexError(format!(
+                "failed to read fingerprint file {}: {e}",
+                fp_path.display()
+            ))
+        })?;
+
+        Ok(Some(fingerprint))
+    }
+
+    async fn save_fingerprint(&self, agent_id: &str, fingerprint: &str) -> AiResult<()> {
+        std::fs::create_dir_all(&self.store_dir).map_err(|e| {
+            AiError::IndexError(format!(
+                "failed to create store dir {}: {e}",
+                self.store_dir.display()
+            ))
+        })?;
+
+        let fp_path = self.fingerprint_path(agent_id);
+        std::fs::write(&fp_path, fingerprint).map_err(|e| {
+            AiError::IndexError(format!(
+                "failed to write fingerprint file {}: {e}",
+                fp_path.display()
+            ))
+        })?;
+
+        Ok(())
     }
 }
 
@@ -350,7 +408,11 @@ impl SqliteVectorStore {
                 byte_offset INTEGER NOT NULL,
                 embedding TEXT NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_chunks_agent ON chunks(agent_id);",
+            CREATE INDEX IF NOT EXISTS idx_chunks_agent ON chunks(agent_id);
+            CREATE TABLE IF NOT EXISTS fingerprints (
+                agent_id TEXT PRIMARY KEY,
+                fingerprint TEXT NOT NULL
+            );",
         )
         .map_err(|e| AiError::IndexError(format!("failed to init SQLite schema: {e}")))?;
 
@@ -448,8 +510,16 @@ impl VectorStore for SqliteVectorStore {
 
     async fn delete_agent(&self, agent_id: &str) -> AiResult<()> {
         let db = self.db.lock().await;
-        db.execute("DELETE FROM chunks WHERE agent_id = ?1", rusqlite::params![agent_id])
-            .map_err(|e| AiError::IndexError(format!("SQLite delete error: {e}")))?;
+        db.execute(
+            "DELETE FROM chunks WHERE agent_id = ?1",
+            rusqlite::params![agent_id],
+        )
+        .map_err(|e| AiError::IndexError(format!("SQLite delete error: {e}")))?;
+        db.execute(
+            "DELETE FROM fingerprints WHERE agent_id = ?1",
+            rusqlite::params![agent_id],
+        )
+        .map_err(|e| AiError::IndexError(format!("SQLite delete fingerprint error: {e}")))?;
         Ok(())
     }
 
@@ -463,6 +533,32 @@ impl VectorStore for SqliteVectorStore {
             )
             .map_err(|e| AiError::IndexError(format!("SQLite count error: {e}")))?;
         Ok(count > 0)
+    }
+
+    async fn load_fingerprint(&self, agent_id: &str) -> AiResult<Option<String>> {
+        let db = self.db.lock().await;
+        let result = db.query_row(
+            "SELECT fingerprint FROM fingerprints WHERE agent_id = ?1",
+            rusqlite::params![agent_id],
+            |row| row.get::<_, String>(0),
+        );
+        match result {
+            Ok(fp) => Ok(Some(fp)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(AiError::IndexError(format!(
+                "SQLite load fingerprint error: {e}"
+            ))),
+        }
+    }
+
+    async fn save_fingerprint(&self, agent_id: &str, fingerprint: &str) -> AiResult<()> {
+        let db = self.db.lock().await;
+        db.execute(
+            "INSERT OR REPLACE INTO fingerprints (agent_id, fingerprint) VALUES (?1, ?2)",
+            rusqlite::params![agent_id, fingerprint],
+        )
+        .map_err(|e| AiError::IndexError(format!("SQLite save fingerprint error: {e}")))?;
+        Ok(())
     }
 }
 
@@ -936,5 +1032,111 @@ mod tests {
         store.upsert(&chunks, &embeddings).await.unwrap();
 
         assert!(store.has_index("a1").await.unwrap());
+    }
+
+    // ── Fingerprint persistence tests ───────────────────────────────────
+
+    #[tokio::test]
+    async fn in_memory_fingerprint_returns_none() {
+        let store = InMemoryVectorStore::new();
+        assert_eq!(store.load_fingerprint("a1").await.unwrap(), None);
+
+        // save_fingerprint is a no-op; load still returns None.
+        store.save_fingerprint("a1", "abc123").await.unwrap();
+        assert_eq!(store.load_fingerprint("a1").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn file_store_fingerprint_persists() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Save fingerprint with first instance.
+        {
+            let store = FileVectorStore::new(dir.path());
+            let chunks = make_chunks("a1", 1);
+            let embeddings = make_embeddings(1, 4);
+            store.upsert(&chunks, &embeddings).await.unwrap();
+            store.save_fingerprint("a1", "fp_abc123").await.unwrap();
+        }
+
+        // Load with a fresh instance — should survive restart.
+        {
+            let store = FileVectorStore::new(dir.path());
+            let fp = store.load_fingerprint("a1").await.unwrap();
+            assert_eq!(fp, Some("fp_abc123".to_string()));
+        }
+    }
+
+    #[tokio::test]
+    async fn file_store_fingerprint_cleared_on_delete() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileVectorStore::new(dir.path());
+
+        let chunks = make_chunks("a1", 1);
+        let embeddings = make_embeddings(1, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+        store.save_fingerprint("a1", "fp_abc123").await.unwrap();
+
+        assert!(dir.path().join("a1.fingerprint").is_file());
+
+        store.delete_agent("a1").await.unwrap();
+
+        assert!(!dir.path().join("a1.fingerprint").is_file());
+        assert_eq!(store.load_fingerprint("a1").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn file_store_fingerprint_none_without_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileVectorStore::new(dir.path());
+
+        // Write fingerprint file without an index file.
+        std::fs::create_dir_all(dir.path()).unwrap();
+        std::fs::write(dir.path().join("a1.fingerprint"), "fp_orphan").unwrap();
+
+        // Should return None because the index file is missing.
+        assert_eq!(store.load_fingerprint("a1").await.unwrap(), None);
+    }
+
+    #[cfg(feature = "rag-sqlite")]
+    #[tokio::test]
+    async fn sqlite_store_fingerprint_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+
+        // Save fingerprint with first instance.
+        {
+            let store = SqliteVectorStore::new(&db_path).unwrap();
+            store.save_fingerprint("a1", "fp_sqlite_123").await.unwrap();
+        }
+
+        // Load with a fresh instance.
+        {
+            let store = SqliteVectorStore::new(&db_path).unwrap();
+            let fp = store.load_fingerprint("a1").await.unwrap();
+            assert_eq!(fp, Some("fp_sqlite_123".to_string()));
+        }
+    }
+
+    #[cfg(feature = "rag-sqlite")]
+    #[tokio::test]
+    async fn sqlite_store_fingerprint_cleared_on_delete() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let store = SqliteVectorStore::new(&db_path).unwrap();
+
+        let chunks = make_chunks("a1", 1);
+        let embeddings = make_embeddings(1, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+        store.save_fingerprint("a1", "fp_sqlite_456").await.unwrap();
+
+        assert_eq!(
+            store.load_fingerprint("a1").await.unwrap(),
+            Some("fp_sqlite_456".to_string())
+        );
+
+        store.delete_agent("a1").await.unwrap();
+
+        assert_eq!(store.load_fingerprint("a1").await.unwrap(), None);
     }
 }

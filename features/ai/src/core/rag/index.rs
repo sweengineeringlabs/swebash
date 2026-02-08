@@ -61,14 +61,24 @@ impl RagIndexManager {
 
         let fingerprint = compute_fingerprint(&files)?;
 
-        // Check if already indexed with this fingerprint.
+        // Check in-memory fingerprint first (fast path).
         {
             let state = self.index_state.read().await;
             if let Some(existing) = state.get(agent_id) {
                 if *existing == fingerprint {
-                    tracing::debug!(agent = %agent_id, "index is current, skipping rebuild");
+                    tracing::debug!(agent = %agent_id, "index is current (in-memory), skipping rebuild");
                     return Ok(());
                 }
+            }
+        }
+
+        // Check persisted fingerprint (survives process restarts).
+        if let Some(persisted) = self.store.load_fingerprint(agent_id).await? {
+            if persisted == fingerprint {
+                tracing::debug!(agent = %agent_id, "index is current (persisted), skipping rebuild");
+                let mut state = self.index_state.write().await;
+                state.insert(agent_id.to_string(), fingerprint);
+                return Ok(());
             }
         }
 
@@ -78,7 +88,7 @@ impl RagIndexManager {
             "building RAG index"
         );
 
-        // Clear stale data.
+        // Clear stale data (also removes persisted fingerprint).
         self.store.delete_agent(agent_id).await?;
 
         // Chunk all files.
@@ -112,7 +122,10 @@ impl RagIndexManager {
         // Store.
         self.store.upsert(&all_chunks, &embeddings).await?;
 
-        // Update fingerprint.
+        // Persist fingerprint alongside vector data.
+        self.store.save_fingerprint(agent_id, &fingerprint).await?;
+
+        // Update in-memory fingerprint cache.
         {
             let mut state = self.index_state.write().await;
             state.insert(agent_id.to_string(), fingerprint);
@@ -335,6 +348,56 @@ mod tests {
 
         manager.ensure_index("a1", &[], dir.path()).await.unwrap();
         assert!(!store.has_index("a1").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn ensure_index_skips_rebuild_with_persisted_fingerprint() {
+        let dir = tempfile::tempdir().unwrap();
+        let docs_dir = dir.path().join("docs");
+        std::fs::create_dir_all(&docs_dir).unwrap();
+        std::fs::write(docs_dir.join("a.md"), "Persistent fingerprint test content.").unwrap();
+
+        let store_dir = dir.path().join("store");
+        let store = Arc::new(crate::core::rag::stores::FileVectorStore::new(&store_dir));
+        let sources = vec!["docs/*.md".to_string()];
+
+        // Build index with first manager instance.
+        {
+            let embedder = Arc::new(MockEmbedder { dim: 4 });
+            let manager = RagIndexManager::new(
+                embedder,
+                store.clone(),
+                ChunkerConfig::default(),
+            );
+            manager
+                .ensure_index("a1", &sources, dir.path())
+                .await
+                .unwrap();
+            assert!(store.has_index("a1").await.unwrap());
+        }
+
+        // Create a brand-new manager with the same store dir (simulates restart).
+        // The in-memory index_state is empty, but persisted fingerprint should
+        // cause a skip.
+        {
+            let store2 = Arc::new(crate::core::rag::stores::FileVectorStore::new(&store_dir));
+            let embedder2 = Arc::new(MockEmbedder { dim: 4 });
+            let manager2 = RagIndexManager::new(
+                embedder2,
+                store2.clone(),
+                ChunkerConfig::default(),
+            );
+
+            // ensure_index should detect the persisted fingerprint and skip rebuild.
+            manager2
+                .ensure_index("a1", &sources, dir.path())
+                .await
+                .unwrap();
+
+            // Verify the in-memory state was seeded from the persisted fingerprint.
+            let state = manager2.index_state.read().await;
+            assert!(state.contains_key("a1"));
+        }
     }
 
     #[test]
