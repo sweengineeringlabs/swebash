@@ -92,6 +92,7 @@ agents:
       web: false
     docs:
       strategy: rag
+      budget: 12000
       top_k: 5
       sources:
         - "docs/rag-test/*.md"
@@ -105,7 +106,7 @@ agents:
 ```bash
 set -a && source .env && set +a
 export LLM_PROVIDER=anthropic
-export SWEBASH_AI_DOCS_BASE_DIR=~/.config/swebash
+export SWEBASH_AI_DOCS_BASE_DIR="$HOME/.config/swebash"
 ```
 
 ---

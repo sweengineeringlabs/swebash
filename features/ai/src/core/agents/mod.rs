@@ -118,15 +118,18 @@ impl EngineFactory<ConfigAgent> for SwebashEngineFactory {
                                     let agent_id = descriptor.id().to_string();
                                     let srcs = sources.to_vec();
                                     let dir = base_dir.clone();
-                                    // Spawn and block on index build.
-                                    let _ = handle.block_on(async {
-                                        if let Err(e) = mgr.ensure_index(&agent_id, &srcs, &dir).await {
-                                            tracing::warn!(
-                                                agent = %agent_id,
-                                                error = %e,
-                                                "failed to build RAG index, rag_search may return no results"
-                                            );
-                                        }
+                                    // Use block_in_place to allow blocking within the
+                                    // Tokio runtime (EngineFactory::create is sync).
+                                    let _ = tokio::task::block_in_place(|| {
+                                        handle.block_on(async {
+                                            if let Err(e) = mgr.ensure_index(&agent_id, &srcs, &dir).await {
+                                                tracing::warn!(
+                                                    agent = %agent_id,
+                                                    error = %e,
+                                                    "failed to build RAG index, rag_search may return no results"
+                                                );
+                                            }
+                                        })
                                     });
                                 }
                             }
