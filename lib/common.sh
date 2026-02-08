@@ -23,6 +23,10 @@ detect_platform() {
 
 # ── Preflight checks ──────────────────────────────────────────────────
 preflight() {
+  # Allow skipping preflight for unit tests (set SKIP_PREFLIGHT=1)
+  if [ "${SKIP_PREFLIGHT:-}" = "1" ]; then
+    return 0
+  fi
   load_env
   ensure_registry
   verify_registry

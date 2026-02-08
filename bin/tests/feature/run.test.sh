@@ -41,6 +41,7 @@ SHIM
   export PATH="$SHIM_DIR:$PATH"
   export HOME="$FAKE_HOME"
   export CARGO_REGISTRIES_LOCAL_INDEX="file://$FAKE_REGISTRY"
+  export SKIP_PREFLIGHT=1
 }
 
 teardown_shims() {
@@ -52,6 +53,7 @@ teardown_shims() {
   else
     unset CARGO_REGISTRIES_LOCAL_INDEX
   fi
+  unset SKIP_PREFLIGHT
   rm -rf "$SHIM_DIR" "$FAKE_REGISTRY" "$FAKE_HOME" "$FAKE_REPO"
 }
 
