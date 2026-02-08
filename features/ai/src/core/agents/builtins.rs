@@ -245,16 +245,16 @@ pub(crate) fn register_from_yaml(
 /// Search for a user agents config file in standard locations.
 ///
 /// Priority order:
-/// 1. `$SWEBASH_AGENTS_CONFIG` environment variable
+/// 1. `$SWEBASH_AGENTS_CONFIG` environment variable (exclusive — never falls through)
 /// 2. `~/.config/swebash/agents.yaml`
 /// 3. `~/.swebash/agents.yaml`
 fn find_user_agents_config() -> Option<PathBuf> {
-    // 1. Explicit env var
+    // 1. Explicit env var — when set, use it exclusively.
+    //    If the path doesn't exist, return None (don't fall through to defaults).
+    //    This lets callers disable user config by pointing at a nonexistent path.
     if let Ok(path) = std::env::var("SWEBASH_AGENTS_CONFIG") {
         let p = PathBuf::from(path);
-        if p.is_file() {
-            return Some(p);
-        }
+        return if p.is_file() { Some(p) } else { None };
     }
 
     // 2-3. Standard locations under home directory

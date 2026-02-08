@@ -20,7 +20,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 [[package]]
 name = "agent-cache"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "f7b689aecadc1aa4db6cb3e509586832ce3b999366ff5758a7b23f2256f9303d"
 dependencies = [
  "dev-engineeringlabs-rustboot-cache",
@@ -35,7 +35,7 @@ dependencies = [
 [[package]]
 name = "agent-controller"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "2d036f06bfc04f0f7fd4662b6df9a969e5b1df8b604d2fd261ce9bcb32e6986b"
 dependencies = [
  "serde",
@@ -363,7 +363,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "chat"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "6f1978a70c5763ba7d0526a7ae2a5bdba9d088b8690f4d3608b01c963a446d70"
 dependencies = [
  "agent-controller",
@@ -802,7 +802,7 @@ dependencies = [
 [[package]]
 name = "dev-engineeringlabs-rustboot-cache"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "02946a4146313aee9f80d2ad041be030cc8f9e9599d4f7b5421f5083a0cde637"
 dependencies = [
  "parking_lot",
@@ -812,7 +812,7 @@ dependencies = [
 [[package]]
 name = "dev-engineeringlabs-rustboot-config"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "932a199a53001282876e81cdfccaf2a9e0ba2fb7f2ce7f72f043583853240214"
 dependencies = [
  "dotenvy",
@@ -827,7 +827,7 @@ dependencies = [
 [[package]]
 name = "dev-engineeringlabs-rustboot-crypto"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "8439abe1f6cf67c3ae4dc0a9be9680ccb14f64ac64f8c7347069d0b853d5b93e"
 dependencies = [
  "bcrypt",
@@ -839,7 +839,7 @@ dependencies = [
 [[package]]
 name = "dev-engineeringlabs-rustboot-observability"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "3ae7ddf057fef000fdbf437a61e6b263f66817a5e1bf0e24459ea16b816a00b1"
 dependencies = [
  "rustboot-macros",
@@ -850,7 +850,7 @@ dependencies = [
 [[package]]
 name = "dev-engineeringlabs-rustboot-ratelimit"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "695f146c011e7852f7a251fcd41a86f3106421f9366f36cff280e5c98f3e8745"
 dependencies = [
  "thiserror 1.0.69",
@@ -860,7 +860,7 @@ dependencies = [
 [[package]]
 name = "dev-engineeringlabs-rustboot-resilience"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "c333565aa41a93d0224974e355138af20e750fb7ef79bb010bc5e3bf135d208c"
 dependencies = [
  "rustboot-macros",
@@ -871,7 +871,7 @@ dependencies = [
 [[package]]
 name = "dev-engineeringlabs-rustboot-streams"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "1986b2473e4cc672472f0e3e768bca04bbb0bb0de83fb3bea7d716ac66f556ec"
 dependencies = [
  "futures-core",
@@ -882,7 +882,7 @@ dependencies = [
 [[package]]
 name = "dev-engineeringlabs-rustboot-validation"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "5105f3241363b5afadd7a1404ce5f0818609bed9f6f29268debe10abe833e7ec"
 dependencies = [
  "rustboot-macros",
@@ -1986,7 +1986,7 @@ checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 [[package]]
 name = "llm-provider"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "a017df5c7ba254b819f9a0054eb2d01b8fa6c095b43216e43f1df1ca217cb672"
 dependencies = [
  "async-stream",
@@ -2009,7 +2009,7 @@ dependencies = [
 [[package]]
 name = "llm-summarizer"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "df29341de0b1247f43980f7e3fdf0e206551ff59c5e639365f81cc1cee0fd459"
 dependencies = [
  "llm-provider",
@@ -2760,7 +2760,7 @@ dependencies = [
 [[package]]
 name = "react"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "8c8937f854fb62126e7bacf3ac3ec4e954fe7dbd16f6ecd8e6bfd5073e1d11a7"
 dependencies = [
  "agent-cache",
@@ -2945,7 +2945,7 @@ dependencies = [
 [[package]]
 name = "rustboot-error"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "5b5f153d76c0a74298d424f5fd2eb7976313f8161c9a43cc72dc4568e371784b"
 dependencies = [
  "thiserror 1.0.69",
@@ -2954,7 +2954,7 @@ dependencies = [
 [[package]]
 name = "rustboot-macros"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "c03235a97c1fad9881175b7a9da3d01e35970e5c22c325a9f606cefe70ef70d9"
 dependencies = [
  "darling",
@@ -3048,7 +3048,7 @@ dependencies = [
 [[package]]
 name = "rustratify"
 version = "2.0.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "e4346df9b351b7854b4218cd1f145aab828e48227803e46af4dd9bd17666baf3"
 dependencies = [
  "async-trait",
@@ -3067,7 +3067,7 @@ dependencies = [
 [[package]]
 name = "rustratify-macros"
 version = "2.0.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "e74b2728fd1741fd372f87f25636fbba5f868ef15d909f71c58a5e9ff71b8c01"
 dependencies = [
  "proc-macro2",
@@ -3772,7 +3772,7 @@ checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 [[package]]
 name = "tool"
 version = "0.1.0"
-source = "registry+file:///C:/Users/elvis/.cargo/registry.local/index"
+source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
 checksum = "270019590a98f0cc4fcb948e3097cd5c873b3763c15d2df0c5b9311af59eeba7"
 dependencies = [
  "async-trait",

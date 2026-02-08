@@ -1636,8 +1636,12 @@ async fn tool_invocation_streaming_fs_read() {
 // ── Agent framework integration tests ──────────────────────────────────
 
 #[tokio::test]
+#[serial]
 async fn agent_list_returns_all_builtins() {
-    match try_create_service().await {
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", "/tmp/swebash_test_no_user.yaml");
+    let result = try_create_service().await;
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
+    match result {
         Ok(service) => {
             let agents = service.list_agents().await;
             assert_eq!(agents.len(), builtin_count(), "should have all built-in agents");
@@ -2150,8 +2154,11 @@ fn mock_config() -> AiConfig {
 }
 
 #[test]
+#[serial]
 fn yaml_registry_loads_all_default_agents() {
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", "/tmp/swebash_test_no_user.yaml");
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
     let agents = registry.list();
     assert_eq!(agents.len(), builtin_count());
 }
@@ -2225,8 +2232,11 @@ fn yaml_registry_detect_agent_from_keywords() {
 }
 
 #[test]
+#[serial]
 fn yaml_registry_suggest_agent_from_keywords() {
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", "/tmp/swebash_test_no_user.yaml");
     let registry = create_default_registry(Arc::new(MockLlmService::new()), mock_config());
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
     assert_eq!(registry.suggest_agent("docker"), Some("devops"));
     assert_eq!(registry.suggest_agent("k8s"), Some("devops"));
     assert_eq!(registry.suggest_agent("terraform"), Some("devops"));
@@ -2723,7 +2733,10 @@ agents:
 #[tokio::test]
 #[serial]
 async fn yaml_service_list_agents_returns_correct_info() {
-    match try_create_service().await {
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", "/tmp/swebash_test_no_user.yaml");
+    let result = try_create_service().await;
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
+    match result {
         Ok(service) => {
             let agents = service.list_agents().await;
             assert_eq!(agents.len(), builtin_count());
@@ -3016,9 +3029,12 @@ fn delegate_detect_agent_keyword_matching() {
 
 /// Verify suggest_agent uses swebash's keyword-based semantics.
 #[test]
+#[serial]
 fn delegate_suggest_agent_keyword_based() {
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", "/tmp/swebash_test_no_user.yaml");
     let config = mock_config();
     let registry = create_default_registry(Arc::new(MockLlmService::new()), config);
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
 
     // Exact keyword match
     assert_eq!(registry.suggest_agent("docker"), Some("devops"));
@@ -3204,7 +3220,10 @@ agents:
 #[tokio::test]
 #[serial]
 async fn delegate_e2e_service_layer_round_trip() {
-    match try_create_service().await {
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", "/tmp/swebash_test_no_user.yaml");
+    let result = try_create_service().await;
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
+    match result {
         Ok(service) => {
             // Default agent is shell
             assert_eq!(service.active_agent_id().await, "shell");
@@ -4062,6 +4081,7 @@ fn max_iterations_seaaudit_agent_has_25() {
 #[test]
 #[serial]
 fn yaml_project_local_config_overrides_builtin_agent() {
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", "/tmp/swebash_test_no_user.yaml");
     let dir = std::env::temp_dir().join("swebash_test_project_local_override");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join(".swebash")).unwrap();
@@ -4094,12 +4114,14 @@ agents:
     // Total count unchanged (override, not add)
     assert_eq!(registry.list().len(), builtin_count());
 
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
     std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
 #[serial]
 fn yaml_project_local_config_adds_agent() {
+    std::env::set_var("SWEBASH_AGENTS_CONFIG", "/tmp/swebash_test_no_user.yaml");
     let dir = std::env::temp_dir().join("swebash_test_project_local_add");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join(".swebash")).unwrap();
@@ -4127,6 +4149,7 @@ agents:
     assert_eq!(agent.display_name(), "Project Agent");
     assert!(agent.trigger_keywords().contains(&"project".to_string()));
 
+    std::env::remove_var("SWEBASH_AGENTS_CONFIG");
     std::fs::remove_dir_all(&dir).ok();
 }
 
