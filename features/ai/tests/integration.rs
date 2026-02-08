@@ -4060,6 +4060,7 @@ fn max_iterations_seaaudit_agent_has_25() {
 // ── Project-local config tests ──────────────────────────────────────────
 
 #[test]
+#[serial]
 fn yaml_project_local_config_overrides_builtin_agent() {
     let dir = std::env::temp_dir().join("swebash_test_project_local_override");
     let _ = std::fs::remove_dir_all(&dir);
@@ -4097,6 +4098,7 @@ agents:
 }
 
 #[test]
+#[serial]
 fn yaml_project_local_config_adds_agent() {
     let dir = std::env::temp_dir().join("swebash_test_project_local_add");
     let _ = std::fs::remove_dir_all(&dir);
@@ -4129,6 +4131,7 @@ agents:
 }
 
 #[test]
+#[serial]
 fn yaml_project_local_config_with_docs_loads_relative() {
     let dir = std::env::temp_dir().join("swebash_test_project_local_docs");
     let _ = std::fs::remove_dir_all(&dir);
@@ -4222,6 +4225,82 @@ agents:
 
     std::fs::remove_dir_all(&dir).ok();
     std::fs::remove_dir_all(&user_dir).ok();
+}
+
+// ── YAML RAG config tests ───────────────────────────────────────────────
+
+#[test]
+#[serial]
+fn yaml_rag_config_parsed_from_project_local() {
+    use swebash_ai::core::agents::config::AgentsYaml;
+
+    // Parse a YAML with rag section
+    let yaml = r#"
+version: 1
+rag:
+  store: sqlite
+  path: .swebash/test.db
+  chunk_size: 1500
+  chunk_overlap: 150
+agents:
+  - id: test
+    name: Test
+    description: Test agent
+    systemPrompt: Test prompt.
+"#;
+
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let rag = parsed.rag.expect("rag section should be present");
+
+    assert_eq!(rag.store, "sqlite");
+    assert_eq!(rag.path.as_ref().unwrap().to_str().unwrap(), ".swebash/test.db");
+    assert_eq!(rag.chunk_size, 1500);
+    assert_eq!(rag.chunk_overlap, 150);
+}
+
+#[test]
+#[serial]
+fn yaml_rag_config_defaults_when_omitted() {
+    use swebash_ai::core::agents::config::AgentsYaml;
+
+    // Parse a YAML without rag section
+    let yaml = r#"
+version: 1
+agents:
+  - id: test
+    name: Test
+    description: Test agent
+    systemPrompt: Test prompt.
+"#;
+
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    assert!(parsed.rag.is_none(), "rag section should be None when omitted");
+}
+
+#[test]
+#[serial]
+fn yaml_rag_config_partial_fields() {
+    use swebash_ai::core::agents::config::AgentsYaml;
+
+    // Parse a YAML with partial rag section (only store)
+    let yaml = r#"
+version: 1
+rag:
+  store: file
+agents:
+  - id: test
+    name: Test
+    description: Test agent
+    systemPrompt: Test prompt.
+"#;
+
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let rag = parsed.rag.expect("rag section should be present");
+
+    assert_eq!(rag.store, "file");
+    assert!(rag.path.is_none(), "path should use default when omitted");
+    assert_eq!(rag.chunk_size, 2000, "chunk_size should use default");
+    assert_eq!(rag.chunk_overlap, 200, "chunk_overlap should use default");
 }
 
 // ── Error propagation tests ─────────────────────────────────────────────

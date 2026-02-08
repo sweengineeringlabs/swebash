@@ -2,7 +2,7 @@
 ///
 /// Provides serde types for parsing agent YAML files and a `ConfigAgent`
 /// that implements the `AgentDescriptor` trait from parsed configuration.
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -16,7 +16,59 @@ pub struct AgentsYaml {
     pub version: u32,
     #[serde(default)]
     pub defaults: AgentDefaults,
+    /// RAG (Retrieval-Augmented Generation) configuration.
+    #[serde(default)]
+    pub rag: Option<RagYamlConfig>,
     pub agents: Vec<AgentEntry>,
+}
+
+/// RAG configuration section in agents.yaml.
+///
+/// Example YAML:
+/// ```yaml
+/// rag:
+///   store: sqlite          # memory, file, or sqlite
+///   path: .swebash/rag.db  # path for file/sqlite backends
+///   chunk_size: 2000       # document chunk size in chars
+///   chunk_overlap: 200     # overlap between chunks in chars
+/// ```
+#[derive(Debug, Clone, Deserialize)]
+pub struct RagYamlConfig {
+    /// Vector store backend: "memory", "file", or "sqlite".
+    #[serde(default = "default_rag_store")]
+    pub store: String,
+    /// Path for file/sqlite backends.
+    #[serde(default)]
+    pub path: Option<PathBuf>,
+    /// Document chunk size in characters.
+    #[serde(default = "default_chunk_size")]
+    pub chunk_size: usize,
+    /// Overlap between chunks in characters.
+    #[serde(default = "default_chunk_overlap")]
+    pub chunk_overlap: usize,
+}
+
+impl Default for RagYamlConfig {
+    fn default() -> Self {
+        Self {
+            store: default_rag_store(),
+            path: None,
+            chunk_size: default_chunk_size(),
+            chunk_overlap: default_chunk_overlap(),
+        }
+    }
+}
+
+fn default_rag_store() -> String {
+    "memory".to_string()
+}
+
+fn default_chunk_size() -> usize {
+    2000
+}
+
+fn default_chunk_overlap() -> usize {
+    200
 }
 
 /// Default values applied to agents that omit optional fields.

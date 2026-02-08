@@ -12,8 +12,9 @@ use llm_provider::LlmService;
 
 use crate::spi::config::AiConfig;
 use crate::core::rag::index::RagIndexManager;
+use crate::core::rag::stores::VectorStoreConfig;
 
-use super::config::{AgentsYaml, ConfigAgent};
+use super::config::{AgentsYaml, ConfigAgent, RagYamlConfig};
 use super::AgentManager;
 
 /// Embedded default agents YAML, compiled into the binary.
@@ -30,63 +31,123 @@ pub fn builtin_agent_count() -> usize {
         .len()
 }
 
+/// Parsed YAML source with its base directory for agent loading.
+struct YamlSource {
+    parsed: AgentsYaml,
+    base_dir: Option<PathBuf>,
+}
+
 /// Create the default agent registry with all built-in agents.
 ///
 /// Loads agents in three layers (later layers override earlier ones):
 /// 1. Embedded defaults from `default_agents.yaml`
 /// 2. Project-local `.swebash/agents.yaml` in `docs_base_dir` (if present)
 /// 3. User-level config file (whole-agent replacement by ID)
-pub fn create_default_registry(llm: Arc<dyn LlmService>, config: AiConfig) -> AgentManager {
+///
+/// RAG configuration from YAML files is merged with env-based config.
+/// YAML provides defaults; env vars override when set.
+pub fn create_default_registry(llm: Arc<dyn LlmService>, mut config: AiConfig) -> AgentManager {
     let docs_base_dir = config.docs_base_dir.clone();
-    let rag_manager = create_rag_manager(&config);
-    let mut manager = AgentManager::new(llm, config, rag_manager);
 
-    // 1. Parse and register embedded default agents.
-    //    Use docs_base_dir from config so agents with docs_context can load files.
-    register_from_yaml(
-        &mut manager,
-        DEFAULT_AGENTS_YAML,
-        "built-in",
-        docs_base_dir.as_deref(),
-    );
+    // Phase 1: Parse all YAML sources and collect RAG configs.
+    let mut yaml_sources = Vec::new();
+    let mut yaml_rag_config: Option<RagYamlConfig> = None;
 
-    // 2. Look for project-local config (.swebash/agents.yaml in docs_base_dir)
+    // 1. Embedded defaults
+    if let Ok(parsed) = AgentsYaml::from_yaml(DEFAULT_AGENTS_YAML) {
+        if let Some(ref rag) = parsed.rag {
+            yaml_rag_config = Some(rag.clone());
+        }
+        yaml_sources.push(YamlSource {
+            parsed,
+            base_dir: docs_base_dir.clone(),
+        });
+    }
+
+    // 2. Project-local config
     if let Some(ref base) = docs_base_dir {
         let project_config = base.join(".swebash").join("agents.yaml");
         if project_config.is_file() {
-            match std::fs::read_to_string(&project_config) {
-                Ok(contents) => {
-                    tracing::info!("Loading project agents from {}", project_config.display());
-                    register_from_yaml(
-                        &mut manager,
-                        &contents,
-                        &project_config.display().to_string(),
-                        Some(base.as_path()),
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to read project agents file {}: {e}", project_config.display());
+            if let Ok(contents) = std::fs::read_to_string(&project_config) {
+                tracing::info!("Loading project agents from {}", project_config.display());
+                if let Ok(parsed) = AgentsYaml::from_yaml(&contents) {
+                    if let Some(ref rag) = parsed.rag {
+                        yaml_rag_config = Some(rag.clone());
+                    }
+                    yaml_sources.push(YamlSource {
+                        parsed,
+                        base_dir: Some(base.clone()),
+                    });
+                } else {
+                    tracing::warn!("Failed to parse project agents file {}", project_config.display());
                 }
             }
         }
     }
 
-    // 3. Look for user config file and overlay
+    // 3. User config
     if let Some(path) = find_user_agents_config() {
-        let base_dir = path.parent().map(|p| p.to_path_buf());
-        match std::fs::read_to_string(&path) {
-            Ok(contents) => {
-                tracing::info!("Loading user agents from {}", path.display());
-                register_from_yaml(
-                    &mut manager,
-                    &contents,
-                    &path.display().to_string(),
-                    base_dir.as_deref(),
-                );
+        if let Ok(contents) = std::fs::read_to_string(&path) {
+            tracing::info!("Loading user agents from {}", path.display());
+            if let Ok(parsed) = AgentsYaml::from_yaml(&contents) {
+                if let Some(ref rag) = parsed.rag {
+                    yaml_rag_config = Some(rag.clone());
+                }
+                yaml_sources.push(YamlSource {
+                    parsed,
+                    base_dir: path.parent().map(|p| p.to_path_buf()),
+                });
+            } else {
+                tracing::warn!("Failed to parse user agents file {}", path.display());
             }
-            Err(e) => {
-                tracing::warn!("Failed to read user agents file {}: {e}", path.display());
+        }
+    }
+
+    // Phase 2: Merge YAML RAG config with env-based config.
+    // YAML provides defaults; env vars override.
+    if let Some(yaml_rag) = yaml_rag_config {
+        // Only apply YAML config if env vars weren't explicitly set.
+        // We detect this by checking if config still has default values.
+        let env_store_set = std::env::var("SWEBASH_AI_RAG_STORE").is_ok();
+        let env_path_set = std::env::var("SWEBASH_AI_RAG_STORE_PATH").is_ok();
+        let env_chunk_size_set = std::env::var("SWEBASH_AI_RAG_CHUNK_SIZE").is_ok();
+        let env_chunk_overlap_set = std::env::var("SWEBASH_AI_RAG_CHUNK_OVERLAP").is_ok();
+
+        if !env_store_set || !env_path_set {
+            let store = VectorStoreConfig::from_yaml(&yaml_rag.store, yaml_rag.path.clone());
+            if !env_store_set {
+                config.rag.vector_store = store;
             }
+        }
+        if !env_chunk_size_set {
+            config.rag.chunk_size = yaml_rag.chunk_size;
+        }
+        if !env_chunk_overlap_set {
+            config.rag.chunk_overlap = yaml_rag.chunk_overlap;
+        }
+
+        tracing::debug!(
+            store = ?config.rag.vector_store,
+            chunk_size = config.rag.chunk_size,
+            chunk_overlap = config.rag.chunk_overlap,
+            "RAG config merged from YAML"
+        );
+    }
+
+    // Phase 3: Create RAG manager with final config.
+    let rag_manager = create_rag_manager(&config);
+    let mut manager = AgentManager::new(llm, config, rag_manager);
+
+    // Phase 4: Register agents from all YAML sources.
+    for source in yaml_sources {
+        let defaults = source.parsed.defaults;
+        for entry in source.parsed.agents {
+            let agent = ConfigAgent::from_entry_with_base_dir(
+                entry,
+                &defaults,
+                source.base_dir.as_deref(),
+            );
+            manager.register(agent);
         }
     }
 
@@ -158,7 +219,9 @@ fn create_rag_manager(config: &AiConfig) -> Option<Arc<RagIndexManager>> {
 ///
 /// On parse failure, logs a warning and continues with whatever agents
 /// are already registered.
-fn register_from_yaml(
+///
+/// This function is exposed for tests that need to load agents from YAML.
+pub(crate) fn register_from_yaml(
     manager: &mut AgentManager,
     yaml: &str,
     source: &str,

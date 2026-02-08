@@ -526,6 +526,25 @@ impl VectorStoreConfig {
     pub fn sqlite(path: impl Into<PathBuf>) -> Self {
         Self::Sqlite { path: path.into() }
     }
+
+    /// Create a VectorStoreConfig from YAML config values.
+    ///
+    /// # Arguments
+    /// * `store` - Store type: "memory", "file", or "sqlite"
+    /// * `path` - Optional path for file/sqlite backends
+    pub fn from_yaml(store: &str, path: Option<PathBuf>) -> Self {
+        match store.to_lowercase().as_str() {
+            "file" => {
+                let p = path.unwrap_or_else(|| PathBuf::from(".swebash/rag"));
+                Self::File { path: p }
+            }
+            "sqlite" => {
+                let p = path.unwrap_or_else(|| PathBuf::from(".swebash/rag.db"));
+                Self::Sqlite { path: p }
+            }
+            _ => Self::Memory,
+        }
+    }
 }
 
 #[cfg(test)]
