@@ -9,6 +9,19 @@ pub enum AccessKind {
     Write,
 }
 
+/// Strip Windows UNC prefix (\\?\) for consistent path comparison.
+/// On non-Windows or non-UNC paths, returns the path unchanged.
+fn normalize_for_comparison(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let s = path.to_string_lossy();
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            return PathBuf::from(stripped);
+        }
+    }
+    path.to_path_buf()
+}
+
 /// Resolve a potentially-relative path against the current working directory
 /// and canonicalize it. Falls back to joining with CWD if canonicalization
 /// fails (the target may not yet exist for write operations).
@@ -36,9 +49,13 @@ pub fn check_access(
         return Ok(());
     }
 
+    // Normalize paths for comparison (handles Windows UNC prefix differences)
+    let normalized_resolved = normalize_for_comparison(resolved);
+
     // Walk the allowed paths in order — first match wins.
     for rule in &policy.allowed_paths {
-        if resolved.starts_with(&rule.root) {
+        let normalized_root = normalize_for_comparison(&rule.root);
+        if normalized_resolved.starts_with(&normalized_root) {
             return match (kind, rule.mode) {
                 (AccessKind::Read, _) => Ok(()),
                 (AccessKind::Write, AccessMode::ReadWrite) => Ok(()),
