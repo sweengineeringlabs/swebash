@@ -129,6 +129,77 @@ pub fn assert_ai_error_format(err: &AiError, expected_prefix: &str) {
     );
 }
 
+/// Assert that two `AiError` values are the same variant (ignoring inner data).
+///
+/// Uses `std::mem::discriminant` for variant comparison.
+///
+/// # Panics
+///
+/// Panics if the variants differ.
+pub fn assert_ai_error_variant(actual: &AiError, expected: &AiError) {
+    assert_eq!(
+        std::mem::discriminant(actual),
+        std::mem::discriminant(expected),
+        "Expected error variant {:?}, got {:?}",
+        expected,
+        actual,
+    );
+}
+
+/// Assert that an `AiError` Display message contains a given substring.
+///
+/// # Panics
+///
+/// Panics if the error message does not contain `substring`.
+pub fn assert_ai_error_contains(err: &AiError, substring: &str) {
+    let msg = err.to_string();
+    assert!(
+        msg.contains(substring),
+        "Expected error message to contain '{substring}', got: '{msg}'"
+    );
+}
+
+/// Assert that none of the given environment variables are set.
+///
+/// Useful for verifying that a test cleaned up after itself.
+///
+/// # Panics
+///
+/// Panics if any of the keys are present in the environment.
+pub fn assert_env_vars_unset(keys: &[&str]) {
+    let leaked: Vec<&str> = keys
+        .iter()
+        .filter(|k| std::env::var(k).is_ok())
+        .copied()
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "Environment variable(s) still set (potential leak): {:?}",
+        leaked,
+    );
+}
+
+/// Assert that a directory exists and contains no entries.
+///
+/// Useful for verifying that a test did not leak file state.
+///
+/// # Panics
+///
+/// Panics if the directory does not exist, is not a directory, or contains entries.
+pub fn assert_dir_is_empty(path: &std::path::Path) {
+    assert!(path.exists(), "Directory does not exist: {}", path.display());
+    assert!(path.is_dir(), "Path is not a directory: {}", path.display());
+    let entries: Vec<_> = std::fs::read_dir(path)
+        .unwrap_or_else(|e| panic!("Failed to read directory {}: {e}", path.display()))
+        .collect();
+    assert!(
+        entries.is_empty(),
+        "Directory {} is not empty, contains {} entries",
+        path.display(),
+        entries.len(),
+    );
+}
+
 /// Assert that an error is the kind we expect when the provider cannot be
 /// initialised (missing key, bad config, unreachable service, etc.).
 ///
@@ -287,5 +358,76 @@ mod tests {
     fn assert_setup_error_rejects_other_variants() {
         let err = AiError::Timeout;
         assert_setup_error(&err);
+    }
+
+    // ── assert_ai_error_variant tests ───────────────────────────────
+
+    #[test]
+    fn assert_ai_error_variant_same_variant() {
+        let a = AiError::Provider("foo".into());
+        let b = AiError::Provider("bar".into());
+        assert_ai_error_variant(&a, &b);
+    }
+
+    #[test]
+    #[should_panic(expected = "Expected error variant")]
+    fn assert_ai_error_variant_different_variant() {
+        let a = AiError::Provider("foo".into());
+        let b = AiError::Timeout;
+        assert_ai_error_variant(&a, &b);
+    }
+
+    // ── assert_ai_error_contains tests ──────────────────────────────
+
+    #[test]
+    fn assert_ai_error_contains_passes() {
+        let err = AiError::Provider("connection refused".into());
+        assert_ai_error_contains(&err, "connection");
+    }
+
+    #[test]
+    #[should_panic(expected = "Expected error message to contain")]
+    fn assert_ai_error_contains_fails() {
+        let err = AiError::Provider("connection refused".into());
+        assert_ai_error_contains(&err, "timeout");
+    }
+
+    // ── assert_env_vars_unset tests ─────────────────────────────────
+
+    #[test]
+    fn assert_env_vars_unset_passes_when_unset() {
+        let keys = &[
+            "SWEBASH_ASSERT_UNSET_1",
+            "SWEBASH_ASSERT_UNSET_2",
+        ];
+        for k in keys {
+            std::env::remove_var(k);
+        }
+        assert_env_vars_unset(keys);
+    }
+
+    #[test]
+    #[should_panic(expected = "potential leak")]
+    fn assert_env_vars_unset_fails_when_set() {
+        let key = "SWEBASH_ASSERT_LEAK_1";
+        std::env::set_var(key, "leaked");
+        assert_env_vars_unset(&[key]);
+        // cleanup (won't run due to panic, but defensive)
+    }
+
+    // ── assert_dir_is_empty tests ───────────────────────────────────
+
+    #[test]
+    fn assert_dir_is_empty_passes_for_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_dir_is_empty(dir.path());
+    }
+
+    #[test]
+    #[should_panic(expected = "is not empty")]
+    fn assert_dir_is_empty_fails_with_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("leaked.txt"), "oops").unwrap();
+        assert_dir_is_empty(dir.path());
     }
 }

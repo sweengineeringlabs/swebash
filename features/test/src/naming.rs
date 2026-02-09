@@ -114,6 +114,97 @@ pub fn validate_test_name(name: &str, category: TestCategoryKind) -> Result<(), 
     Ok(())
 }
 
+// ── Test Scenario Kind ──────────────────────────────────────────────
+
+/// The 8 test scenario kinds describing WHAT concern is being tested.
+///
+/// Orthogonal to `TestCategoryKind` (WHERE/WHEN) — scenarios describe the
+/// nature of the test case itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TestScenarioKind {
+    /// Happy-path: expected inputs produce expected outputs.
+    HappyPath,
+    /// Error: invalid inputs or failure conditions are handled correctly.
+    Error,
+    /// Edge case: boundary values, empty inputs, extreme sizes.
+    EdgeCase,
+    /// Regression: reproduces a previously-fixed bug.
+    Regression,
+    /// Contract: verifies documented API invariants.
+    Contract,
+    /// Configuration: different config combinations, defaults, overrides.
+    Configuration,
+    /// State management: mutable state, transitions, cleanup.
+    StateManagement,
+    /// Observability: logging, tracing, metrics emission.
+    Observability,
+}
+
+impl TestScenarioKind {
+    /// Recommended function name suffix for this scenario.
+    pub fn suffix(&self) -> &'static str {
+        match self {
+            Self::HappyPath => "_happy",
+            Self::Error => "_error",
+            Self::EdgeCase => "_edge",
+            Self::Regression => "_regression",
+            Self::Contract => "_contract",
+            Self::Configuration => "_config",
+            Self::StateManagement => "_state",
+            Self::Observability => "_observe",
+        }
+    }
+
+    /// Human-readable description of this scenario's purpose.
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::HappyPath => "Expected inputs produce expected outputs",
+            Self::Error => "Invalid inputs or failure conditions are handled correctly",
+            Self::EdgeCase => "Boundary values, empty inputs, extreme sizes",
+            Self::Regression => "Reproduces a previously-fixed bug",
+            Self::Contract => "Verifies documented API invariants",
+            Self::Configuration => "Different config combinations, defaults, overrides",
+            Self::StateManagement => "Mutable state, transitions, cleanup",
+            Self::Observability => "Logging, tracing, metrics emission",
+        }
+    }
+
+    /// All scenario variants.
+    pub fn all() -> &'static [TestScenarioKind] {
+        &[
+            Self::HappyPath,
+            Self::Error,
+            Self::EdgeCase,
+            Self::Regression,
+            Self::Contract,
+            Self::Configuration,
+            Self::StateManagement,
+            Self::Observability,
+        ]
+    }
+}
+
+/// Validate a test function name against both category prefix and scenario suffix.
+///
+/// Returns `Ok(())` if the name satisfies both conventions, or
+/// `Err(TestError::NamingViolation)` with a descriptive message.
+pub fn validate_test_name_full(
+    name: &str,
+    category: TestCategoryKind,
+    scenario: TestScenarioKind,
+) -> Result<(), TestError> {
+    validate_test_name(name, category)?;
+
+    let suffix = scenario.suffix();
+    if !name.ends_with(suffix) {
+        return Err(TestError::NamingViolation(format!(
+            "{scenario:?} test '{name}' should end with '{suffix}'"
+        )));
+    }
+
+    Ok(())
+}
+
 /// Suggest the test file name for a given crate and category.
 ///
 /// Returns `None` for Unit and Feature categories (they are inline).
@@ -320,5 +411,129 @@ mod tests {
             suggest_file_name("ai", TestCategoryKind::Security),
             Some("ai_security_test.rs".into())
         );
+    }
+
+    // ── TestScenarioKind tests ──────────────────────────────────────
+
+    #[test]
+    fn all_scenarios_returns_eight() {
+        assert_eq!(TestScenarioKind::all().len(), 8);
+    }
+
+    #[test]
+    fn scenario_suffixes_are_unique() {
+        let suffixes: Vec<&str> = TestScenarioKind::all().iter().map(|s| s.suffix()).collect();
+        let unique: std::collections::HashSet<&str> = suffixes.iter().copied().collect();
+        assert_eq!(suffixes.len(), unique.len(), "scenario suffixes must be unique");
+    }
+
+    #[test]
+    fn happy_path_suffix() {
+        assert_eq!(TestScenarioKind::HappyPath.suffix(), "_happy");
+    }
+
+    #[test]
+    fn error_suffix() {
+        assert_eq!(TestScenarioKind::Error.suffix(), "_error");
+    }
+
+    #[test]
+    fn edge_case_suffix() {
+        assert_eq!(TestScenarioKind::EdgeCase.suffix(), "_edge");
+    }
+
+    #[test]
+    fn regression_suffix() {
+        assert_eq!(TestScenarioKind::Regression.suffix(), "_regression");
+    }
+
+    #[test]
+    fn contract_suffix() {
+        assert_eq!(TestScenarioKind::Contract.suffix(), "_contract");
+    }
+
+    #[test]
+    fn configuration_suffix() {
+        assert_eq!(TestScenarioKind::Configuration.suffix(), "_config");
+    }
+
+    #[test]
+    fn state_management_suffix() {
+        assert_eq!(TestScenarioKind::StateManagement.suffix(), "_state");
+    }
+
+    #[test]
+    fn observability_suffix() {
+        assert_eq!(TestScenarioKind::Observability.suffix(), "_observe");
+    }
+
+    #[test]
+    fn all_scenarios_have_nonempty_description() {
+        for scenario in TestScenarioKind::all() {
+            assert!(
+                !scenario.description().is_empty(),
+                "{scenario:?} has empty description"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_full_accepts_valid_name() {
+        assert!(validate_test_name_full(
+            "stress_test_concurrent_sessions_happy",
+            TestCategoryKind::Stress,
+            TestScenarioKind::HappyPath,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn validate_full_rejects_missing_prefix() {
+        let result = validate_test_name_full(
+            "concurrent_sessions_happy",
+            TestCategoryKind::Stress,
+            TestScenarioKind::HappyPath,
+        );
+        match result {
+            Err(TestError::NamingViolation(msg)) => {
+                assert!(msg.contains("stress_test_"));
+            }
+            other => panic!("Expected NamingViolation for prefix, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_full_rejects_missing_suffix() {
+        let result = validate_test_name_full(
+            "chat_returns_reply",
+            TestCategoryKind::Integration,
+            TestScenarioKind::HappyPath,
+        );
+        match result {
+            Err(TestError::NamingViolation(msg)) => {
+                assert!(msg.contains("_happy"));
+            }
+            other => panic!("Expected NamingViolation for suffix, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_full_accepts_unit_with_scenario() {
+        assert!(validate_test_name_full(
+            "parse_empty_input_edge",
+            TestCategoryKind::Unit,
+            TestScenarioKind::EdgeCase,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn validate_full_rejects_empty_name() {
+        let result = validate_test_name_full(
+            "",
+            TestCategoryKind::Unit,
+            TestScenarioKind::HappyPath,
+        );
+        assert!(matches!(result, Err(TestError::NamingViolation(_))));
     }
 }

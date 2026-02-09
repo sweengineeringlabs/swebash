@@ -33,6 +33,14 @@ pub enum TestError {
     #[error("stream error: {0}")]
     Stream(String),
 
+    /// Contract verification failure.
+    #[error("contract violation: {0}")]
+    Contract(String),
+
+    /// Observability / tracing assertion failure.
+    #[error("observability error: {0}")]
+    Observability(String),
+
     /// I/O error (from temp dirs, file writes, etc.).
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -88,6 +96,21 @@ mod tests {
     fn test_error_display_security_scanner() {
         let err = TestError::SecurityScanner("scanner init failed".into());
         assert_eq!(err.to_string(), "security scanner error: scanner init failed");
+    }
+
+    #[test]
+    fn test_error_display_contract() {
+        let err = TestError::Contract("missing precondition".into());
+        assert_eq!(err.to_string(), "contract violation: missing precondition");
+    }
+
+    #[test]
+    fn test_error_display_observability() {
+        let err = TestError::Observability("expected tracing event not found".into());
+        assert_eq!(
+            err.to_string(),
+            "observability error: expected tracing event not found"
+        );
     }
 
     #[test]

@@ -68,6 +68,65 @@ impl ScopedTempDir {
     }
 }
 
+// ── ScopedEnvVar ────────────────────────────────────────────────────
+
+/// RAII guard that sets an environment variable and restores the previous
+/// value (or removes the variable) when dropped.
+///
+/// # Example
+///
+/// ```
+/// use swebash_test::fixture::ScopedEnvVar;
+///
+/// {
+///     let _guard = ScopedEnvVar::set("MY_TEST_VAR", "hello");
+///     assert_eq!(std::env::var("MY_TEST_VAR").unwrap(), "hello");
+/// }
+/// // Variable restored to its previous state after drop.
+/// ```
+pub struct ScopedEnvVar {
+    key: String,
+    previous: Option<String>,
+}
+
+impl ScopedEnvVar {
+    /// Set an environment variable, returning an RAII guard that restores
+    /// the previous value on drop.
+    pub fn set(key: &str, value: &str) -> Self {
+        let previous = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        Self {
+            key: key.to_string(),
+            previous,
+        }
+    }
+
+    /// Remove an environment variable, returning an RAII guard that restores
+    /// the previous value on drop.
+    pub fn remove(key: &str) -> Self {
+        let previous = std::env::var(key).ok();
+        std::env::remove_var(key);
+        Self {
+            key: key.to_string(),
+            previous,
+        }
+    }
+
+    /// The environment variable key managed by this guard.
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+}
+
+impl Drop for ScopedEnvVar {
+    fn drop(&mut self) {
+        match &self.previous {
+            Some(val) => std::env::set_var(&self.key, val),
+            None => std::env::remove_var(&self.key),
+        }
+    }
+}
+
 // ── ScopedFixture<T> ─────────────────────────────────────────────────
 
 /// Generic RAII fixture that invokes a cleanup callback on drop.
@@ -209,4 +268,68 @@ mod tests {
     }
 
     use parking_lot::Mutex;
+
+    // ── ScopedEnvVar tests ──────────────────────────────────────────
+    // Note: env var tests use unique key names to avoid cross-test interference.
+
+    #[test]
+    fn scoped_env_var_sets_value() {
+        let key = "SWEBASH_TEST_SET_1";
+        std::env::remove_var(key); // ensure clean state
+        let _guard = ScopedEnvVar::set(key, "hello");
+        assert_eq!(std::env::var(key).unwrap(), "hello");
+    }
+
+    #[test]
+    fn scoped_env_var_restores_on_drop() {
+        let key = "SWEBASH_TEST_RESTORE_1";
+        std::env::set_var(key, "original");
+        {
+            let _guard = ScopedEnvVar::set(key, "overridden");
+            assert_eq!(std::env::var(key).unwrap(), "overridden");
+        }
+        assert_eq!(std::env::var(key).unwrap(), "original");
+        std::env::remove_var(key);
+    }
+
+    #[test]
+    fn scoped_env_var_removes_if_not_previously_set() {
+        let key = "SWEBASH_TEST_REMOVE_AFTER_1";
+        std::env::remove_var(key);
+        {
+            let _guard = ScopedEnvVar::set(key, "temp");
+            assert_eq!(std::env::var(key).unwrap(), "temp");
+        }
+        assert!(std::env::var(key).is_err(), "should be removed after drop");
+    }
+
+    #[test]
+    fn scoped_env_var_remove_clears_variable() {
+        let key = "SWEBASH_TEST_CLEAR_1";
+        std::env::set_var(key, "exists");
+        {
+            let _guard = ScopedEnvVar::remove(key);
+            assert!(std::env::var(key).is_err());
+        }
+        assert_eq!(std::env::var(key).unwrap(), "exists");
+        std::env::remove_var(key);
+    }
+
+    #[test]
+    fn scoped_env_var_key_accessor() {
+        let key = "SWEBASH_TEST_KEY_1";
+        let guard = ScopedEnvVar::set(key, "val");
+        assert_eq!(guard.key(), key);
+    }
+
+    #[test]
+    fn scoped_env_var_remove_noop_when_unset() {
+        let key = "SWEBASH_TEST_NOOP_1";
+        std::env::remove_var(key);
+        {
+            let _guard = ScopedEnvVar::remove(key);
+            assert!(std::env::var(key).is_err());
+        }
+        assert!(std::env::var(key).is_err());
+    }
 }
