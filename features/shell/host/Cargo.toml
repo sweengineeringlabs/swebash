@@ -7,6 +7,7 @@ edition = "2021"
 default = ["rag-local"]
 rag-local = ["swebash-ai/rag-local"]
 rag-sqlite = ["swebash-ai/rag-sqlite"]
+rag-swevecdb = ["swebash-ai/rag-swevecdb"]
 
 [dependencies]
 wasmtime = "29"

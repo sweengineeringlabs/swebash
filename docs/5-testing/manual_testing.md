@@ -80,7 +80,7 @@ export LLM_PROVIDER=anthropic SWEBASH_AI_ENABLED=true
 |----------|--------|-------|
 | [Shell Tests](manual_shell_tests.md) | Shell basics, file ops, history, workspace sandbox | 32 |
 | [AI Tests](manual_ai_tests.md) | AI commands, agents, config, memory, docs context | 97 |
-| [RAG Tests](manual_rag_tests.md) | RAG indexing, retrieval, staleness, vector stores | 38 |
+| [RAG Tests](manual_rag_tests.md) | RAG indexing, retrieval, staleness, vector stores, SweVecDB | 53 |
 | [sbh Launcher Tests](manual_sbh_tests.md) | sbh/sbh.ps1 help, build, test, gen-aws-docs | 42 |
 
 ---
@@ -104,9 +104,9 @@ cargo test -p swebash-ai -p swebash
 | Readline unit tests | `features/shell/readline/src/` | 54 |
 | Host integration | `features/shell/host/tests/integration.rs` | 60 |
 | Host readline tests | `features/shell/host/tests/readline_tests.rs` | 19 |
-| AI unit tests | `features/ai/src/` | 123 |
-| AI integration | `features/ai/tests/integration.rs` | 157 |
-| **Total** | | **433** |
+| AI unit tests | `features/ai/src/` | 182 |
+| AI integration | `features/ai/tests/integration.rs` | 181 |
+| **Total** | | **516** |
 
 ### Agent-Specific Automated Tests
 

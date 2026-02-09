@@ -152,8 +152,9 @@ impl AiConfig {
     /// | `SWEBASH_AI_TOOL_CACHE_MAX` | `200` | Max cached entries |
     /// | `SWEBASH_AI_TOOLS_RAG` | `false` | Enable RAG document search tools |
     /// | `SWEBASH_AI_DOCS_BASE_DIR` | _(cwd)_ | Base dir for agent docs_context source paths |
-    /// | `SWEBASH_AI_RAG_STORE` | `memory` | Vector store: memory, file, sqlite |
+    /// | `SWEBASH_AI_RAG_STORE` | `memory` | Vector store: memory, file, sqlite, swevecdb |
     /// | `SWEBASH_AI_RAG_STORE_PATH` | `.swebash/rag` | Path for file/sqlite store |
+    /// | `SWEBASH_AI_RAG_SWEVECDB_ENDPOINT` | `http://localhost:8080` | SweVecDB server endpoint |
     /// | `SWEBASH_AI_RAG_CHUNK_SIZE` | `2000` | Document chunk size (chars) |
     /// | `SWEBASH_AI_RAG_CHUNK_OVERLAP` | `200` | Chunk overlap (chars) |
     pub fn from_env() -> Self {
@@ -251,6 +252,11 @@ impl AiConfig {
                     .map(PathBuf::from)
                     .unwrap_or_else(|_| PathBuf::from(".swebash/rag.db"));
                 VectorStoreConfig::Sqlite { path }
+            }
+            "swevecdb" => {
+                let endpoint = std::env::var("SWEBASH_AI_RAG_SWEVECDB_ENDPOINT")
+                    .unwrap_or_else(|_| "http://localhost:8080".to_string());
+                VectorStoreConfig::Swevecdb { endpoint }
             }
             _ => VectorStoreConfig::Memory,
         };

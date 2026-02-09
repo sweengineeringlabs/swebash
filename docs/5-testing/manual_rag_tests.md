@@ -1,14 +1,14 @@
 # Manual RAG Tests
 
-> **TLDR:** Manual test checklist for RAG integration: indexing, query-time retrieval, staleness detection, vector store backends, and error handling.
+> **TLDR:** Manual test checklist for RAG integration: indexing, query-time retrieval, staleness detection, vector store backends (Memory, File, SQLite, SweVecDB), and error handling.
 
 **Audience**: Developers, QA
 
 **WHAT**: Manual test procedures for the RAG (Retrieval-Augmented Generation) subsystem
 **WHY**: Validates the end-to-end RAG pipeline from agent config through indexing to query-time retrieval
-**HOW**: Step-by-step test tables with expected outcomes across 8 test groups (38 test cases)
+**HOW**: Step-by-step test tables with expected outcomes across 9 test groups (53 test cases)
 
-> Requires the `rag-local` feature (enabled by default). See [Manual Testing Hub](manual_testing.md) for general prerequisites.
+> Requires the `rag-local` feature (enabled by default). SweVecDB tests additionally require the `rag-swevecdb` feature and a running SweVecDB server. See [Manual Testing Hub](manual_testing.md) for general prerequisites.
 
 ---
 
@@ -20,6 +20,7 @@
 - [Query-Time Retrieval](#query-time-retrieval)
 - [Staleness Detection](#staleness-detection)
 - [Vector Store Backends](#vector-store-backends)
+- [SweVecDB Backend](#swevecdb-backend)
 - [Environment Variable Overrides](#environment-variable-overrides)
 - [AWS-RAG End-to-End](#aws-rag-end-to-end)
 - [Error Handling](#error-handling)
@@ -80,7 +81,7 @@ EOF
 ```yaml
 version: 1
 rag:
-  store: memory                # memory | file | sqlite
+  store: memory                # memory | file | sqlite | swevecdb
 agents:
   - id: ragtest
     name: RAG Test Agent
@@ -157,7 +158,68 @@ export SWEBASH_AI_DOCS_BASE_DIR="$HOME/.config/swebash"
 | File store | Set `rag.store: file` and `rag.path: /tmp/rag-test` in YAML, restart, use `@ragtest` | RAG search works; `/tmp/rag-test/ragtest.index.json` file created |
 | File store persists | With file store configured, restart shell, switch to `@ragtest` | Logs `index is current, skipping rebuild` if docs unchanged (loaded from file) |
 | SQLite store | Set `rag.store: sqlite` and `rag.path: /tmp/rag-test.db` in YAML (requires `rag-sqlite` feature), restart | RAG search works; SQLite database file created at specified path |
+| SweVecDB store | Set `rag.store: swevecdb` and `rag.path: http://localhost:8080` in YAML (requires `rag-swevecdb` feature and running SweVecDB server), restart | RAG search works; data stored in SweVecDB collection `swebash_ragtest` |
 | Invalid store fallback | Set `rag.store: invalid` in YAML, restart | Falls back to memory store; agent works normally |
+
+## SweVecDB Backend
+
+> Requires the `rag-swevecdb` feature (`cargo build -p swebash --features rag-swevecdb`) and a running SweVecDB server on `http://localhost:8080` (or custom endpoint).
+
+### SweVecDB Prerequisites
+
+1. Start a SweVecDB server:
+
+```bash
+# From the swevecdb directory
+cd ../swevecdb/swevecdb
+cargo run --release
+# Server listens on http://localhost:8080 by default
+```
+
+2. Configure the agent to use SweVecDB:
+
+```yaml
+version: 1
+rag:
+  store: swevecdb
+  path: "http://localhost:8080"    # SweVecDB endpoint (optional, defaults to localhost:8080)
+agents:
+  - id: ragtest
+    name: RAG Test Agent
+    # ... same as Prerequisites above
+```
+
+### Store Operations
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| Collection created on index | Switch to `@ragtest`, observe logs | Log: `building RAG index`; SweVecDB collection `swebash_ragtest` created with vectors |
+| Search returns results | Ask "what authentication method does the API use?" | LLM calls `rag_search`; results returned from SweVecDB with scores and source paths |
+| Collection deleted on agent delete | Call `delete_agent` (via engine internals or restart with different agent ID) | Collection `swebash_ragtest` removed from SweVecDB |
+| Empty collection search | Create agent with `sources: []`, search | `rag_search` returns "No relevant documentation found" |
+
+### Persistence and Fingerprinting
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| Data persists across restarts | Build index with `@ragtest`, restart shell, switch to `@ragtest` | Logs `index is current, skipping rebuild` (fingerprint loaded from SweVecDB sentinel vector) |
+| Fingerprint stored as sentinel | After index build, inspect SweVecDB collection via API | Sentinel vector `__swebash_fingerprint__` exists with `fingerprint` metadata |
+| Fingerprint triggers rebuild | Modify a doc file, switch away and back to `@ragtest` | Fingerprint mismatch detected; index rebuilds; sentinel updated |
+| Fingerprint cleared on delete | Delete agent, check collection | Collection deleted; fingerprint gone |
+
+### Agent Isolation
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| Agents use separate collections | Configure two RAG agents (`ragtest` and `ragtest2`) both using swevecdb, build indexes | Two collections: `swebash_ragtest` and `swebash_ragtest2` |
+| Cross-agent search isolated | Search in `@ragtest` for content only in `@ragtest2`'s docs | Returns "No relevant documentation found" (collections are separate) |
+
+### SweVecDB Connection Errors
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| Server unreachable | Stop SweVecDB, configure `rag.store: swevecdb`, switch to `@ragtest` | Error logged: `swevecdb connect failed` or index build fails gracefully |
+| Invalid endpoint | Set `rag.path: http://invalid:9999`, restart | Error on index build; agent does not crash |
 
 ## Environment Variable Overrides
 
@@ -166,6 +228,8 @@ export SWEBASH_AI_DOCS_BASE_DIR="$HOME/.config/swebash"
 | Env overrides YAML store | Set `SWEBASH_AI_RAG_STORE=file` and `SWEBASH_AI_RAG_STORE_PATH=/tmp/env-rag`, restart | File store used regardless of YAML `rag.store` value |
 | Env overrides chunk size | Set `SWEBASH_AI_RAG_CHUNK_SIZE=500`, restart, switch to `@ragtest` | Index built with smaller chunks (more chunks than default) |
 | Env overrides chunk overlap | Set `SWEBASH_AI_RAG_CHUNK_OVERLAP=50`, restart | Chunks have less overlap (visible in chunk count changes) |
+| Env overrides swevecdb store | Set `SWEBASH_AI_RAG_STORE=swevecdb`, restart (requires `rag-swevecdb` feature and running server) | SweVecDB store used regardless of YAML `rag.store` value |
+| Env overrides swevecdb endpoint | Set `SWEBASH_AI_RAG_STORE=swevecdb` and `SWEBASH_AI_RAG_SWEVECDB_ENDPOINT=http://custom:9090`, restart | SweVecDB client connects to custom endpoint |
 
 ## AWS-RAG End-to-End
 
@@ -188,6 +252,8 @@ export SWEBASH_AI_DOCS_BASE_DIR="$HOME/.config/swebash"
 | Empty query rejected | Call `rag_search` with empty query (via prompt injection test) | Tool returns error: "'query' must not be empty" |
 | Agent with no index | Create agent with `strategy: rag` but empty `sources: []`, switch to it, ask a question | `rag_search` returns "No relevant documentation found" gracefully |
 | Graceful without rag-local | Build without `rag-local` feature (`cargo build --no-default-features`), configure RAG agent | Agent falls back to preload behavior; warning logged about RAG being disabled |
+| SweVecDB without feature | Build without `rag-swevecdb` feature, set `rag.store: swevecdb` | Error: "SweVecDB vector store requires the 'rag-swevecdb' feature"; agent does not start |
+| SweVecDB server down mid-session | Build index successfully, then stop SweVecDB server, then query `rag_search` | `rag_search` returns error; LLM handles gracefully without crashing |
 
 ---
 

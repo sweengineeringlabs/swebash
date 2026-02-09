@@ -36,6 +36,7 @@ use swebash_ai::core::rag::index::RagIndexManager;
 use swebash_ai::core::rag::stores::InMemoryVectorStore;
 use swebash_ai::core::rag::tool::RagTool;
 use swebash_ai::spi::rag::{EmbeddingProvider, VectorStore};
+use swebash_test::prelude::*;
 use tool::Tool;
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -83,18 +84,6 @@ async fn try_create_service_with_tools(config: AiConfig) -> AiResult<DefaultAiSe
     let llm = client.llm_service();
     let agents = swebash_ai::core::agents::builtins::create_default_registry(llm, config.clone());
     Ok(DefaultAiService::new(Box::new(client), agents, config))
-}
-
-/// Assert that `err` is the kind we expect when the provider cannot be
-/// initialised (missing key, bad config, unreachable service, …).
-fn assert_setup_error(err: &AiError) {
-    match err {
-        AiError::NotConfigured(_) | AiError::Provider(_) => {}
-        other => panic!(
-            "Expected NotConfigured or Provider for missing configuration, got: {:?}",
-            other
-        ),
-    }
 }
 
 // ── Config tests (3) ─────────────────────────────────────────────────────
@@ -748,44 +737,8 @@ async fn chat_streaming_multi_turn_preserves_history() {
 // Invariant: concatenated Delta content == Done content.
 // A consumer must print EITHER the deltas OR the Done text, never both.
 
-/// Mock AiClient for tests that need a DefaultAiService without a real API key.
-struct MockAiClient;
-
-#[async_trait::async_trait]
-impl swebash_ai::spi::AiClient for MockAiClient {
-    async fn complete(
-        &self,
-        _messages: Vec<swebash_ai::api::types::AiMessage>,
-        _options: swebash_ai::api::types::CompletionOptions,
-    ) -> AiResult<swebash_ai::api::types::AiResponse> {
-        Ok(swebash_ai::api::types::AiResponse {
-            content: "mock".into(),
-            model: "mock".into(),
-        })
-    }
-    async fn is_ready(&self) -> bool { true }
-    fn description(&self) -> String { "mock".into() }
-    fn provider_name(&self) -> String { "mock".into() }
-    fn model_name(&self) -> String { "mock".into() }
-}
-
-/// Build a DefaultAiService backed by MockLlmService (no API key required).
-fn create_mock_service() -> DefaultAiService {
-    let config = mock_config();
-    let llm: Arc<dyn LlmService> = Arc::new(MockLlmService::new());
-    let agents = create_default_registry(llm, config.clone());
-    DefaultAiService::new(Box::new(MockAiClient), agents, config)
-}
-
-/// Build a mock service with a fixed LLM response.
-fn create_mock_service_fixed(response: &str) -> DefaultAiService {
-    let config = mock_config();
-    let llm: Arc<dyn LlmService> = Arc::new(
-        MockLlmService::new().with_behaviour(MockBehaviour::Fixed(response.to_string())),
-    );
-    let agents = create_default_registry(llm, config.clone());
-    DefaultAiService::new(Box::new(MockAiClient), agents, config)
-}
+// MockAiClient, create_mock_service(), and create_mock_service_fixed()
+// are now provided by swebash_test::prelude::*.
 
 /// The concatenated Delta content must equal the Done content.
 /// If a consumer printed both, the text would appear twice — the original bug.
@@ -1015,6 +968,183 @@ async fn error_disabled_service_propagates_through_chat() {
         }
         Err(e) => assert_setup_error(&e),
     }
+}
+
+// ── Error handling chain end-to-end (6) ──────────────────────────────────
+//
+// These tests verify the full error propagation chain: a mock LLM error
+// flows through the chat engine, streaming layer, and error formatting
+// to produce the expected user-facing message — with no panics and no
+// broken service state.
+
+// create_mock_service_error(), ErrorMockAiClient, and create_mock_service_full_error()
+// are now provided by swebash_test::prelude::*.
+
+#[tokio::test]
+async fn error_chain_chat_returns_provider_error() {
+    let service = create_mock_service_error("credit balance too low");
+    let result = service
+        .chat(ChatRequest {
+            message: "hello".to_string(),
+        })
+        .await;
+
+    match result {
+        Err(AiError::Provider(msg)) => {
+            assert!(
+                msg.contains("credit balance too low"),
+                "Expected error to contain 'credit balance too low', got: {msg}"
+            );
+        }
+        Err(other) => panic!("Expected AiError::Provider, got: {other:?}"),
+        Ok(_) => panic!("Expected error, got Ok"),
+    }
+}
+
+#[tokio::test]
+async fn error_chain_chat_streaming_delivers_error_in_done_event() {
+    let service = create_mock_service_error("credit balance too low");
+    let mut rx = service
+        .chat_streaming(ChatRequest {
+            message: "hello".to_string(),
+        })
+        .await
+        .expect("chat_streaming should return a receiver even on LLM error");
+
+    let mut events = Vec::new();
+    while let Some(event) = rx.recv().await {
+        events.push(event);
+    }
+
+    let last = events.last().expect("should receive at least one event");
+    match last {
+        ChatStreamEvent::Done(text) => {
+            assert!(
+                text.contains("Error:") || text.contains("error"),
+                "Done event should indicate an error, got: {text}"
+            );
+            assert!(
+                text.contains("credit balance too low"),
+                "Done event should contain the original error message, got: {text}"
+            );
+        }
+        ChatStreamEvent::Delta(d) => {
+            panic!("Last event should be Done, got Delta: {d}")
+        }
+    }
+}
+
+#[tokio::test]
+async fn error_chain_translate_returns_provider_error() {
+    // translate() goes through AiClient.complete(), not the LLM/ChatEngine path,
+    // so we need a client-level mock that errors.
+    let service = create_mock_service_full_error("insufficient credits");
+    let result = service
+        .translate(TranslateRequest {
+            natural_language: "list files".to_string(),
+            cwd: "/".to_string(),
+            recent_commands: vec![],
+        })
+        .await;
+
+    assert!(result.is_err(), "Expected error, got Ok");
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(
+        err_msg.contains("insufficient credits"),
+        "Error should contain 'insufficient credits', got: {err_msg}"
+    );
+}
+
+#[test]
+fn error_chain_error_message_format_matches_display() {
+    // Provider
+    let err = AiError::Provider("credit balance too low".to_string());
+    assert_eq!(
+        err.to_string(),
+        "AI provider error: credit balance too low"
+    );
+
+    // NotConfigured
+    let err = AiError::NotConfigured("missing key".to_string());
+    assert_eq!(err.to_string(), "AI not configured: missing key");
+
+    // RateLimited
+    let err = AiError::RateLimited;
+    assert_eq!(
+        err.to_string(),
+        "AI rate limited, please try again later"
+    );
+
+    // Timeout
+    let err = AiError::Timeout;
+    assert_eq!(err.to_string(), "AI request timed out");
+
+    // IndexError
+    let err = AiError::IndexError("embedding failed".to_string());
+    assert_eq!(err.to_string(), "RAG index error: embedding failed");
+}
+
+#[tokio::test]
+async fn error_chain_streaming_error_does_not_send_deltas_after_error() {
+    let service = create_mock_service_error("backend unavailable");
+    let mut rx = service
+        .chat_streaming(ChatRequest {
+            message: "hello".to_string(),
+        })
+        .await
+        .expect("chat_streaming should return a receiver");
+
+    let mut events = Vec::new();
+    while let Some(event) = rx.recv().await {
+        events.push(event);
+    }
+
+    // Find the position of the Done event that carries an error.
+    let done_pos = events.iter().position(|e| {
+        matches!(e, ChatStreamEvent::Done(text) if text.contains("Error:") || text.contains("error"))
+    });
+
+    if let Some(pos) = done_pos {
+        let after_done: Vec<_> = events[pos + 1..].to_vec();
+        assert!(
+            after_done.is_empty(),
+            "No events should appear after the error Done event, got {} extra event(s)",
+            after_done.len()
+        );
+    }
+    // If no error Done event was found, the error may have surfaced as an
+    // Err() from chat_streaming itself — which is also valid error handling.
+}
+
+#[tokio::test]
+async fn error_chain_service_remains_usable_after_error() {
+    let service = create_mock_service_error("temporary failure");
+
+    // First call: expect an error.
+    let result = service
+        .chat(ChatRequest {
+            message: "hello".to_string(),
+        })
+        .await;
+    assert!(result.is_err(), "First call should fail");
+
+    // Service introspection should still work — no poisoned state.
+    assert!(
+        service.is_available().await,
+        "Service should remain available after an LLM error"
+    );
+
+    let agents = service.list_agents().await;
+    assert!(
+        !agents.is_empty(),
+        "list_agents should still return agents after an error"
+    );
+
+    let current = service.current_agent().await;
+    assert!(
+        !current.id.is_empty(),
+        "current_agent should return a valid agent after an error"
+    );
 }
 
 // ── Error mapping tests (6) ──────────────────────────────────────────────
@@ -2138,20 +2268,7 @@ fn config_agent_inherits_custom_defaults() {
 
 // ── YAML config: registry integration tests (9) ────────────────────────
 
-fn mock_config() -> AiConfig {
-    AiConfig {
-        enabled: true,
-        provider: "mock".into(),
-        model: "mock".into(),
-        history_size: 20,
-        default_agent: "shell".into(),
-        agent_auto_detect: true,
-        tools: ToolConfig::default(),
-        log_dir: None,
-        docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
-    }
-}
+// mock_config() is now provided by swebash_test::prelude::*.
 
 #[test]
 #[serial]
@@ -4683,33 +4800,7 @@ fn yaml_docs_context_partial_resolution_loads_available() {
 
 // ── RAG Integration Tests ───────────────────────────────────────────────
 
-/// Mock embedding provider for RAG integration tests.
-struct MockEmbedder;
-
-#[async_trait::async_trait]
-impl EmbeddingProvider for MockEmbedder {
-    async fn embed(&self, texts: &[String]) -> AiResult<Vec<Vec<f32>>> {
-        // Return unique vectors based on text content hash for deterministic search.
-        Ok(texts
-            .iter()
-            .map(|t| {
-                let hash = t.bytes().fold(0u32, |acc, b| acc.wrapping_add(b as u32));
-                let mut v = vec![0.0f32; 8];
-                v[(hash as usize) % 8] = 1.0;
-                v[((hash >> 4) as usize) % 8] += 0.5;
-                v
-            })
-            .collect())
-    }
-
-    fn dimension(&self) -> usize {
-        8
-    }
-
-    fn model_name(&self) -> &str {
-        "mock-embedder"
-    }
-}
+// MockEmbedder is now provided by swebash_test::prelude::*.
 
 #[tokio::test]
 async fn rag_index_handles_documents_without_sentence_boundaries() {
@@ -4937,4 +5028,372 @@ async fn rag_tool_e2e_validates_query_parameter() {
     // Empty query parameter.
     let result = tool.execute(serde_json::json!({"query": "   "})).await;
     assert!(result.is_err(), "should error on empty query");
+}
+
+// ── SweVecDB YAML config integration tests ──────────────────────────────
+
+#[test]
+#[serial]
+fn yaml_rag_config_parses_swevecdb_store() {
+    use swebash_ai::core::agents::config::AgentsYaml;
+
+    let yaml = r#"
+version: 1
+rag:
+  store: swevecdb
+  path: http://vecdb.example.com:9090
+  chunk_size: 1000
+  chunk_overlap: 100
+agents:
+  - id: test
+    name: Test
+    description: Test agent
+    systemPrompt: Test prompt.
+"#;
+
+    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let rag = parsed.rag.expect("rag section should be present");
+
+    assert_eq!(rag.store, "swevecdb");
+    assert_eq!(
+        rag.path.as_ref().unwrap().to_str().unwrap(),
+        "http://vecdb.example.com:9090"
+    );
+    assert_eq!(rag.chunk_size, 1000);
+    assert_eq!(rag.chunk_overlap, 100);
+}
+
+#[test]
+#[serial]
+fn yaml_rag_config_swevecdb_builds_vector_store_config() {
+    use swebash_ai::core::rag::stores::VectorStoreConfig;
+
+    let config = VectorStoreConfig::from_yaml(
+        "swevecdb",
+        Some(PathBuf::from("http://my-vecdb:8080")),
+    );
+    match config {
+        VectorStoreConfig::Swevecdb { endpoint } => {
+            assert_eq!(endpoint, "http://my-vecdb:8080");
+        }
+        other => panic!("expected Swevecdb variant, got {other:?}"),
+    }
+}
+
+#[test]
+#[serial]
+fn yaml_rag_config_swevecdb_default_endpoint() {
+    use swebash_ai::core::rag::stores::VectorStoreConfig;
+
+    let config = VectorStoreConfig::from_yaml("swevecdb", None);
+    match config {
+        VectorStoreConfig::Swevecdb { endpoint } => {
+            assert_eq!(endpoint, "http://localhost:8080");
+        }
+        other => panic!("expected Swevecdb variant, got {other:?}"),
+    }
+}
+
+// ── SweVecDB env var config integration tests ───────────────────────────
+
+#[test]
+#[serial]
+fn config_env_swevecdb_store_with_endpoint() {
+    std::env::set_var("SWEBASH_AI_RAG_STORE", "swevecdb");
+    std::env::set_var("SWEBASH_AI_RAG_SWEVECDB_ENDPOINT", "http://prod-vecdb:9090");
+    let config = AiConfig::from_env();
+    std::env::remove_var("SWEBASH_AI_RAG_STORE");
+    std::env::remove_var("SWEBASH_AI_RAG_SWEVECDB_ENDPOINT");
+
+    match config.rag.vector_store {
+        swebash_ai::core::rag::stores::VectorStoreConfig::Swevecdb { endpoint } => {
+            assert_eq!(endpoint, "http://prod-vecdb:9090");
+        }
+        other => panic!("expected Swevecdb config, got {other:?}"),
+    }
+}
+
+#[test]
+#[serial]
+fn config_env_swevecdb_store_default_endpoint() {
+    std::env::set_var("SWEBASH_AI_RAG_STORE", "swevecdb");
+    std::env::remove_var("SWEBASH_AI_RAG_SWEVECDB_ENDPOINT");
+    let config = AiConfig::from_env();
+    std::env::remove_var("SWEBASH_AI_RAG_STORE");
+
+    match config.rag.vector_store {
+        swebash_ai::core::rag::stores::VectorStoreConfig::Swevecdb { endpoint } => {
+            assert_eq!(endpoint, "http://localhost:8080");
+        }
+        other => panic!("expected Swevecdb config, got {other:?}"),
+    }
+}
+
+#[test]
+#[serial]
+fn config_env_memory_store_unchanged() {
+    // Ensure setting a different store doesn't break existing behavior.
+    std::env::remove_var("SWEBASH_AI_RAG_STORE");
+    let config = AiConfig::from_env();
+
+    assert!(
+        matches!(
+            config.rag.vector_store,
+            swebash_ai::core::rag::stores::VectorStoreConfig::Memory
+        ),
+        "default store should be Memory"
+    );
+}
+
+// ── SweVecDB RagIndexManager e2e tests (feature-gated, requires server) ─
+
+#[cfg(feature = "rag-swevecdb")]
+fn swevecdb_test_endpoint() -> String {
+    std::env::var("SWEBASH_TEST_SWEVECDB_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:8080".to_string())
+}
+
+#[cfg(feature = "rag-swevecdb")]
+#[tokio::test]
+async fn rag_index_manager_swevecdb_build_and_search() {
+    use swebash_ai::core::rag::stores::SweVecdbVectorStore;
+
+    let dir = tempfile::tempdir().unwrap();
+    let docs_dir = dir.path().join("docs");
+    std::fs::create_dir_all(&docs_dir).unwrap();
+    std::fs::write(
+        docs_dir.join("guide.md"),
+        "Vector databases store embeddings for semantic search. \
+         They enable efficient nearest-neighbor lookups.",
+    )
+    .unwrap();
+    std::fs::write(
+        docs_dir.join("faq.md"),
+        "How do I install the CLI? Run cargo install swebash.",
+    )
+    .unwrap();
+
+    let store = Arc::new(
+        SweVecdbVectorStore::new(&swevecdb_test_endpoint())
+            .expect("should connect to SweVecDB"),
+    );
+    let agent_id = "integ_rag_build_search";
+
+    // Clean up from prior runs.
+    let _ = store.delete_agent(agent_id).await;
+
+    let embedder: Arc<dyn EmbeddingProvider> = Arc::new(MockEmbedder);
+    let manager = RagIndexManager::new(embedder, store.clone(), ChunkerConfig::default());
+
+    let sources = vec!["docs/*.md".to_string()];
+    manager
+        .ensure_index(agent_id, &sources, dir.path())
+        .await
+        .unwrap();
+
+    assert!(store.has_index(agent_id).await.unwrap());
+
+    let results = manager.search(agent_id, "vector database", 3).await.unwrap();
+    assert!(!results.is_empty(), "should find results");
+
+    // Clean up.
+    store.delete_agent(agent_id).await.unwrap();
+}
+
+#[cfg(feature = "rag-swevecdb")]
+#[tokio::test]
+async fn rag_index_manager_swevecdb_skips_rebuild_when_current() {
+    use swebash_ai::core::rag::stores::SweVecdbVectorStore;
+
+    let dir = tempfile::tempdir().unwrap();
+    let docs_dir = dir.path().join("docs");
+    std::fs::create_dir_all(&docs_dir).unwrap();
+    std::fs::write(docs_dir.join("a.md"), "Content for rebuild test.").unwrap();
+
+    let store = Arc::new(
+        SweVecdbVectorStore::new(&swevecdb_test_endpoint())
+            .expect("should connect to SweVecDB"),
+    );
+    let agent_id = "integ_rag_skip_rebuild";
+    let _ = store.delete_agent(agent_id).await;
+
+    let embedder: Arc<dyn EmbeddingProvider> = Arc::new(MockEmbedder);
+    let manager = RagIndexManager::new(embedder, store.clone(), ChunkerConfig::default());
+
+    let sources = vec!["docs/*.md".to_string()];
+    manager
+        .ensure_index(agent_id, &sources, dir.path())
+        .await
+        .unwrap();
+
+    // Second call with same content should be a no-op (fingerprint matches).
+    manager
+        .ensure_index(agent_id, &sources, dir.path())
+        .await
+        .unwrap();
+
+    // Verify fingerprint is persisted in SweVecDB.
+    let fp = store.load_fingerprint(agent_id).await.unwrap();
+    assert!(fp.is_some(), "fingerprint should be persisted in SweVecDB");
+
+    store.delete_agent(agent_id).await.unwrap();
+}
+
+#[cfg(feature = "rag-swevecdb")]
+#[tokio::test]
+async fn rag_index_manager_swevecdb_fingerprint_survives_restart() {
+    use swebash_ai::core::rag::stores::SweVecdbVectorStore;
+
+    let dir = tempfile::tempdir().unwrap();
+    let docs_dir = dir.path().join("docs");
+    std::fs::create_dir_all(&docs_dir).unwrap();
+    std::fs::write(docs_dir.join("a.md"), "Persistent fingerprint across restarts.").unwrap();
+
+    let endpoint = swevecdb_test_endpoint();
+    let agent_id = "integ_rag_fp_restart";
+    let sources = vec!["docs/*.md".to_string()];
+
+    // Build index with first manager instance.
+    {
+        let store = Arc::new(
+            SweVecdbVectorStore::new(&endpoint).expect("should connect"),
+        );
+        let _ = store.delete_agent(agent_id).await;
+
+        let embedder: Arc<dyn EmbeddingProvider> = Arc::new(MockEmbedder);
+        let manager = RagIndexManager::new(embedder, store.clone(), ChunkerConfig::default());
+        manager
+            .ensure_index(agent_id, &sources, dir.path())
+            .await
+            .unwrap();
+    }
+
+    // Create a brand-new manager + store (simulates process restart).
+    // The in-memory index_state is empty, but persisted fingerprint in SweVecDB
+    // should cause a skip.
+    {
+        let store2 = Arc::new(
+            SweVecdbVectorStore::new(&endpoint).expect("should connect"),
+        );
+        let embedder2: Arc<dyn EmbeddingProvider> = Arc::new(MockEmbedder);
+        let manager2 = RagIndexManager::new(embedder2, store2.clone(), ChunkerConfig::default());
+
+        // Should detect persisted fingerprint and skip rebuild.
+        manager2
+            .ensure_index(agent_id, &sources, dir.path())
+            .await
+            .unwrap();
+
+        // Verify the index still exists and the fingerprint is intact.
+        assert!(
+            store2.has_index(agent_id).await.unwrap(),
+            "index should still exist after restart"
+        );
+        let fp = store2.load_fingerprint(agent_id).await.unwrap();
+        assert!(
+            fp.is_some(),
+            "persisted fingerprint should survive restart"
+        );
+
+        store2.delete_agent(agent_id).await.unwrap();
+    }
+}
+
+#[cfg(feature = "rag-swevecdb")]
+#[tokio::test]
+async fn rag_tool_swevecdb_e2e_search() {
+    use swebash_ai::core::rag::stores::SweVecdbVectorStore;
+
+    let dir = tempfile::tempdir().unwrap();
+    let docs_dir = dir.path().join("docs");
+    std::fs::create_dir_all(&docs_dir).unwrap();
+    std::fs::write(
+        docs_dir.join("api.md"),
+        "The API endpoint /users returns a list of users. \
+         Authentication requires a bearer token.",
+    )
+    .unwrap();
+
+    let store = Arc::new(
+        SweVecdbVectorStore::new(&swevecdb_test_endpoint())
+            .expect("should connect to SweVecDB"),
+    );
+    let agent_id = "integ_rag_tool_e2e";
+    let _ = store.delete_agent(agent_id).await;
+
+    let embedder: Arc<dyn EmbeddingProvider> = Arc::new(MockEmbedder);
+    let manager = Arc::new(RagIndexManager::new(
+        embedder,
+        store.clone(),
+        ChunkerConfig::default(),
+    ));
+
+    manager
+        .ensure_index(agent_id, &["docs/*.md".to_string()], dir.path())
+        .await
+        .unwrap();
+
+    let tool = RagTool::new(agent_id, manager, 5);
+    let result = tool
+        .execute(serde_json::json!({"query": "API endpoint"}))
+        .await
+        .unwrap();
+
+    let text = result.content.as_str().expect("should be text output");
+    assert!(
+        text.contains("Result 1") || text.contains("no relevant"),
+        "should have results or indicate no results, got: {text}"
+    );
+
+    store.delete_agent(agent_id).await.unwrap();
+}
+
+#[cfg(feature = "rag-swevecdb")]
+#[tokio::test]
+async fn rag_index_manager_swevecdb_agents_isolated() {
+    use swebash_ai::core::rag::stores::SweVecdbVectorStore;
+
+    let dir = tempfile::tempdir().unwrap();
+
+    // Agent A docs
+    let docs_a = dir.path().join("agent_a");
+    std::fs::create_dir_all(&docs_a).unwrap();
+    std::fs::write(docs_a.join("a.md"), "Agent A documentation content.").unwrap();
+
+    // Agent B docs
+    let docs_b = dir.path().join("agent_b");
+    std::fs::create_dir_all(&docs_b).unwrap();
+    std::fs::write(docs_b.join("b.md"), "Agent B documentation content.").unwrap();
+
+    let store = Arc::new(
+        SweVecdbVectorStore::new(&swevecdb_test_endpoint())
+            .expect("should connect to SweVecDB"),
+    );
+
+    let agent_a = "integ_isolated_a";
+    let agent_b = "integ_isolated_b";
+    let _ = store.delete_agent(agent_a).await;
+    let _ = store.delete_agent(agent_b).await;
+
+    let embedder: Arc<dyn EmbeddingProvider> = Arc::new(MockEmbedder);
+    let manager = RagIndexManager::new(embedder, store.clone(), ChunkerConfig::default());
+
+    manager
+        .ensure_index(agent_a, &["agent_a/*.md".to_string()], dir.path())
+        .await
+        .unwrap();
+    manager
+        .ensure_index(agent_b, &["agent_b/*.md".to_string()], dir.path())
+        .await
+        .unwrap();
+
+    assert!(store.has_index(agent_a).await.unwrap());
+    assert!(store.has_index(agent_b).await.unwrap());
+
+    // Deleting agent A should not affect agent B.
+    store.delete_agent(agent_a).await.unwrap();
+    assert!(!store.has_index(agent_a).await.unwrap());
+    assert!(store.has_index(agent_b).await.unwrap());
+
+    store.delete_agent(agent_b).await.unwrap();
 }

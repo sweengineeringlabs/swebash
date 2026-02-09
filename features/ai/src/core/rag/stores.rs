@@ -562,6 +562,327 @@ impl VectorStore for SqliteVectorStore {
     }
 }
 
+// ── SweVecdbVectorStore ─────────────────────────────────────────────
+
+/// Remote vector store backed by SweVecDB via the `client-rust` SDK.
+///
+/// Each agent's data lives in a separate collection named `swebash_{agent_id}`.
+/// Collections are created lazily on first upsert. Fingerprints are stored as
+/// a sentinel vector with ID `__swebash_fingerprint__` inside the agent's
+/// collection. The SDK is synchronous, so all calls are wrapped in
+/// `tokio::task::spawn_blocking`.
+///
+/// Gated behind the `rag-swevecdb` feature flag.
+#[cfg(feature = "rag-swevecdb")]
+pub struct SweVecdbVectorStore {
+    client: Arc<client_rust::VecDbClient>,
+    prefix: String,
+}
+
+#[cfg(feature = "rag-swevecdb")]
+impl SweVecdbVectorStore {
+    /// Connect to a SweVecDB server at the given endpoint.
+    pub fn new(endpoint: &str) -> AiResult<Self> {
+        let client = client_rust::VecDbClientBuilder::new()
+            .endpoint(endpoint)
+            .build()
+            .map_err(|e| AiError::IndexError(format!("swevecdb connect failed: {e}")))?;
+        Ok(Self {
+            client: Arc::new(client),
+            prefix: "swebash".to_string(),
+        })
+    }
+
+    fn collection_name(&self, agent_id: &str) -> String {
+        format!("{}_{}", self.prefix, agent_id)
+    }
+}
+
+#[cfg(feature = "rag-swevecdb")]
+const FINGERPRINT_VECTOR_ID: &str = "__swebash_fingerprint__";
+
+#[cfg(feature = "rag-swevecdb")]
+#[async_trait]
+impl VectorStore for SweVecdbVectorStore {
+    async fn upsert(&self, chunks: &[DocChunk], embeddings: &[Vec<f32>]) -> AiResult<()> {
+        if chunks.len() != embeddings.len() {
+            return Err(AiError::IndexError(
+                "chunks and embeddings length mismatch".to_string(),
+            ));
+        }
+        if chunks.is_empty() {
+            return Ok(());
+        }
+
+        let client = Arc::clone(&self.client);
+        let collection = self.collection_name(&chunks[0].agent_id);
+        let dimension = embeddings[0].len() as u32;
+
+        // Build insert requests before moving into the blocking closure.
+        let vectors: Vec<client_rust::api::InsertVectorRequest> = chunks
+            .iter()
+            .zip(embeddings.iter())
+            .map(|(chunk, embedding)| {
+                let mut metadata = HashMap::new();
+                metadata.insert(
+                    "content".to_string(),
+                    serde_json::Value::String(chunk.content.clone()),
+                );
+                metadata.insert(
+                    "source_path".to_string(),
+                    serde_json::Value::String(chunk.source_path.clone()),
+                );
+                metadata.insert(
+                    "byte_offset".to_string(),
+                    serde_json::json!(chunk.byte_offset),
+                );
+                metadata.insert(
+                    "agent_id".to_string(),
+                    serde_json::Value::String(chunk.agent_id.clone()),
+                );
+                client_rust::api::InsertVectorRequest {
+                    id: chunk.id.clone(),
+                    vector: embedding.clone(),
+                    metadata: Some(metadata),
+                }
+            })
+            .collect();
+
+        tokio::task::spawn_blocking(move || {
+            // Ensure collection exists — create if needed.
+            match client.collections().get(&collection) {
+                Ok(_) => {}
+                Err(client_rust::ClientError::NotFound { .. }) => {
+                    client
+                        .collections()
+                        .create(client_rust::CreateCollectionRequest {
+                            name: collection.clone(),
+                            dimension,
+                            distance: client_rust::Distance::Cosine,
+                        })
+                        .map_err(|e| {
+                            AiError::IndexError(format!(
+                                "swevecdb create collection failed: {e}"
+                            ))
+                        })?;
+                }
+                Err(e) => {
+                    return Err(AiError::IndexError(format!(
+                        "swevecdb get collection failed: {e}"
+                    )));
+                }
+            }
+
+            let response = client
+                .vectors(&collection)
+                .batch_insert(client_rust::api::BatchInsertRequest { vectors })
+                .map_err(|e| {
+                    AiError::IndexError(format!("swevecdb batch insert failed: {e}"))
+                })?;
+
+            if !response.errors.is_empty() {
+                return Err(AiError::IndexError(format!(
+                    "swevecdb batch insert had {} errors: {}",
+                    response.errors.len(),
+                    response.errors[0].message
+                )));
+            }
+
+            Ok(())
+        })
+        .await
+        .expect("swevecdb spawn_blocking panicked")
+    }
+
+    async fn search(
+        &self,
+        query_embedding: &[f32],
+        agent_id: &str,
+        top_k: usize,
+    ) -> AiResult<Vec<SearchResult>> {
+        let client = Arc::clone(&self.client);
+        let collection = self.collection_name(agent_id);
+        let vector = query_embedding.to_vec();
+        // Request extra results in case the fingerprint sentinel is among them.
+        let request_top_k = (top_k + 1) as u32;
+
+        tokio::task::spawn_blocking(move || {
+            let response = match client.search(&collection).query(client_rust::SearchRequest {
+                vector,
+                top_k: request_top_k,
+                params: None,
+                filter: None,
+                include_vectors: Some(false),
+                include_metadata: Some(true),
+            }) {
+                Ok(r) => r,
+                Err(client_rust::ClientError::NotFound { .. }) => {
+                    return Ok(Vec::new());
+                }
+                Err(e) => {
+                    return Err(AiError::IndexError(format!(
+                        "swevecdb search failed: {e}"
+                    )));
+                }
+            };
+
+            let mut results: Vec<SearchResult> = Vec::new();
+            for scored in response.results {
+                // Skip the fingerprint sentinel vector.
+                if scored.id == FINGERPRINT_VECTOR_ID {
+                    continue;
+                }
+
+                let metadata = scored.metadata.unwrap_or_default();
+                let content = metadata
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let source_path = metadata
+                    .get("source_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let byte_offset = metadata
+                    .get("byte_offset")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize;
+                let agent_id = metadata
+                    .get("agent_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                results.push(SearchResult {
+                    chunk: DocChunk {
+                        id: scored.id,
+                        content,
+                        source_path,
+                        byte_offset,
+                        agent_id,
+                    },
+                    score: scored.score as f32,
+                });
+            }
+
+            results.truncate(top_k);
+            Ok(results)
+        })
+        .await
+        .expect("swevecdb spawn_blocking panicked")
+    }
+
+    async fn delete_agent(&self, agent_id: &str) -> AiResult<()> {
+        let client = Arc::clone(&self.client);
+        let collection = self.collection_name(agent_id);
+
+        tokio::task::spawn_blocking(move || {
+            match client.collections().delete(&collection) {
+                Ok(()) => Ok(()),
+                Err(client_rust::ClientError::NotFound { .. }) => Ok(()),
+                Err(e) => Err(AiError::IndexError(format!(
+                    "swevecdb delete collection failed: {e}"
+                ))),
+            }
+        })
+        .await
+        .expect("swevecdb spawn_blocking panicked")
+    }
+
+    async fn has_index(&self, agent_id: &str) -> AiResult<bool> {
+        let client = Arc::clone(&self.client);
+        let collection = self.collection_name(agent_id);
+
+        tokio::task::spawn_blocking(move || {
+            match client.collections().get(&collection) {
+                Ok(info) => Ok(info.vector_count > 0),
+                Err(client_rust::ClientError::NotFound { .. }) => Ok(false),
+                Err(e) => Err(AiError::IndexError(format!(
+                    "swevecdb get collection failed: {e}"
+                ))),
+            }
+        })
+        .await
+        .expect("swevecdb spawn_blocking panicked")
+    }
+
+    async fn load_fingerprint(&self, agent_id: &str) -> AiResult<Option<String>> {
+        let client = Arc::clone(&self.client);
+        let collection = self.collection_name(agent_id);
+
+        tokio::task::spawn_blocking(move || {
+            let response = match client.vectors(&collection).get(FINGERPRINT_VECTOR_ID) {
+                Ok(r) => r,
+                Err(client_rust::ClientError::NotFound { .. }) => return Ok(None),
+                Err(e) => {
+                    return Err(AiError::IndexError(format!(
+                        "swevecdb load fingerprint failed: {e}"
+                    )));
+                }
+            };
+
+            let fingerprint = response
+                .metadata
+                .as_ref()
+                .and_then(|m| m.get("fingerprint"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            Ok(fingerprint)
+        })
+        .await
+        .expect("swevecdb spawn_blocking panicked")
+    }
+
+    async fn save_fingerprint(&self, agent_id: &str, fingerprint: &str) -> AiResult<()> {
+        let client = Arc::clone(&self.client);
+        let collection = self.collection_name(agent_id);
+        let fingerprint = fingerprint.to_string();
+
+        tokio::task::spawn_blocking(move || {
+            // Get collection dimension to create the zero-vector sentinel.
+            let info = match client.collections().get(&collection) {
+                Ok(info) => info,
+                Err(client_rust::ClientError::NotFound { .. }) => {
+                    // Collection doesn't exist yet — fingerprint will be saved
+                    // after the first upsert creates it.
+                    return Ok(());
+                }
+                Err(e) => {
+                    return Err(AiError::IndexError(format!(
+                        "swevecdb get collection for fingerprint failed: {e}"
+                    )));
+                }
+            };
+
+            let mut metadata = HashMap::new();
+            metadata.insert(
+                "fingerprint".to_string(),
+                serde_json::Value::String(fingerprint),
+            );
+
+            let zero_vector = vec![0.0f32; info.dimension as usize];
+            let request = client_rust::api::InsertVectorRequest {
+                id: FINGERPRINT_VECTOR_ID.to_string(),
+                vector: zero_vector,
+                metadata: Some(metadata),
+            };
+
+            client
+                .vectors(&collection)
+                .insert(request)
+                .map_err(|e| {
+                    AiError::IndexError(format!("swevecdb save fingerprint failed: {e}"))
+                })?;
+
+            Ok(())
+        })
+        .await
+        .expect("swevecdb spawn_blocking panicked")
+    }
+}
+
 // ── VectorStoreConfig ──────────────────────────────────────────────
 
 /// Configuration for selecting and initializing a vector store backend.
@@ -579,6 +900,11 @@ pub enum VectorStoreConfig {
     Sqlite {
         /// Path to the SQLite database file.
         path: PathBuf,
+    },
+    /// Remote SweVecDB persistence (requires `rag-swevecdb` feature).
+    Swevecdb {
+        /// SweVecDB server endpoint (e.g. `http://localhost:8080`).
+        endpoint: String,
     },
 }
 
@@ -605,6 +931,14 @@ impl VectorStoreConfig {
             VectorStoreConfig::Sqlite { .. } => Err(AiError::NotConfigured(
                 "SQLite vector store requires the 'rag-sqlite' feature".to_string(),
             )),
+            #[cfg(feature = "rag-swevecdb")]
+            VectorStoreConfig::Swevecdb { endpoint } => {
+                Ok(Arc::new(SweVecdbVectorStore::new(endpoint)?))
+            }
+            #[cfg(not(feature = "rag-swevecdb"))]
+            VectorStoreConfig::Swevecdb { .. } => Err(AiError::NotConfigured(
+                "SweVecDB vector store requires the 'rag-swevecdb' feature".to_string(),
+            )),
         }
     }
 
@@ -623,11 +957,18 @@ impl VectorStoreConfig {
         Self::Sqlite { path: path.into() }
     }
 
+    /// Create a SweVecDB-backed store at the given endpoint.
+    pub fn swevecdb(endpoint: impl Into<String>) -> Self {
+        Self::Swevecdb {
+            endpoint: endpoint.into(),
+        }
+    }
+
     /// Create a VectorStoreConfig from YAML config values.
     ///
     /// # Arguments
-    /// * `store` - Store type: "memory", "file", or "sqlite"
-    /// * `path` - Optional path for file/sqlite backends
+    /// * `store` - Store type: "memory", "file", "sqlite", or "swevecdb"
+    /// * `path` - Optional path for file/sqlite backends, or endpoint for swevecdb
     pub fn from_yaml(store: &str, path: Option<PathBuf>) -> Self {
         match store.to_lowercase().as_str() {
             "file" => {
@@ -637,6 +978,12 @@ impl VectorStoreConfig {
             "sqlite" => {
                 let p = path.unwrap_or_else(|| PathBuf::from(".swebash/rag.db"));
                 Self::Sqlite { path: p }
+            }
+            "swevecdb" => {
+                let endpoint = path
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "http://localhost:8080".to_string());
+                Self::Swevecdb { endpoint }
             }
             _ => Self::Memory,
         }
@@ -1138,5 +1485,505 @@ mod tests {
         store.delete_agent("a1").await.unwrap();
 
         assert_eq!(store.load_fingerprint("a1").await.unwrap(), None);
+    }
+
+    // ── SweVecdbVectorStore (feature-gated, requires running server) ──
+
+    #[cfg(feature = "rag-swevecdb")]
+    fn swevecdb_endpoint() -> String {
+        std::env::var("SWEBASH_TEST_SWEVECDB_ENDPOINT")
+            .unwrap_or_else(|_| "http://localhost:8080".to_string())
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    fn swevecdb_test_store() -> SweVecdbVectorStore {
+        SweVecdbVectorStore::new(&swevecdb_endpoint()).expect("failed to connect to SweVecDB")
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_store_upsert_and_search() {
+        let store = swevecdb_test_store();
+        let agent_id = "test_upsert_search";
+        // Clean up from any prior run.
+        let _ = store.delete_agent(agent_id).await;
+
+        let chunks = make_chunks(agent_id, 3);
+        let embeddings = make_embeddings(3, 4);
+
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        let results = store.search(&embeddings[0], agent_id, 2).await.unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].chunk.id, chunks[0].id);
+        assert!(results[0].score > 0.9);
+
+        // Clean up.
+        store.delete_agent(agent_id).await.unwrap();
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_store_has_index() {
+        let store = swevecdb_test_store();
+        let agent_id = "test_has_index";
+        let _ = store.delete_agent(agent_id).await;
+
+        assert!(!store.has_index(agent_id).await.unwrap());
+
+        let chunks = make_chunks(agent_id, 1);
+        let embeddings = make_embeddings(1, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        assert!(store.has_index(agent_id).await.unwrap());
+
+        store.delete_agent(agent_id).await.unwrap();
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_store_delete_agent() {
+        let store = swevecdb_test_store();
+        let agent_id = "test_delete_agent";
+        let _ = store.delete_agent(agent_id).await;
+
+        let chunks = make_chunks(agent_id, 2);
+        let embeddings = make_embeddings(2, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        store.delete_agent(agent_id).await.unwrap();
+        assert!(!store.has_index(agent_id).await.unwrap());
+
+        // Deleting again should be idempotent.
+        store.delete_agent(agent_id).await.unwrap();
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_store_agents_are_isolated() {
+        let store = swevecdb_test_store();
+        let agent_a = "test_isolated_a";
+        let agent_b = "test_isolated_b";
+        let _ = store.delete_agent(agent_a).await;
+        let _ = store.delete_agent(agent_b).await;
+
+        let chunks_a = make_chunks(agent_a, 2);
+        let chunks_b = make_chunks(agent_b, 3);
+        let emb_a = make_embeddings(2, 4);
+        let emb_b = make_embeddings(3, 4);
+
+        store.upsert(&chunks_a, &emb_a).await.unwrap();
+        store.upsert(&chunks_b, &emb_b).await.unwrap();
+
+        let results = store.search(&emb_a[0], agent_a, 10).await.unwrap();
+        assert_eq!(results.len(), 2); // only agent_a's chunks
+
+        store.delete_agent(agent_a).await.unwrap();
+        assert!(store.has_index(agent_b).await.unwrap());
+
+        store.delete_agent(agent_b).await.unwrap();
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_store_persists_across_instances() {
+        let agent_id = "test_persist";
+
+        // Write with first instance.
+        {
+            let store = swevecdb_test_store();
+            let _ = store.delete_agent(agent_id).await;
+
+            let chunks = make_chunks(agent_id, 2);
+            let embeddings = make_embeddings(2, 4);
+            store.upsert(&chunks, &embeddings).await.unwrap();
+        }
+
+        // Read with a fresh instance.
+        {
+            let store = swevecdb_test_store();
+            assert!(store.has_index(agent_id).await.unwrap());
+            let results = store
+                .search(&make_embeddings(1, 4)[0], agent_id, 10)
+                .await
+                .unwrap();
+            assert_eq!(results.len(), 2);
+
+            store.delete_agent(agent_id).await.unwrap();
+        }
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_store_fingerprint_persists() {
+        let store = swevecdb_test_store();
+        let agent_id = "test_fingerprint";
+        let _ = store.delete_agent(agent_id).await;
+
+        // Must upsert first to create the collection (fingerprint needs dimension).
+        let chunks = make_chunks(agent_id, 1);
+        let embeddings = make_embeddings(1, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        store
+            .save_fingerprint(agent_id, "fp_swevecdb_abc")
+            .await
+            .unwrap();
+
+        let fp = store.load_fingerprint(agent_id).await.unwrap();
+        assert_eq!(fp, Some("fp_swevecdb_abc".to_string()));
+
+        store.delete_agent(agent_id).await.unwrap();
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_store_fingerprint_cleared_on_delete() {
+        let store = swevecdb_test_store();
+        let agent_id = "test_fp_cleared";
+        let _ = store.delete_agent(agent_id).await;
+
+        let chunks = make_chunks(agent_id, 1);
+        let embeddings = make_embeddings(1, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        store
+            .save_fingerprint(agent_id, "fp_to_delete")
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store.load_fingerprint(agent_id).await.unwrap(),
+            Some("fp_to_delete".to_string())
+        );
+
+        store.delete_agent(agent_id).await.unwrap();
+        assert_eq!(store.load_fingerprint(agent_id).await.unwrap(), None);
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn config_builds_swevecdb_store() {
+        let config = VectorStoreConfig::swevecdb(swevecdb_endpoint());
+        let store = config.build().unwrap();
+        let agent_id = "test_config_build";
+        let _ = store.delete_agent(agent_id).await;
+
+        let chunks = make_chunks(agent_id, 2);
+        let embeddings = make_embeddings(2, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        assert!(store.has_index(agent_id).await.unwrap());
+        store.delete_agent(agent_id).await.unwrap();
+    }
+
+    #[test]
+    fn config_serializes_swevecdb() {
+        let config = VectorStoreConfig::swevecdb("http://vecdb.example.com:9090");
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("\"type\":\"swevecdb\""));
+        assert!(json.contains("http://vecdb.example.com:9090"));
+    }
+
+    #[test]
+    fn config_deserializes_swevecdb() {
+        let json = r#"{"type":"swevecdb","endpoint":"http://vecdb.example.com:9090"}"#;
+        let config: VectorStoreConfig = serde_json::from_str(json).unwrap();
+        match config {
+            VectorStoreConfig::Swevecdb { endpoint } => {
+                assert_eq!(endpoint, "http://vecdb.example.com:9090");
+            }
+            _ => panic!("expected Swevecdb config"),
+        }
+    }
+
+    #[cfg(not(feature = "rag-swevecdb"))]
+    #[test]
+    fn config_swevecdb_without_feature_errors() {
+        let config = VectorStoreConfig::swevecdb("http://localhost:8080");
+        let result = config.build();
+        assert!(result.is_err());
+    }
+
+    // ── SweVecdbVectorStore unit tests (no server required) ──────────
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[test]
+    fn swevecdb_collection_name_format() {
+        let store =
+            SweVecdbVectorStore::new("http://localhost:9999").expect("client build should succeed");
+        assert_eq!(store.collection_name("shell"), "swebash_shell");
+        assert_eq!(store.collection_name("my-agent"), "swebash_my-agent");
+        assert_eq!(store.collection_name(""), "swebash_");
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_empty_upsert_is_noop() {
+        let store =
+            SweVecdbVectorStore::new("http://localhost:9999").expect("client build should succeed");
+        // Empty upsert should return Ok immediately without touching the server.
+        let result = store.upsert(&[], &[]).await;
+        assert!(result.is_ok());
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_mismatched_lengths_error() {
+        let store =
+            SweVecdbVectorStore::new("http://localhost:9999").expect("client build should succeed");
+        let chunks = make_chunks("a1", 2);
+        let embeddings = make_embeddings(1, 4); // mismatch
+        let result = store.upsert(&chunks, &embeddings).await;
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("mismatch"),
+            "error should mention mismatch: {err_msg}"
+        );
+    }
+
+    // ── VectorStoreConfig from_yaml tests ──────────────────────────────
+
+    #[test]
+    fn from_yaml_swevecdb_with_explicit_endpoint() {
+        let config = VectorStoreConfig::from_yaml(
+            "swevecdb",
+            Some(PathBuf::from("http://vecdb.example.com:9090")),
+        );
+        match config {
+            VectorStoreConfig::Swevecdb { endpoint } => {
+                assert_eq!(endpoint, "http://vecdb.example.com:9090");
+            }
+            _ => panic!("expected Swevecdb config, got {config:?}"),
+        }
+    }
+
+    #[test]
+    fn from_yaml_swevecdb_default_endpoint() {
+        let config = VectorStoreConfig::from_yaml("swevecdb", None);
+        match config {
+            VectorStoreConfig::Swevecdb { endpoint } => {
+                assert_eq!(endpoint, "http://localhost:8080");
+            }
+            _ => panic!("expected Swevecdb config, got {config:?}"),
+        }
+    }
+
+    #[test]
+    fn from_yaml_swevecdb_case_insensitive() {
+        let config = VectorStoreConfig::from_yaml("SweVecDB", None);
+        assert!(
+            matches!(config, VectorStoreConfig::Swevecdb { .. }),
+            "from_yaml should be case-insensitive, got {config:?}"
+        );
+    }
+
+    #[test]
+    fn config_swevecdb_convenience_constructor() {
+        let config = VectorStoreConfig::swevecdb("http://my-server:1234");
+        match config {
+            VectorStoreConfig::Swevecdb { endpoint } => {
+                assert_eq!(endpoint, "http://my-server:1234");
+            }
+            _ => panic!("expected Swevecdb config"),
+        }
+    }
+
+    #[test]
+    fn config_swevecdb_serde_roundtrip() {
+        let original = VectorStoreConfig::swevecdb("http://vecdb:8080");
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: VectorStoreConfig = serde_json::from_str(&json).unwrap();
+        match deserialized {
+            VectorStoreConfig::Swevecdb { endpoint } => {
+                assert_eq!(endpoint, "http://vecdb:8080");
+            }
+            _ => panic!("round-trip should produce Swevecdb variant"),
+        }
+    }
+
+    // ── SweVecdb e2e store tests (feature-gated, requires running server) ──
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_store_upsert_overwrites() {
+        let store = swevecdb_test_store();
+        let agent_id = "test_upsert_overwrite";
+        let _ = store.delete_agent(agent_id).await;
+
+        let chunks = make_chunks(agent_id, 1);
+        let emb1 = vec![vec![1.0, 0.0, 0.0, 0.0]];
+        store.upsert(&chunks, &emb1).await.unwrap();
+
+        // Upsert same chunk with different embedding.
+        let emb2 = vec![vec![0.0, 1.0, 0.0, 0.0]];
+        store.upsert(&chunks, &emb2).await.unwrap();
+
+        // Search with the updated embedding — should match.
+        let results = store
+            .search(&[0.0, 1.0, 0.0, 0.0], agent_id, 1)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(
+            results[0].score > 0.9,
+            "should match updated embedding, got score {}",
+            results[0].score
+        );
+
+        store.delete_agent(agent_id).await.unwrap();
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_store_search_empty_collection_returns_empty() {
+        let store = swevecdb_test_store();
+        let agent_id = "test_search_empty";
+        let _ = store.delete_agent(agent_id).await;
+
+        // Search on a non-existent collection should return empty results.
+        let results = store
+            .search(&[1.0, 0.0, 0.0, 0.0], agent_id, 5)
+            .await
+            .unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_store_search_preserves_metadata_roundtrip() {
+        let store = swevecdb_test_store();
+        let agent_id = "test_metadata_rt";
+        let _ = store.delete_agent(agent_id).await;
+
+        let chunks = vec![DocChunk {
+            id: format!("{agent_id}:docs/guide.md:42"),
+            content: "Vector databases are useful for semantic search.".to_string(),
+            source_path: "docs/guide.md".to_string(),
+            byte_offset: 42,
+            agent_id: agent_id.to_string(),
+        }];
+        let embeddings = vec![vec![0.5, 0.5, 0.0, 0.0]];
+
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        let results = store
+            .search(&[0.5, 0.5, 0.0, 0.0], agent_id, 1)
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        let result = &results[0];
+        assert_eq!(result.chunk.id, chunks[0].id);
+        assert_eq!(result.chunk.content, chunks[0].content);
+        assert_eq!(result.chunk.source_path, "docs/guide.md");
+        assert_eq!(result.chunk.byte_offset, 42);
+        assert_eq!(result.chunk.agent_id, agent_id);
+
+        store.delete_agent(agent_id).await.unwrap();
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_store_fingerprint_save_before_collection_is_noop() {
+        let store = swevecdb_test_store();
+        let agent_id = "test_fp_no_collection";
+        let _ = store.delete_agent(agent_id).await;
+
+        // save_fingerprint before any upsert should succeed (noop).
+        store
+            .save_fingerprint(agent_id, "early_fp")
+            .await
+            .unwrap();
+
+        // load_fingerprint should return None (collection doesn't exist).
+        let fp = store.load_fingerprint(agent_id).await.unwrap();
+        assert_eq!(fp, None);
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_store_fingerprint_overwrite() {
+        let store = swevecdb_test_store();
+        let agent_id = "test_fp_overwrite";
+        let _ = store.delete_agent(agent_id).await;
+
+        let chunks = make_chunks(agent_id, 1);
+        let embeddings = make_embeddings(1, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        store.save_fingerprint(agent_id, "fp_v1").await.unwrap();
+        assert_eq!(
+            store.load_fingerprint(agent_id).await.unwrap(),
+            Some("fp_v1".to_string())
+        );
+
+        // Overwrite with new fingerprint.
+        store.save_fingerprint(agent_id, "fp_v2").await.unwrap();
+        assert_eq!(
+            store.load_fingerprint(agent_id).await.unwrap(),
+            Some("fp_v2".to_string())
+        );
+
+        store.delete_agent(agent_id).await.unwrap();
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_store_search_excludes_fingerprint_sentinel() {
+        let store = swevecdb_test_store();
+        let agent_id = "test_fp_exclusion";
+        let _ = store.delete_agent(agent_id).await;
+
+        let chunks = make_chunks(agent_id, 2);
+        let embeddings = make_embeddings(2, 4);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        // Save a fingerprint (creates the sentinel vector).
+        store
+            .save_fingerprint(agent_id, "fp_sentinel_test")
+            .await
+            .unwrap();
+
+        // Search should never return the __swebash_fingerprint__ sentinel.
+        let results = store
+            .search(&[0.0, 0.0, 0.0, 0.0], agent_id, 10)
+            .await
+            .unwrap();
+        for r in &results {
+            assert_ne!(
+                r.chunk.id, "__swebash_fingerprint__",
+                "sentinel should be filtered from search results"
+            );
+        }
+
+        store.delete_agent(agent_id).await.unwrap();
+    }
+
+    #[cfg(feature = "rag-swevecdb")]
+    #[tokio::test]
+    async fn swevecdb_store_top_k_limits_results() {
+        let store = swevecdb_test_store();
+        let agent_id = "test_top_k";
+        let _ = store.delete_agent(agent_id).await;
+
+        let chunks = make_chunks(agent_id, 5);
+        let embeddings = make_embeddings(5, 8);
+        store.upsert(&chunks, &embeddings).await.unwrap();
+
+        let results = store
+            .search(&embeddings[0], agent_id, 2)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 2, "should return exactly top_k results");
+
+        let results_all = store
+            .search(&embeddings[0], agent_id, 100)
+            .await
+            .unwrap();
+        assert_eq!(results_all.len(), 5, "should return all 5 chunks when top_k > count");
+
+        store.delete_agent(agent_id).await.unwrap();
     }
 }

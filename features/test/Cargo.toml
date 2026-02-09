@@ -1,0 +1,23 @@
+[package]
+name = "swebash-test"
+version = "0.1.0"
+edition = "2021"
+description = "Reusable test framework for swebash workspace"
+
+[features]
+default = []
+stress = []
+perf   = []
+load   = []
+live   = ["tokio/net"]
+
+[dependencies]
+swebash-ai = { path = "../ai", default-features = false }
+llm-provider = { version = "0.1.0", registry = "local", features = ["testing"] }
+agent-controller = { version = "0.1.0", registry = "local", features = ["testing"] }
+tokio = { version = "1.0", features = ["sync", "rt", "time", "macros"] }
+async-trait = "0.1"
+tempfile = "3"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+parking_lot = "0.12"

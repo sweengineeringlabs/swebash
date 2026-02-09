@@ -8,6 +8,7 @@ description = "AI/LLM integration for swebash shell (SEA pattern)"
 default = ["rag-local"]
 rag-local = ["fastembed"]       # Local ONNX embedding (no API key needed)
 rag-sqlite = ["rusqlite"]       # Persistent SQLite vector store
+rag-swevecdb = ["client-rust"]  # Remote SweVecDB vector store
 
 [dependencies]
 # Chat engine (from rustratify) — provides SimpleChatEngine with memory management
@@ -62,6 +63,9 @@ fastembed = { version = "4", optional = true }
 # RAG: persistent SQLite vector store (optional)
 rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 
+# RAG: SweVecDB remote vector store (optional)
+client-rust = { path = "../../../swevecdb/swevecdb/client/client-rust", optional = true }
+
 [dev-dependencies]
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
 async-trait = "0.1"
@@ -70,3 +74,4 @@ agent-controller = { version = "0.1.0", registry = "local", features = ["testing
 llm-provider = { version = "0.1.0", registry = "local", features = ["testing"] }
 serial_test = "3"
 tempfile = "3"
+swebash-test = { path = "../test" }

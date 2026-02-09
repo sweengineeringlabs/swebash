@@ -4,6 +4,7 @@ members = [
   "features/shell/host",
   "features/shell/readline",
   "features/ai",
+  "features/test",
 ]
 default-members = ["features/shell/host"]
 resolver = "2"
