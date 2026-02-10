@@ -1,26 +1,89 @@
 /// YAML-configurable agent definitions.
 ///
-/// Provides serde types for parsing agent YAML files and a `ConfigAgent`
-/// that implements the `AgentDescriptor` trait from parsed configuration.
+/// Provides swebash-specific extensions on top of the generic YAML agent
+/// configuration from `agent_controller::yaml`. The generic types handle
+/// parsing, defaults merging, tool filter computation, directives, and
+/// `thinkFirst` suffix. This module adds:
+///
+/// - `DocsConfig` / `DocsStrategy` / `load_docs_context()` — file/glob loading
+/// - `RagYamlConfig` — RAG vector store configuration
+/// - `SwebashAgentExt` — per-agent extension fields (docs, bypassConfirmation, maxIterations)
+/// - `SwebashAgentsYaml` / `SwebashFullDefaults` — top-level YAML with RAG config
+/// - `ConfigAgent` — wraps `YamlAgentDescriptor` with swebash-specific accessors
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+// Re-export generic YAML types for consumers (integration tests, downstream crates).
+pub use agent_controller::yaml::{
+    AgentDefaults, AgentEntry, ToolsConfig,
+};
+use agent_controller::yaml::YamlAgentDescriptor;
 use agent_controller::{AgentDescriptor, ToolFilter};
 
-// ── YAML schema types ──────────────────────────────────────────────
+// ── Swebash YAML root ──────────────────────────────────────────────
 
-/// Root of an agents YAML file.
+/// Swebash YAML root — extends generic agent entries with swebash
+/// top-level fields (RAG config, extended defaults).
 #[derive(Debug, Deserialize)]
-pub struct AgentsYaml {
+pub struct SwebashAgentsYaml {
     pub version: u32,
     #[serde(default)]
-    pub defaults: AgentDefaults,
+    pub defaults: SwebashFullDefaults,
     /// RAG (Retrieval-Augmented Generation) configuration.
     #[serde(default)]
     pub rag: Option<RagYamlConfig>,
-    pub agents: Vec<AgentEntry>,
+    pub agents: Vec<AgentEntry<SwebashAgentExt>>,
 }
+
+impl SwebashAgentsYaml {
+    /// Parse an agents YAML document.
+    pub fn from_yaml(yaml: &str) -> Result<Self, String> {
+        serde_yaml::from_str(yaml).map_err(|e| format!("Failed to parse agents YAML: {e}"))
+    }
+}
+
+/// Swebash defaults = generic defaults + swebash-specific fields.
+///
+/// Uses `#[serde(flatten)]` to deserialize both generic fields (temperature,
+/// maxTokens, tools, thinkFirst, directives) and swebash-specific fields
+/// (bypassConfirmation, maxIterations) from the same `defaults:` section.
+#[derive(Debug, Deserialize)]
+pub struct SwebashFullDefaults {
+    #[serde(flatten)]
+    pub base: AgentDefaults,
+    #[serde(default, rename = "bypassConfirmation")]
+    pub bypass_confirmation: bool,
+    #[serde(default, rename = "maxIterations")]
+    pub max_iterations: Option<usize>,
+}
+
+impl Default for SwebashFullDefaults {
+    fn default() -> Self {
+        Self {
+            base: AgentDefaults::default(),
+            bypass_confirmation: false,
+            max_iterations: None,
+        }
+    }
+}
+
+// ── Swebash agent extension fields ─────────────────────────────────
+
+/// Swebash-specific fields in agent YAML entries, injected via
+/// `#[serde(flatten)]` on `AgentEntry<SwebashAgentExt>`.
+#[derive(Debug, Default, Deserialize)]
+pub struct SwebashAgentExt {
+    /// Document context configuration.
+    #[serde(default)]
+    pub docs: Option<DocsConfig>,
+    #[serde(default, rename = "bypassConfirmation")]
+    pub bypass_confirmation: Option<bool>,
+    #[serde(default, rename = "maxIterations")]
+    pub max_iterations: Option<usize>,
+}
+
+// ── RAG configuration ──────────────────────────────────────────────
 
 /// RAG configuration section in agents.yaml.
 ///
@@ -71,63 +134,7 @@ fn default_chunk_overlap() -> usize {
     200
 }
 
-/// Default values applied to agents that omit optional fields.
-#[derive(Debug, Deserialize)]
-pub struct AgentDefaults {
-    #[serde(default = "default_temperature")]
-    pub temperature: f32,
-    #[serde(default = "default_max_tokens", rename = "maxTokens")]
-    pub max_tokens: u32,
-    #[serde(default)]
-    pub tools: ToolsConfig,
-    #[serde(default, rename = "thinkFirst")]
-    pub think_first: bool,
-    #[serde(default, rename = "bypassConfirmation")]
-    pub bypass_confirmation: bool,
-    #[serde(default, rename = "maxIterations")]
-    pub max_iterations: Option<usize>,
-    #[serde(default)]
-    pub directives: Vec<String>,
-}
-
-impl Default for AgentDefaults {
-    fn default() -> Self {
-        Self {
-            temperature: default_temperature(),
-            max_tokens: default_max_tokens(),
-            tools: ToolsConfig::default(),
-            think_first: false,
-            bypass_confirmation: false,
-            max_iterations: None,
-            directives: Vec::new(),
-        }
-    }
-}
-
-/// Per-category tool toggles.
-#[derive(Debug, Deserialize, Clone)]
-pub struct ToolsConfig {
-    #[serde(default = "bool_true")]
-    pub fs: bool,
-    #[serde(default = "bool_true")]
-    pub exec: bool,
-    #[serde(default = "bool_true")]
-    pub web: bool,
-    /// RAG tool access (auto-enabled when `docs.strategy: rag`).
-    #[serde(default)]
-    pub rag: bool,
-}
-
-impl Default for ToolsConfig {
-    fn default() -> Self {
-        Self {
-            fs: true,
-            exec: true,
-            web: true,
-            rag: false,
-        }
-    }
-}
+// ── Docs strategy and loading ──────────────────────────────────────
 
 /// Strategy for how an agent consumes its documentation.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -160,51 +167,6 @@ pub struct DocsConfig {
 fn default_top_k() -> usize {
     5
 }
-
-/// A single agent entry in the YAML file.
-#[derive(Debug, Deserialize)]
-pub struct AgentEntry {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub temperature: Option<f32>,
-    #[serde(rename = "maxTokens")]
-    pub max_tokens: Option<u32>,
-    #[serde(default, rename = "systemPrompt")]
-    pub system_prompt: String,
-    pub tools: Option<ToolsConfig>,
-    #[serde(default, rename = "triggerKeywords")]
-    pub trigger_keywords: Vec<String>,
-    #[serde(default, rename = "thinkFirst")]
-    pub think_first: Option<bool>,
-    #[serde(default, rename = "bypassConfirmation")]
-    pub bypass_confirmation: Option<bool>,
-    #[serde(default, rename = "maxIterations")]
-    pub max_iterations: Option<usize>,
-    /// Document context configuration.
-    #[serde(default)]
-    pub docs: Option<DocsConfig>,
-    /// Per-agent directive overrides.
-    /// `None` = inherit defaults, `Some([])` = suppress, `Some([...])` = replace.
-    #[serde(default)]
-    pub directives: Option<Vec<String>>,
-}
-
-// ── Defaults helpers ───────────────────────────────────────────────
-
-fn default_temperature() -> f32 {
-    0.5
-}
-
-fn default_max_tokens() -> u32 {
-    1024
-}
-
-fn bool_true() -> bool {
-    true
-}
-
-// ── Document loading ────────────────────────────────────────────────
 
 /// Result of loading document context from file sources.
 #[derive(Debug)]
@@ -307,27 +269,15 @@ pub fn load_docs_context(docs: &DocsConfig, base_dir: &Path) -> DocsLoadResult {
     }
 }
 
-// ── Parsing ────────────────────────────────────────────────────────
-
-impl AgentsYaml {
-    /// Parse an agents YAML document.
-    pub fn from_yaml(yaml: &str) -> Result<Self, String> {
-        serde_yaml::from_str(yaml).map_err(|e| format!("Failed to parse agents YAML: {e}"))
-    }
-}
-
 // ── ConfigAgent — AgentDescriptor implementation ────────────────────
 
 /// An agent built from YAML configuration.
+///
+/// Wraps a [`YamlAgentDescriptor`] (generic YAML→descriptor pipeline)
+/// and adds swebash-specific fields: docs strategy, bypass confirmation,
+/// max iterations, and RAG-related doc sources.
 pub struct ConfigAgent {
-    id: String,
-    name: String,
-    description: String,
-    system_prompt: String,
-    tool_filter: ToolFilter,
-    temperature: f32,
-    max_tokens: u32,
-    trigger_keywords: Vec<String>,
+    base: YamlAgentDescriptor,
     bypass_confirmation: bool,
     max_iterations: Option<usize>,
     /// The docs strategy this agent uses (`Preload` or `Rag`).
@@ -339,30 +289,31 @@ pub struct ConfigAgent {
 }
 
 impl ConfigAgent {
-    /// Build a `ConfigAgent` from an `AgentEntry`, filling in defaults.
+    /// Build a `ConfigAgent` from a swebash `AgentEntry`, filling in defaults.
     ///
-    /// If `base_dir` is provided and the entry has a `docs` section,
-    /// document content is loaded and prepended to the system prompt.
-    pub fn from_entry(entry: AgentEntry, defaults: &AgentDefaults) -> Self {
+    /// No docs loading is performed (no base_dir).
+    pub fn from_entry(
+        entry: AgentEntry<SwebashAgentExt>,
+        defaults: &SwebashFullDefaults,
+    ) -> Self {
         Self::from_entry_with_base_dir(entry, defaults, None, false)
     }
 
     /// Build a `ConfigAgent` with an optional base directory for doc loading.
     ///
     /// When `rag_available` is `false` and the agent's docs strategy is `Rag`,
-    /// the strategy is downgraded to `Preload` with a warning.  This allows
+    /// the strategy is downgraded to `Preload` with a warning. This allows
     /// builds without the `rag-local` feature to still serve documentation.
     pub fn from_entry_with_base_dir(
-        entry: AgentEntry,
-        defaults: &AgentDefaults,
+        entry: AgentEntry<SwebashAgentExt>,
+        defaults: &SwebashFullDefaults,
         base_dir: Option<&Path>,
         rag_available: bool,
     ) -> Self {
-        let tools = entry.tools.as_ref().unwrap_or(&defaults.tools);
+        // Extract swebash-specific fields before the entry is consumed.
+        let docs_config = entry.ext.docs.as_ref();
         let docs_strategy = {
-            let requested = entry
-                .docs
-                .as_ref()
+            let requested = docs_config
                 .map(|d| d.strategy.clone())
                 .unwrap_or_default();
             if requested == DocsStrategy::Rag && !rag_available {
@@ -375,115 +326,108 @@ impl ConfigAgent {
                 requested
             }
         };
-        let docs_sources = entry
-            .docs
-            .as_ref()
+        let docs_sources = docs_config
             .map(|d| d.sources.clone())
             .unwrap_or_default();
-        let docs_top_k = entry
-            .docs
-            .as_ref()
+        let docs_top_k = docs_config
             .map(|d| d.top_k)
             .unwrap_or(default_top_k());
+        let bypass_confirmation = entry
+            .ext
+            .bypass_confirmation
+            .unwrap_or(defaults.bypass_confirmation);
+        let max_iterations = entry
+            .ext
+            .max_iterations
+            .or(defaults.max_iterations);
 
-        // When strategy is Rag, auto-enable the "rag" tool category.
+        // Determine if the "rag" tool category should be auto-enabled.
         let uses_rag = docs_strategy == DocsStrategy::Rag;
-        let rag_enabled = tools.rag || uses_rag;
 
-        let tool_filter = if tools.fs && tools.exec && tools.web && !rag_enabled {
-            ToolFilter::All
-        } else {
-            let mut cats = Vec::new();
-            if tools.fs {
-                cats.push("fs".to_string());
-            }
-            if tools.exec {
-                cats.push("exec".to_string());
-            }
-            if tools.web {
-                cats.push("web".to_string());
-            }
-            if rag_enabled {
-                cats.push("rag".to_string());
-            }
-            ToolFilter::Categories(cats)
-        };
+        // Capture docs/RAG info needed for the prompt modifier closure.
+        let docs_for_modifier = entry.ext.docs.as_ref().map(|d| DocsModifierInfo {
+            budget: d.budget,
+            strategy: d.strategy.clone(),
+            top_k: d.top_k,
+            sources: d.sources.clone(),
+        });
+        let strategy_for_modifier = docs_strategy.clone();
 
-        let think_first = entry.think_first.unwrap_or(defaults.think_first);
-        let mut system_prompt = if think_first && !entry.system_prompt.is_empty() {
-            format!(
-                "{}\nAlways explain your reasoning and what you plan to do before calling any tools.\n\
-                 Provide a brief explanation of your approach first, then use tools to execute it.",
-                entry.system_prompt.trim_end()
-            )
-        } else {
-            entry.system_prompt
-        };
-
-        // Load document context based on strategy.
-        if let (Some(docs), Some(dir)) = (&entry.docs, base_dir) {
-            match docs_strategy {
-                DocsStrategy::Preload => {
-                    // Preload: read files at startup and bake into the system prompt.
-                    let result = load_docs_context(docs, dir);
-                    if let Some(docs_content) = result.content {
-                        system_prompt = format!(
-                            "<documentation>\n{}\n</documentation>\n\n{}",
-                            docs_content, system_prompt
-                        );
-                    }
-                    if !result.unresolved.is_empty() {
-                        tracing::warn!(
-                            agent = %entry.id,
-                            unresolved = ?result.unresolved,
-                            files_loaded = result.files_loaded,
-                            "agent has docs_context sources that resolved no files"
-                        );
+        // Build the generic YamlAgentDescriptor with a prompt modifier
+        // that handles docs/RAG prompt augmentation.
+        let mut base = YamlAgentDescriptor::from_entry_with_prompt_modifier(
+            entry,
+            &defaults.base,
+            |_entry, mut system_prompt| {
+                if let (Some(docs_info), Some(dir)) = (&docs_for_modifier, base_dir) {
+                    match strategy_for_modifier {
+                        DocsStrategy::Preload => {
+                            let docs = DocsConfig {
+                                budget: docs_info.budget,
+                                strategy: docs_info.strategy.clone(),
+                                top_k: docs_info.top_k,
+                                sources: docs_info.sources.clone(),
+                            };
+                            let result = load_docs_context(&docs, dir);
+                            if let Some(docs_content) = result.content {
+                                system_prompt = format!(
+                                    "<documentation>\n{}\n</documentation>\n\n{}",
+                                    docs_content, system_prompt
+                                );
+                            }
+                            if !result.unresolved.is_empty() {
+                                tracing::warn!(
+                                    unresolved = ?result.unresolved,
+                                    files_loaded = result.files_loaded,
+                                    "agent has docs_context sources that resolved no files"
+                                );
+                            }
+                        }
+                        DocsStrategy::Rag => {
+                            system_prompt = format!(
+                                "{}\n\n\
+                                 You have access to a `rag_search` tool that searches your documentation index. \
+                                 When you need to look up specific details, API references, configuration examples, \
+                                 or other information from the loaded documentation, call `rag_search` with a \
+                                 descriptive query. Prefer using this tool over guessing when documentation is available.",
+                                system_prompt.trim_end()
+                            );
+                        }
                     }
                 }
-                DocsStrategy::Rag => {
-                    // RAG: docs are NOT baked into the prompt.
-                    // Instead, append a note about the rag_search tool.
-                    system_prompt = format!(
-                        "{}\n\n\
-                         You have access to a `rag_search` tool that searches your documentation index. \
-                         When you need to look up specific details, API references, configuration examples, \
-                         or other information from the loaded documentation, call `rag_search` with a \
-                         descriptive query. Prefer using this tool over guessing when documentation is available.",
-                        system_prompt.trim_end()
-                    );
-                }
-            }
-        }
+                system_prompt
+            },
+        );
 
-        // Prepend shared directives block (agent override or defaults).
-        let effective_directives = entry.directives
-            .as_deref()
-            .unwrap_or(&defaults.directives);
-        if !effective_directives.is_empty() {
-            let block = effective_directives
-                .iter()
-                .map(|d| format!("- {d}"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            system_prompt = format!(
-                "<directives>\n{block}\n</directives>\n\n{system_prompt}"
-            );
+        // If RAG is active, ensure "rag" is in the tool filter categories.
+        if uses_rag {
+            let filter = base.tool_filter_mut();
+            match filter {
+                ToolFilter::All => {
+                    // All already includes everything; replace with explicit categories + rag.
+                    // But we need to know the original tools. Since "All" means everything
+                    // was enabled, we add rag to make it explicit.
+                    *filter = ToolFilter::Categories(vec![
+                        "exec".to_string(),
+                        "fs".to_string(),
+                        "rag".to_string(),
+                        "web".to_string(),
+                    ]);
+                }
+                ToolFilter::Categories(cats) => {
+                    if !cats.contains(&"rag".to_string()) {
+                        cats.push("rag".to_string());
+                        cats.sort();
+                    }
+                }
+                ToolFilter::AllowList(_) => {} // unused by swebash
+            }
         }
 
         Self {
-            id: entry.id,
-            name: entry.name,
-            description: entry.description,
-            system_prompt,
-            tool_filter,
-            temperature: entry.temperature.unwrap_or(defaults.temperature),
-            max_tokens: entry.max_tokens.unwrap_or(defaults.max_tokens),
-            trigger_keywords: entry.trigger_keywords,
-            bypass_confirmation: entry
-                .bypass_confirmation
-                .unwrap_or(defaults.bypass_confirmation),
-            max_iterations: entry.max_iterations.or(defaults.max_iterations),
+            base,
+            bypass_confirmation,
+            max_iterations,
             docs_strategy,
             docs_sources,
             docs_top_k,
@@ -516,37 +460,46 @@ impl ConfigAgent {
     }
 }
 
+/// Internal helper to carry docs info into the prompt modifier closure
+/// without borrowing the entry.
+struct DocsModifierInfo {
+    budget: usize,
+    strategy: DocsStrategy,
+    top_k: usize,
+    sources: Vec<String>,
+}
+
 impl AgentDescriptor for ConfigAgent {
     fn id(&self) -> &str {
-        &self.id
+        self.base.id()
     }
 
     fn display_name(&self) -> &str {
-        &self.name
+        self.base.display_name()
     }
 
     fn description(&self) -> &str {
-        &self.description
+        self.base.description()
     }
 
     fn system_prompt(&self) -> &str {
-        &self.system_prompt
+        self.base.system_prompt()
     }
 
     fn tool_filter(&self) -> ToolFilter {
-        self.tool_filter.clone()
+        self.base.tool_filter()
     }
 
     fn temperature(&self) -> Option<f32> {
-        Some(self.temperature)
+        self.base.temperature()
     }
 
     fn max_tokens(&self) -> Option<u32> {
-        Some(self.max_tokens)
+        self.base.max_tokens()
     }
 
     fn trigger_keywords(&self) -> &[String] {
-        &self.trigger_keywords
+        self.base.trigger_keywords()
     }
 }
 
@@ -592,7 +545,7 @@ agents:
 
     #[test]
     fn test_parse_minimal_yaml() {
-        let parsed = AgentsYaml::from_yaml(MINIMAL_YAML).unwrap();
+        let parsed = SwebashAgentsYaml::from_yaml(MINIMAL_YAML).unwrap();
         assert_eq!(parsed.version, 1);
         assert_eq!(parsed.agents.len(), 1);
         assert_eq!(parsed.agents[0].id, "test");
@@ -601,11 +554,11 @@ agents:
 
     #[test]
     fn test_parse_full_yaml() {
-        let parsed = AgentsYaml::from_yaml(FULL_YAML).unwrap();
+        let parsed = SwebashAgentsYaml::from_yaml(FULL_YAML).unwrap();
         assert_eq!(parsed.version, 1);
-        assert_eq!(parsed.defaults.temperature, 0.7);
-        assert_eq!(parsed.defaults.max_tokens, 2048);
-        assert!(!parsed.defaults.tools.web);
+        assert_eq!(parsed.defaults.base.temperature, 0.7);
+        assert_eq!(parsed.defaults.base.max_tokens, 2048);
+        assert!(!parsed.defaults.base.tools.is_category_enabled("web"));
         assert_eq!(parsed.agents.len(), 2);
 
         // alpha inherits defaults
@@ -622,7 +575,7 @@ agents:
 
     #[test]
     fn test_config_agent_from_entry_defaults() {
-        let parsed = AgentsYaml::from_yaml(MINIMAL_YAML).unwrap();
+        let parsed = SwebashAgentsYaml::from_yaml(MINIMAL_YAML).unwrap();
         let entry = parsed.agents.into_iter().next().unwrap();
         let agent = ConfigAgent::from_entry(entry, &parsed.defaults);
 
@@ -636,11 +589,11 @@ agents:
 
     #[test]
     fn test_config_agent_from_entry_overrides() {
-        let parsed = AgentsYaml::from_yaml(FULL_YAML).unwrap();
-        let defaults = &parsed.defaults;
+        let parsed = SwebashAgentsYaml::from_yaml(FULL_YAML).unwrap();
+        let defaults = parsed.defaults;
         let mut agents = parsed.agents.into_iter();
 
-        let alpha = ConfigAgent::from_entry(agents.next().unwrap(), defaults);
+        let alpha = ConfigAgent::from_entry(agents.next().unwrap(), &defaults);
         assert_eq!(alpha.temperature(), Some(0.7)); // inherits default
         assert_eq!(alpha.max_tokens(), Some(2048)); // inherits default
         // alpha has no tools override, so inherits defaults (fs=true, exec=true, web=false)
@@ -654,7 +607,7 @@ agents:
         }
         assert_eq!(alpha.trigger_keywords(), &["alpha".to_string(), "first".to_string()]);
 
-        let beta = ConfigAgent::from_entry(agents.next().unwrap(), defaults);
+        let beta = ConfigAgent::from_entry(agents.next().unwrap(), &defaults);
         assert_eq!(beta.temperature(), Some(0.3)); // overridden
         assert_eq!(beta.max_tokens(), Some(512)); // overridden
         match beta.tool_filter() {
@@ -676,20 +629,19 @@ agents:
             temperature: None,
             max_tokens: None,
             system_prompt: "prompt".into(),
-            tools: Some(ToolsConfig {
-                fs: true,
-                exec: true,
-                web: true,
-                rag: false,
+            tools: Some({
+                let mut m = std::collections::HashMap::new();
+                m.insert("fs".into(), true);
+                m.insert("exec".into(), true);
+                m.insert("web".into(), true);
+                ToolsConfig(m)
             }),
             trigger_keywords: vec![],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         };
-        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        let agent = ConfigAgent::from_entry(entry, &SwebashFullDefaults::default());
         assert!(matches!(agent.tool_filter(), ToolFilter::All));
     }
 
@@ -702,20 +654,19 @@ agents:
             temperature: None,
             max_tokens: None,
             system_prompt: "prompt".into(),
-            tools: Some(ToolsConfig {
-                fs: false,
-                exec: false,
-                web: false,
-                rag: false,
+            tools: Some({
+                let mut m = std::collections::HashMap::new();
+                m.insert("fs".into(), false);
+                m.insert("exec".into(), false);
+                m.insert("web".into(), false);
+                ToolsConfig(m)
             }),
             trigger_keywords: vec![],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         };
-        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        let agent = ConfigAgent::from_entry(entry, &SwebashFullDefaults::default());
         match agent.tool_filter() {
             ToolFilter::Categories(cats) => assert!(cats.is_empty()),
             _ => panic!("Expected ToolFilter::Categories(empty) for none"),
@@ -724,7 +675,7 @@ agents:
 
     #[test]
     fn test_invalid_yaml() {
-        let result = AgentsYaml::from_yaml("not: valid: yaml: [");
+        let result = SwebashAgentsYaml::from_yaml("not: valid: yaml: [");
         assert!(result.is_err());
     }
 
@@ -742,12 +693,10 @@ agents:
             tools: None,
             trigger_keywords: vec![],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         };
-        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        let agent = ConfigAgent::from_entry(entry, &SwebashFullDefaults::default());
         // system_prompt() returns &str — borrow from owned field
         let prompt: &str = agent.system_prompt();
         assert_eq!(prompt, "Multiline\nprompt\nhere.");
@@ -765,12 +714,10 @@ agents:
             tools: None,
             trigger_keywords: vec!["a".into(), "b".into(), "c".into()],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         };
-        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        let agent = ConfigAgent::from_entry(entry, &SwebashFullDefaults::default());
         // trigger_keywords() returns &[String] — borrow from owned Vec
         let kw: &[String] = agent.trigger_keywords();
         assert_eq!(kw.len(), 3);
@@ -789,15 +736,19 @@ agents:
             temperature: None,
             max_tokens: None,
             system_prompt: "prompt".into(),
-            tools: Some(ToolsConfig { fs: false, exec: true, web: false, rag: false }),
+            tools: Some({
+                let mut m = std::collections::HashMap::new();
+                m.insert("fs".into(), false);
+                m.insert("exec".into(), true);
+                m.insert("web".into(), false);
+                ToolsConfig(m)
+            }),
             trigger_keywords: vec![],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         };
-        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        let agent = ConfigAgent::from_entry(entry, &SwebashFullDefaults::default());
         match agent.tool_filter() {
             ToolFilter::Categories(cats) => {
                 assert_eq!(cats, vec!["exec".to_string()]);
@@ -815,15 +766,19 @@ agents:
             temperature: None,
             max_tokens: None,
             system_prompt: "prompt".into(),
-            tools: Some(ToolsConfig { fs: false, exec: false, web: true, rag: false }),
+            tools: Some({
+                let mut m = std::collections::HashMap::new();
+                m.insert("fs".into(), false);
+                m.insert("exec".into(), false);
+                m.insert("web".into(), true);
+                ToolsConfig(m)
+            }),
             trigger_keywords: vec![],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         };
-        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        let agent = ConfigAgent::from_entry(entry, &SwebashFullDefaults::default());
         match agent.tool_filter() {
             ToolFilter::Categories(cats) => {
                 assert_eq!(cats, vec!["web".to_string()]);
@@ -841,20 +796,24 @@ agents:
             temperature: None,
             max_tokens: None,
             system_prompt: "prompt".into(),
-            tools: Some(ToolsConfig { fs: true, exec: false, web: true, rag: false }),
+            tools: Some({
+                let mut m = std::collections::HashMap::new();
+                m.insert("fs".into(), true);
+                m.insert("exec".into(), false);
+                m.insert("web".into(), true);
+                ToolsConfig(m)
+            }),
             trigger_keywords: vec![],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         };
-        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        let agent = ConfigAgent::from_entry(entry, &SwebashFullDefaults::default());
         match agent.tool_filter() {
             ToolFilter::Categories(cats) => {
                 assert_eq!(cats.len(), 2);
-                assert_eq!(cats[0], "fs");
-                assert_eq!(cats[1], "web");
+                assert!(cats.contains(&"fs".to_string()));
+                assert!(cats.contains(&"web".to_string()));
             }
             _ => panic!("Expected Categories"),
         }
@@ -869,20 +828,24 @@ agents:
             temperature: None,
             max_tokens: None,
             system_prompt: "prompt".into(),
-            tools: Some(ToolsConfig { fs: false, exec: true, web: true, rag: false }),
+            tools: Some({
+                let mut m = std::collections::HashMap::new();
+                m.insert("fs".into(), false);
+                m.insert("exec".into(), true);
+                m.insert("web".into(), true);
+                ToolsConfig(m)
+            }),
             trigger_keywords: vec![],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         };
-        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        let agent = ConfigAgent::from_entry(entry, &SwebashFullDefaults::default());
         match agent.tool_filter() {
             ToolFilter::Categories(cats) => {
                 assert_eq!(cats.len(), 2);
-                assert_eq!(cats[0], "exec");
-                assert_eq!(cats[1], "web");
+                assert!(cats.contains(&"exec".to_string()));
+                assert!(cats.contains(&"web".to_string()));
             }
             _ => panic!("Expected Categories"),
         }
@@ -902,12 +865,10 @@ agents:
             tools: None,
             trigger_keywords: vec![],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         };
-        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        let agent = ConfigAgent::from_entry(entry, &SwebashFullDefaults::default());
         assert_eq!(agent.system_prompt(), "");
     }
 
@@ -924,19 +885,17 @@ agents:
             tools: None,
             trigger_keywords: kws.clone(),
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         };
-        let agent = ConfigAgent::from_entry(entry, &AgentDefaults::default());
+        let agent = ConfigAgent::from_entry(entry, &SwebashFullDefaults::default());
         assert_eq!(agent.trigger_keywords().len(), 20);
         assert_eq!(agent.trigger_keywords(), kws.as_slice());
     }
 
     #[test]
     fn test_register_overwrites_same_id() {
-        let defaults = AgentDefaults::default();
+        let defaults = SwebashFullDefaults::default();
         let entry1 = AgentEntry {
             id: "dup".into(),
             name: "Original".into(),
@@ -947,10 +906,8 @@ agents:
             tools: None,
             trigger_keywords: vec![],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         };
         let entry2 = AgentEntry {
             id: "dup".into(),
@@ -962,10 +919,8 @@ agents:
             tools: None,
             trigger_keywords: vec!["new".into()],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         };
         let a1 = ConfigAgent::from_entry(entry1, &defaults);
         let a2 = ConfigAgent::from_entry(entry2, &defaults);
@@ -1001,18 +956,18 @@ agents:
 
     #[test]
     fn test_yaml_with_docs_field_parses() {
-        let parsed = AgentsYaml::from_yaml(DOCS_YAML).unwrap();
+        let parsed = SwebashAgentsYaml::from_yaml(DOCS_YAML).unwrap();
         assert_eq!(parsed.agents.len(), 1);
-        let docs = parsed.agents[0].docs.as_ref().unwrap();
+        let docs = parsed.agents[0].ext.docs.as_ref().unwrap();
         assert_eq!(docs.budget, 8000);
         assert_eq!(docs.sources, vec!["docs/*.md"]);
     }
 
     #[test]
     fn test_yaml_without_docs_field_still_works() {
-        let parsed = AgentsYaml::from_yaml(NO_DOCS_YAML).unwrap();
+        let parsed = SwebashAgentsYaml::from_yaml(NO_DOCS_YAML).unwrap();
         assert_eq!(parsed.agents.len(), 1);
-        assert!(parsed.agents[0].docs.is_none());
+        assert!(parsed.agents[0].ext.docs.is_none());
     }
 
     #[test]
@@ -1146,11 +1101,16 @@ agents:
 
     #[test]
     fn test_directives_prepended_to_system_prompt() {
-        let mut defaults = AgentDefaults::default();
-        defaults.directives = vec![
-            "Be safe.".into(),
-            "Be correct.".into(),
-        ];
+        let defaults = SwebashFullDefaults {
+            base: AgentDefaults {
+                directives: vec![
+                    "Be safe.".into(),
+                    "Be correct.".into(),
+                ],
+                ..AgentDefaults::default()
+            },
+            ..SwebashFullDefaults::default()
+        };
         let entry = AgentEntry {
             id: "d1".into(),
             name: "D1".into(),
@@ -1161,10 +1121,8 @@ agents:
             tools: None,
             trigger_keywords: vec![],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         };
         let agent = ConfigAgent::from_entry(entry, &defaults);
         let prompt = agent.system_prompt();
@@ -1174,7 +1132,7 @@ agents:
 
     #[test]
     fn test_empty_directives_no_block() {
-        let defaults = AgentDefaults::default(); // directives = []
+        let defaults = SwebashFullDefaults::default(); // directives = []
         let entry = AgentEntry {
             id: "d2".into(),
             name: "D2".into(),
@@ -1185,10 +1143,8 @@ agents:
             tools: None,
             trigger_keywords: vec![],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         };
         let agent = ConfigAgent::from_entry(entry, &defaults);
         assert!(!agent.system_prompt().contains("<directives>"));
@@ -1197,8 +1153,13 @@ agents:
 
     #[test]
     fn test_agent_directives_override_defaults() {
-        let mut defaults = AgentDefaults::default();
-        defaults.directives = vec!["Default directive.".into()];
+        let defaults = SwebashFullDefaults {
+            base: AgentDefaults {
+                directives: vec!["Default directive.".into()],
+                ..AgentDefaults::default()
+            },
+            ..SwebashFullDefaults::default()
+        };
         let entry = AgentEntry {
             id: "d3".into(),
             name: "D3".into(),
@@ -1209,10 +1170,8 @@ agents:
             tools: None,
             trigger_keywords: vec![],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: Some(vec!["Agent-specific directive.".into()]),
+            ext: SwebashAgentExt::default(),
         };
         let agent = ConfigAgent::from_entry(entry, &defaults);
         let prompt = agent.system_prompt();
@@ -1222,8 +1181,13 @@ agents:
 
     #[test]
     fn test_agent_empty_directives_suppresses_defaults() {
-        let mut defaults = AgentDefaults::default();
-        defaults.directives = vec!["Default directive.".into()];
+        let defaults = SwebashFullDefaults {
+            base: AgentDefaults {
+                directives: vec!["Default directive.".into()],
+                ..AgentDefaults::default()
+            },
+            ..SwebashFullDefaults::default()
+        };
         let entry = AgentEntry {
             id: "d4".into(),
             name: "D4".into(),
@@ -1234,10 +1198,8 @@ agents:
             tools: None,
             trigger_keywords: vec![],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: Some(vec![]),
+            ext: SwebashAgentExt::default(),
         };
         let agent = ConfigAgent::from_entry(entry, &defaults);
         assert!(!agent.system_prompt().contains("<directives>"));
@@ -1251,9 +1213,14 @@ agents:
         std::fs::create_dir_all(&docs_dir).unwrap();
         std::fs::write(docs_dir.join("ref.md"), "Reference content.").unwrap();
 
-        let mut defaults = AgentDefaults::default();
-        defaults.directives = vec!["Quality first.".into()];
-        defaults.think_first = true;
+        let defaults = SwebashFullDefaults {
+            base: AgentDefaults {
+                directives: vec!["Quality first.".into()],
+                think_first: true,
+                ..AgentDefaults::default()
+            },
+            ..SwebashFullDefaults::default()
+        };
 
         let entry = AgentEntry {
             id: "d5".into(),
@@ -1265,15 +1232,16 @@ agents:
             tools: None,
             trigger_keywords: vec![],
             think_first: None, // inherits true from defaults
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: Some(DocsConfig {
-                budget: 8000,
-                strategy: DocsStrategy::default(),
-                top_k: 5,
-                sources: vec!["docs/ref.md".into()],
-            }),
             directives: None,
+            ext: SwebashAgentExt {
+                docs: Some(DocsConfig {
+                    budget: 8000,
+                    strategy: DocsStrategy::default(),
+                    top_k: 5,
+                    sources: vec!["docs/ref.md".into()],
+                }),
+                ..SwebashAgentExt::default()
+            },
         };
         let agent = ConfigAgent::from_entry_with_base_dir(entry, &defaults, Some(dir.path()), false);
         let prompt = agent.system_prompt();

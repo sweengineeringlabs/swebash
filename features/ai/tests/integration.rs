@@ -27,7 +27,7 @@ use swebash_ai::core::agents::builtins::{builtin_agent_count, create_default_reg
 fn builtin_count() -> usize {
     builtin_agent_count()
 }
-use swebash_ai::core::agents::config::{AgentDefaults, AgentEntry, AgentsYaml, ConfigAgent, DocsConfig, DocsStrategy, ToolsConfig, load_docs_context};
+use swebash_ai::core::agents::config::{AgentDefaults, AgentEntry, SwebashAgentsYaml, SwebashAgentExt, SwebashFullDefaults, ConfigAgent, DocsConfig, DocsStrategy, ToolsConfig, load_docs_context};
 use swebash_ai::core::agents::{AgentDescriptor, ToolFilter};
 use swebash_ai::core::DefaultAiService;
 use swebash_ai::spi::chat_provider::ChatProviderClient;
@@ -1948,7 +1948,7 @@ async fn agent_default_config_override() {
 #[test]
 fn yaml_parse_embedded_defaults() {
     let yaml = include_str!("../src/core/agents/default_agents.yaml");
-    let parsed = AgentsYaml::from_yaml(yaml).expect("embedded YAML should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("embedded YAML should parse");
     assert_eq!(parsed.version, 1);
     assert_eq!(parsed.agents.len(), builtin_count());
 }
@@ -1956,18 +1956,18 @@ fn yaml_parse_embedded_defaults() {
 #[test]
 fn yaml_parse_defaults_section() {
     let yaml = include_str!("../src/core/agents/default_agents.yaml");
-    let parsed = AgentsYaml::from_yaml(yaml).unwrap();
-    assert!((parsed.defaults.temperature - 0.5).abs() < f32::EPSILON);
-    assert_eq!(parsed.defaults.max_tokens, 1024);
-    assert!(parsed.defaults.tools.fs);
-    assert!(parsed.defaults.tools.exec);
-    assert!(parsed.defaults.tools.web);
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).unwrap();
+    assert!((parsed.defaults.base.temperature - 0.5).abs() < f32::EPSILON);
+    assert_eq!(parsed.defaults.base.max_tokens, 1024);
+    assert_eq!(parsed.defaults.base.tools.0.get("fs"), Some(&true));
+    assert_eq!(parsed.defaults.base.tools.0.get("exec"), Some(&true));
+    assert_eq!(parsed.defaults.base.tools.0.get("web"), Some(&true));
 }
 
 #[test]
 fn yaml_parse_agent_ids_match_originals() {
     let yaml = include_str!("../src/core/agents/default_agents.yaml");
-    let parsed = AgentsYaml::from_yaml(yaml).unwrap();
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).unwrap();
     let ids: Vec<&str> = parsed.agents.iter().map(|a| a.id.as_str()).collect();
     assert!(ids.contains(&"shell"));
     assert!(ids.contains(&"review"));
@@ -1980,7 +1980,7 @@ fn yaml_parse_agent_ids_match_originals() {
 #[test]
 fn yaml_parse_trigger_keywords_preserved() {
     let yaml = include_str!("../src/core/agents/default_agents.yaml");
-    let parsed = AgentsYaml::from_yaml(yaml).unwrap();
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).unwrap();
 
     let review = parsed.agents.iter().find(|a| a.id == "review").unwrap();
     assert_eq!(review.trigger_keywords, vec!["review"]);
@@ -2002,21 +2002,21 @@ fn yaml_parse_trigger_keywords_preserved() {
 #[test]
 fn yaml_parse_tool_overrides() {
     let yaml = include_str!("../src/core/agents/default_agents.yaml");
-    let parsed = AgentsYaml::from_yaml(yaml).unwrap();
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).unwrap();
 
     // review: fs=true, exec=false, web=false
     let review = parsed.agents.iter().find(|a| a.id == "review").unwrap();
     let review_tools = review.tools.as_ref().expect("review should have tools override");
-    assert!(review_tools.fs);
-    assert!(!review_tools.exec);
-    assert!(!review_tools.web);
+    assert_eq!(review_tools.0.get("fs"), Some(&true));
+    assert_eq!(review_tools.0.get("exec"), Some(&false));
+    assert_eq!(review_tools.0.get("web"), Some(&false));
 
     // git: fs=true, exec=true, web=false
     let git = parsed.agents.iter().find(|a| a.id == "git").unwrap();
     let git_tools = git.tools.as_ref().expect("git should have tools override");
-    assert!(git_tools.fs);
-    assert!(git_tools.exec);
-    assert!(!git_tools.web);
+    assert_eq!(git_tools.0.get("fs"), Some(&true));
+    assert_eq!(git_tools.0.get("exec"), Some(&true));
+    assert_eq!(git_tools.0.get("web"), Some(&false));
 
     // shell: no tools override (inherits defaults)
     let shell = parsed.agents.iter().find(|a| a.id == "shell").unwrap();
@@ -2030,7 +2030,7 @@ fn yaml_parse_tool_overrides() {
 #[test]
 fn yaml_parse_system_prompts_non_empty() {
     let yaml = include_str!("../src/core/agents/default_agents.yaml");
-    let parsed = AgentsYaml::from_yaml(yaml).unwrap();
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).unwrap();
 
     for entry in &parsed.agents {
         assert!(
@@ -2043,16 +2043,16 @@ fn yaml_parse_system_prompts_non_empty() {
 
 #[test]
 fn yaml_parse_rejects_malformed_input() {
-    assert!(AgentsYaml::from_yaml("").is_err());
-    assert!(AgentsYaml::from_yaml("not yaml at all [[[").is_err());
-    assert!(AgentsYaml::from_yaml("version: 1\n").is_err()); // missing agents
+    assert!(SwebashAgentsYaml::from_yaml("").is_err());
+    assert!(SwebashAgentsYaml::from_yaml("not yaml at all [[[").is_err());
+    assert!(SwebashAgentsYaml::from_yaml("version: 1\n").is_err()); // missing agents
 }
 
 // ── YAML config: ConfigAgent trait tests (8) ────────────────────────────
 
 #[test]
 fn config_agent_inherits_defaults() {
-    let defaults = AgentDefaults::default();
+    let defaults = SwebashFullDefaults::default();
     let entry = AgentEntry {
         id: "test".into(),
         name: "Test".into(),
@@ -2063,10 +2063,8 @@ fn config_agent_inherits_defaults() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
-        bypass_confirmation: None,
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt::default(),
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -2077,7 +2075,7 @@ fn config_agent_inherits_defaults() {
 
 #[test]
 fn config_agent_overrides_temperature_and_tokens() {
-    let defaults = AgentDefaults::default();
+    let defaults = SwebashFullDefaults::default();
     let entry = AgentEntry {
         id: "custom".into(),
         name: "Custom".into(),
@@ -2088,10 +2086,8 @@ fn config_agent_overrides_temperature_and_tokens() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
-        bypass_confirmation: None,
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt::default(),
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -2101,7 +2097,7 @@ fn config_agent_overrides_temperature_and_tokens() {
 
 #[test]
 fn config_agent_tool_filter_only() {
-    let defaults = AgentDefaults::default();
+    let defaults = SwebashFullDefaults::default();
     let entry = AgentEntry {
         id: "restricted".into(),
         name: "Restricted".into(),
@@ -2109,13 +2105,17 @@ fn config_agent_tool_filter_only() {
         temperature: None,
         max_tokens: None,
         system_prompt: "Restricted.".into(),
-        tools: Some(ToolsConfig { fs: true, exec: false, web: false, rag: false }),
+        tools: Some({
+            let mut m = std::collections::HashMap::new();
+            m.insert("fs".into(), true);
+            m.insert("exec".into(), false);
+            m.insert("web".into(), false);
+            ToolsConfig(m)
+        }),
         trigger_keywords: vec![],
         think_first: None,
-        bypass_confirmation: None,
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt::default(),
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -2131,7 +2131,7 @@ fn config_agent_tool_filter_only() {
 
 #[test]
 fn config_agent_tool_filter_none() {
-    let defaults = AgentDefaults::default();
+    let defaults = SwebashFullDefaults::default();
     let entry = AgentEntry {
         id: "chat-only".into(),
         name: "Chat Only".into(),
@@ -2139,13 +2139,17 @@ fn config_agent_tool_filter_none() {
         temperature: None,
         max_tokens: None,
         system_prompt: "Chat only.".into(),
-        tools: Some(ToolsConfig { fs: false, exec: false, web: false, rag: false }),
+        tools: Some({
+            let mut m = std::collections::HashMap::new();
+            m.insert("fs".into(), false);
+            m.insert("exec".into(), false);
+            m.insert("web".into(), false);
+            ToolsConfig(m)
+        }),
         trigger_keywords: vec![],
         think_first: None,
-        bypass_confirmation: None,
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt::default(),
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -2157,7 +2161,7 @@ fn config_agent_tool_filter_none() {
 
 #[test]
 fn config_agent_tool_filter_all() {
-    let defaults = AgentDefaults::default();
+    let defaults = SwebashFullDefaults::default();
     let entry = AgentEntry {
         id: "full".into(),
         name: "Full".into(),
@@ -2165,13 +2169,17 @@ fn config_agent_tool_filter_all() {
         temperature: None,
         max_tokens: None,
         system_prompt: "Full.".into(),
-        tools: Some(ToolsConfig { fs: true, exec: true, web: true, rag: false }),
+        tools: Some({
+            let mut m = std::collections::HashMap::new();
+            m.insert("fs".into(), true);
+            m.insert("exec".into(), true);
+            m.insert("web".into(), true);
+            ToolsConfig(m)
+        }),
         trigger_keywords: vec![],
         think_first: None,
-        bypass_confirmation: None,
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt::default(),
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -2180,7 +2188,7 @@ fn config_agent_tool_filter_all() {
 
 #[test]
 fn config_agent_trigger_keywords() {
-    let defaults = AgentDefaults::default();
+    let defaults = SwebashFullDefaults::default();
     let entry = AgentEntry {
         id: "kw-test".into(),
         name: "KW".into(),
@@ -2191,10 +2199,8 @@ fn config_agent_trigger_keywords() {
         tools: None,
         trigger_keywords: vec!["alpha".into(), "beta".into(), "gamma".into()],
         think_first: None,
-        bypass_confirmation: None,
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt::default(),
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -2204,7 +2210,7 @@ fn config_agent_trigger_keywords() {
 
 #[test]
 fn config_agent_system_prompt_preserved() {
-    let defaults = AgentDefaults::default();
+    let defaults = SwebashFullDefaults::default();
     let prompt = "You are a specialized agent.\nLine 2.\nLine 3.";
     let entry = AgentEntry {
         id: "prompt-test".into(),
@@ -2216,10 +2222,8 @@ fn config_agent_system_prompt_preserved() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
-        bypass_confirmation: None,
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt::default(),
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -2228,14 +2232,21 @@ fn config_agent_system_prompt_preserved() {
 
 #[test]
 fn config_agent_inherits_custom_defaults() {
-    let defaults = AgentDefaults {
-        temperature: 0.8,
-        max_tokens: 2048,
-        tools: ToolsConfig { fs: true, exec: false, web: true, rag: false },
-        think_first: false,
-        bypass_confirmation: false,
-        max_iterations: None,
-        directives: vec![],
+    let defaults = SwebashFullDefaults {
+        base: AgentDefaults {
+            temperature: 0.8,
+            max_tokens: 2048,
+            tools: {
+                let mut m = std::collections::HashMap::new();
+                m.insert("fs".into(), true);
+                m.insert("exec".into(), false);
+                m.insert("web".into(), true);
+                ToolsConfig(m)
+            },
+            think_first: false,
+            directives: vec![],
+        },
+        ..SwebashFullDefaults::default()
     };
     let entry = AgentEntry {
         id: "inheritor".into(),
@@ -2247,10 +2258,8 @@ fn config_agent_inherits_custom_defaults() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
-        bypass_confirmation: None,
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt::default(),
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3215,8 +3224,9 @@ fn delegate_categories_correct_strings() {
 
     // git: fs + exec
     match registry.get("git").unwrap().tool_filter() {
-        ToolFilter::Categories(cats) => {
-            assert_eq!(cats, vec!["fs".to_string(), "exec".to_string()]);
+        ToolFilter::Categories(mut cats) => {
+            cats.sort();
+            assert_eq!(cats, vec!["exec".to_string(), "fs".to_string()]);
         }
         other => panic!("Expected Categories for git, got: {:?}", other),
     }
@@ -3252,15 +3262,19 @@ fn delegate_register_overwrite_and_cache_coherence() {
             temperature: Some(0.1),
             max_tokens: Some(256),
             system_prompt: "Custom prompt.".into(),
-            tools: Some(ToolsConfig { fs: false, exec: false, web: false, rag: false }),
+            tools: Some({
+                let mut m = std::collections::HashMap::new();
+                m.insert("fs".into(), false);
+                m.insert("exec".into(), false);
+                m.insert("web".into(), false);
+                ToolsConfig(m)
+            }),
             trigger_keywords: vec!["custom".into()],
             think_first: None,
-            bypass_confirmation: None,
-            max_iterations: None,
-            docs: None,
             directives: None,
+            ext: SwebashAgentExt::default(),
         },
-        &AgentDefaults::default(),
+        &SwebashFullDefaults::default(),
     );
     registry.register(custom);
 
@@ -3602,14 +3616,15 @@ async fn logging_stream_preserves_all_chunks() {
 
 #[test]
 fn think_first_appends_prompt_when_enabled() {
-    let defaults = AgentDefaults {
-        temperature: 0.5,
-        max_tokens: 1024,
-        tools: ToolsConfig::default(),
-        think_first: true,
-        bypass_confirmation: false,
-        max_iterations: None,
-        directives: vec![],
+    let defaults = SwebashFullDefaults {
+        base: AgentDefaults {
+            temperature: 0.5,
+            max_tokens: 1024,
+            tools: ToolsConfig::default(),
+            think_first: true,
+            directives: vec![],
+        },
+        ..SwebashFullDefaults::default()
     };
     let entry = AgentEntry {
         id: "thinker".into(),
@@ -3621,10 +3636,8 @@ fn think_first_appends_prompt_when_enabled() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None, // inherits true from defaults
-        bypass_confirmation: None,
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt::default(),
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3641,7 +3654,7 @@ fn think_first_appends_prompt_when_enabled() {
 
 #[test]
 fn think_first_does_not_append_when_disabled() {
-    let defaults = AgentDefaults::default(); // think_first defaults to false
+    let defaults = SwebashFullDefaults::default(); // think_first defaults to false
     let entry = AgentEntry {
         id: "no-think".into(),
         name: "NoThink".into(),
@@ -3652,10 +3665,8 @@ fn think_first_does_not_append_when_disabled() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None, // inherits false from defaults
-        bypass_confirmation: None,
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt::default(),
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3668,14 +3679,15 @@ fn think_first_does_not_append_when_disabled() {
 
 #[test]
 fn think_first_agent_override_disables_default() {
-    let defaults = AgentDefaults {
-        temperature: 0.5,
-        max_tokens: 1024,
-        tools: ToolsConfig::default(),
-        think_first: true, // globally enabled
-        bypass_confirmation: false,
-        max_iterations: None,
-        directives: vec![],
+    let defaults = SwebashFullDefaults {
+        base: AgentDefaults {
+            temperature: 0.5,
+            max_tokens: 1024,
+            tools: ToolsConfig::default(),
+            think_first: true, // globally enabled
+            directives: vec![],
+        },
+        ..SwebashFullDefaults::default()
     };
     let entry = AgentEntry {
         id: "override".into(),
@@ -3687,10 +3699,8 @@ fn think_first_agent_override_disables_default() {
         tools: None,
         trigger_keywords: vec![],
         think_first: Some(false), // agent-level override disables it
-        bypass_confirmation: None,
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt::default(),
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3703,7 +3713,7 @@ fn think_first_agent_override_disables_default() {
 
 #[test]
 fn think_first_agent_override_enables() {
-    let defaults = AgentDefaults::default(); // think_first: false
+    let defaults = SwebashFullDefaults::default(); // think_first: false
     let entry = AgentEntry {
         id: "force-think".into(),
         name: "ForceThink".into(),
@@ -3714,10 +3724,8 @@ fn think_first_agent_override_enables() {
         tools: None,
         trigger_keywords: vec![],
         think_first: Some(true), // agent-level override enables it
-        bypass_confirmation: None,
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt::default(),
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3729,14 +3737,15 @@ fn think_first_agent_override_enables() {
 
 #[test]
 fn think_first_skipped_on_empty_prompt() {
-    let defaults = AgentDefaults {
-        temperature: 0.5,
-        max_tokens: 1024,
-        tools: ToolsConfig::default(),
-        think_first: true,
-        bypass_confirmation: false,
-        max_iterations: None,
-        directives: vec![],
+    let defaults = SwebashFullDefaults {
+        base: AgentDefaults {
+            temperature: 0.5,
+            max_tokens: 1024,
+            tools: ToolsConfig::default(),
+            think_first: true,
+            directives: vec![],
+        },
+        ..SwebashFullDefaults::default()
     };
     let entry = AgentEntry {
         id: "empty".into(),
@@ -3748,10 +3757,8 @@ fn think_first_skipped_on_empty_prompt() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
-        bypass_confirmation: None,
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt::default(),
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
 
@@ -3779,8 +3786,8 @@ agents:
     thinkFirst: false
     systemPrompt: Base prompt.
 "#;
-    let parsed = AgentsYaml::from_yaml(yaml).unwrap();
-    assert!(parsed.defaults.think_first);
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).unwrap();
+    assert!(parsed.defaults.base.think_first);
 
     let agents: Vec<_> = parsed
         .agents
@@ -3806,20 +3813,22 @@ agents:
 
 #[test]
 fn bypass_confirmation_default_is_false() {
-    let defaults = AgentDefaults::default();
+    let defaults = SwebashFullDefaults::default();
     assert!(!defaults.bypass_confirmation, "bypassConfirmation should default to false");
 }
 
 #[test]
 fn bypass_confirmation_inherits_from_defaults() {
-    let defaults = AgentDefaults {
-        temperature: 0.5,
-        max_tokens: 1024,
-        tools: ToolsConfig::default(),
-        think_first: false,
+    let defaults = SwebashFullDefaults {
         bypass_confirmation: true, // defaults enable bypass
-        max_iterations: None,
-        directives: vec![],
+        base: AgentDefaults {
+            temperature: 0.5,
+            max_tokens: 1024,
+            tools: ToolsConfig::default(),
+            think_first: false,
+            directives: vec![],
+        },
+        ..SwebashFullDefaults::default()
     };
     let entry = AgentEntry {
         id: "inheritor".into(),
@@ -3831,10 +3840,11 @@ fn bypass_confirmation_inherits_from_defaults() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
-        bypass_confirmation: None, // inherits from defaults
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt {
+            bypass_confirmation: None, // inherits from defaults
+            ..SwebashAgentExt::default()
+        },
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
     assert!(agent.bypass_confirmation(), "should inherit true from defaults");
@@ -3842,7 +3852,7 @@ fn bypass_confirmation_inherits_from_defaults() {
 
 #[test]
 fn bypass_confirmation_agent_override_enables() {
-    let defaults = AgentDefaults::default(); // bypass_confirmation: false
+    let defaults = SwebashFullDefaults::default(); // bypass_confirmation: false
     let entry = AgentEntry {
         id: "bypasser".into(),
         name: "Bypasser".into(),
@@ -3853,10 +3863,11 @@ fn bypass_confirmation_agent_override_enables() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
-        bypass_confirmation: Some(true), // agent-level override enables
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt {
+            bypass_confirmation: Some(true), // agent-level override enables
+            ..SwebashAgentExt::default()
+        },
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
     assert!(agent.bypass_confirmation(), "agent override should enable bypass");
@@ -3864,14 +3875,16 @@ fn bypass_confirmation_agent_override_enables() {
 
 #[test]
 fn bypass_confirmation_agent_override_disables() {
-    let defaults = AgentDefaults {
-        temperature: 0.5,
-        max_tokens: 1024,
-        tools: ToolsConfig::default(),
-        think_first: false,
+    let defaults = SwebashFullDefaults {
         bypass_confirmation: true, // defaults enable bypass
-        max_iterations: None,
-        directives: vec![],
+        base: AgentDefaults {
+            temperature: 0.5,
+            max_tokens: 1024,
+            tools: ToolsConfig::default(),
+            think_first: false,
+            directives: vec![],
+        },
+        ..SwebashFullDefaults::default()
     };
     let entry = AgentEntry {
         id: "no-bypass".into(),
@@ -3883,10 +3896,11 @@ fn bypass_confirmation_agent_override_disables() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
-        bypass_confirmation: Some(false), // agent-level override disables
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt {
+            bypass_confirmation: Some(false), // agent-level override disables
+            ..SwebashAgentExt::default()
+        },
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
     assert!(!agent.bypass_confirmation(), "agent override should disable bypass");
@@ -3909,9 +3923,8 @@ agents:
     systemPrompt: beta prompt
     bypassConfirmation: false
 "#;
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     assert!(parsed.defaults.bypass_confirmation, "defaults should parse bypassConfirmation");
-
     let defaults = parsed.defaults;
     let mut agents = parsed.agents.into_iter();
 
@@ -4070,20 +4083,22 @@ fn yaml_registry_apitester_agent_properties() {
 
 #[test]
 fn max_iterations_default_is_none() {
-    let defaults = AgentDefaults::default();
+    let defaults = SwebashFullDefaults::default();
     assert_eq!(defaults.max_iterations, None, "maxIterations should default to None");
 }
 
 #[test]
 fn max_iterations_inherits_from_defaults() {
-    let defaults = AgentDefaults {
-        temperature: 0.5,
-        max_tokens: 1024,
-        tools: ToolsConfig::default(),
-        think_first: false,
-        bypass_confirmation: false,
+    let defaults = SwebashFullDefaults {
         max_iterations: Some(20),
-        directives: vec![],
+        base: AgentDefaults {
+            temperature: 0.5,
+            max_tokens: 1024,
+            tools: ToolsConfig::default(),
+            think_first: false,
+            directives: vec![],
+        },
+        ..SwebashFullDefaults::default()
     };
     let entry = AgentEntry {
         id: "inheritor".into(),
@@ -4095,10 +4110,8 @@ fn max_iterations_inherits_from_defaults() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
-        bypass_confirmation: None,
-        max_iterations: None,
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt::default(),
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
     assert_eq!(agent.max_iterations(), Some(20), "should inherit from defaults");
@@ -4106,7 +4119,7 @@ fn max_iterations_inherits_from_defaults() {
 
 #[test]
 fn max_iterations_agent_override() {
-    let defaults = AgentDefaults::default(); // max_iterations: None
+    let defaults = SwebashFullDefaults::default(); // max_iterations: None
     let entry = AgentEntry {
         id: "custom-iter".into(),
         name: "Custom".into(),
@@ -4117,10 +4130,11 @@ fn max_iterations_agent_override() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
-        bypass_confirmation: None,
-        max_iterations: Some(30),
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt {
+            max_iterations: Some(30),
+            ..SwebashAgentExt::default()
+        },
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
     assert_eq!(agent.max_iterations(), Some(30), "agent override should take effect");
@@ -4128,14 +4142,16 @@ fn max_iterations_agent_override() {
 
 #[test]
 fn max_iterations_agent_overrides_defaults() {
-    let defaults = AgentDefaults {
-        temperature: 0.5,
-        max_tokens: 1024,
-        tools: ToolsConfig::default(),
-        think_first: false,
-        bypass_confirmation: false,
+    let defaults = SwebashFullDefaults {
         max_iterations: Some(15),
-        directives: vec![],
+        base: AgentDefaults {
+            temperature: 0.5,
+            max_tokens: 1024,
+            tools: ToolsConfig::default(),
+            think_first: false,
+            directives: vec![],
+        },
+        ..SwebashFullDefaults::default()
     };
     let entry = AgentEntry {
         id: "override".into(),
@@ -4147,10 +4163,11 @@ fn max_iterations_agent_overrides_defaults() {
         tools: None,
         trigger_keywords: vec![],
         think_first: None,
-        bypass_confirmation: None,
-        max_iterations: Some(50),
-        docs: None,
         directives: None,
+        ext: SwebashAgentExt {
+            max_iterations: Some(50),
+            ..SwebashAgentExt::default()
+        },
     };
     let agent = ConfigAgent::from_entry(entry, &defaults);
     assert_eq!(agent.max_iterations(), Some(50), "agent override should beat defaults");
@@ -4173,9 +4190,8 @@ agents:
     systemPrompt: beta prompt
     maxIterations: 40
 "#;
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     assert_eq!(parsed.defaults.max_iterations, Some(20), "defaults should parse maxIterations");
-
     let defaults = parsed.defaults;
     let mut agents = parsed.agents.into_iter();
 
@@ -4372,7 +4388,7 @@ agents:
 #[test]
 #[serial]
 fn yaml_rag_config_parsed_from_project_local() {
-    use swebash_ai::core::agents::config::AgentsYaml;
+    use swebash_ai::core::agents::config::SwebashAgentsYaml;
 
     // Parse a YAML with rag section
     let yaml = r#"
@@ -4389,7 +4405,7 @@ agents:
     systemPrompt: Test prompt.
 "#;
 
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     let rag = parsed.rag.expect("rag section should be present");
 
     assert_eq!(rag.store, "sqlite");
@@ -4401,7 +4417,7 @@ agents:
 #[test]
 #[serial]
 fn yaml_rag_config_defaults_when_omitted() {
-    use swebash_ai::core::agents::config::AgentsYaml;
+    use swebash_ai::core::agents::config::SwebashAgentsYaml;
 
     // Parse a YAML without rag section
     let yaml = r#"
@@ -4413,14 +4429,14 @@ agents:
     systemPrompt: Test prompt.
 "#;
 
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     assert!(parsed.rag.is_none(), "rag section should be None when omitted");
 }
 
 #[test]
 #[serial]
 fn yaml_rag_config_partial_fields() {
-    use swebash_ai::core::agents::config::AgentsYaml;
+    use swebash_ai::core::agents::config::SwebashAgentsYaml;
 
     // Parse a YAML with partial rag section (only store)
     let yaml = r#"
@@ -4434,7 +4450,7 @@ agents:
     systemPrompt: Test prompt.
 "#;
 
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     let rag = parsed.rag.expect("rag section should be present");
 
     assert_eq!(rag.store, "file");
@@ -4461,9 +4477,9 @@ agents:
         - "docs/*.md"
 "#;
 
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     let entry = &parsed.agents[0];
-    let docs = entry.docs.as_ref().expect("docs should be present");
+    let docs = entry.ext.docs.as_ref().expect("docs should be present");
 
     assert_eq!(docs.strategy, DocsStrategy::Preload);
     assert_eq!(docs.budget, 8000);
@@ -4486,9 +4502,9 @@ agents:
         - "docs/*.md"
 "#;
 
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     let entry = &parsed.agents[0];
-    let docs = entry.docs.as_ref().expect("docs should be present");
+    let docs = entry.ext.docs.as_ref().expect("docs should be present");
 
     assert_eq!(docs.strategy, DocsStrategy::Rag);
     assert_eq!(docs.top_k, 10);
@@ -4509,9 +4525,9 @@ agents:
         - "docs/*.md"
 "#;
 
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     let entry = &parsed.agents[0];
-    let docs = entry.docs.as_ref().expect("docs should be present");
+    let docs = entry.ext.docs.as_ref().expect("docs should be present");
 
     assert_eq!(docs.strategy, DocsStrategy::Preload, "default strategy should be preload");
 }
@@ -4532,9 +4548,9 @@ agents:
         - "docs/*.md"
 "#;
 
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     let entry = &parsed.agents[0];
-    let docs = entry.docs.as_ref().expect("docs should be present");
+    let docs = entry.ext.docs.as_ref().expect("docs should be present");
 
     assert_eq!(docs.top_k, 5, "top_k should default to 5");
 }
@@ -4560,7 +4576,7 @@ agents:
         - "docs/*.md"
 "#;
 
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     let entry = parsed.agents.into_iter().next().unwrap();
     let agent = ConfigAgent::from_entry_with_base_dir(entry, &parsed.defaults, Some(dir.path()), false);
 
@@ -4592,7 +4608,7 @@ agents:
         - "docs/*.md"
 "#;
 
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     let entry = parsed.agents.into_iter().next().unwrap();
     let agent = ConfigAgent::from_entry_with_base_dir(entry, &parsed.defaults, Some(dir.path()), true);
 
@@ -4623,7 +4639,7 @@ agents:
         - "docs/*.md"
 "#;
 
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     let entry = parsed.agents.into_iter().next().unwrap();
     let agent = ConfigAgent::from_entry_with_base_dir(entry, &parsed.defaults, None, true);
 
@@ -4658,7 +4674,7 @@ agents:
         - "docs/*.md"
 "#;
 
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     let entry = parsed.agents.into_iter().next().unwrap();
     let agent = ConfigAgent::from_entry(entry, &parsed.defaults);
 
@@ -4688,7 +4704,7 @@ agents:
         - "docs/*.md"
 "#;
 
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     let entry = parsed.agents.into_iter().next().unwrap();
     let agent = ConfigAgent::from_entry_with_base_dir(entry, &parsed.defaults, None, true);
 
@@ -4728,7 +4744,7 @@ agents:
         - "docs/*.md"
 "#;
 
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     let mut agents: Vec<ConfigAgent> = parsed.agents
         .into_iter()
         .map(|e| ConfigAgent::from_entry_with_base_dir(e, &parsed.defaults, Some(dir.path()), true))
@@ -5035,7 +5051,7 @@ async fn rag_tool_e2e_validates_query_parameter() {
 #[test]
 #[serial]
 fn yaml_rag_config_parses_swevecdb_store() {
-    use swebash_ai::core::agents::config::AgentsYaml;
+    use swebash_ai::core::agents::config::SwebashAgentsYaml;
 
     let yaml = r#"
 version: 1
@@ -5051,7 +5067,7 @@ agents:
     systemPrompt: Test prompt.
 "#;
 
-    let parsed = AgentsYaml::from_yaml(yaml).expect("should parse");
+    let parsed = SwebashAgentsYaml::from_yaml(yaml).expect("should parse");
     let rag = parsed.rag.expect("rag section should be present");
 
     assert_eq!(rag.store, "swevecdb");

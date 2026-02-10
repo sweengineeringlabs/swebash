@@ -13,7 +13,7 @@ use llm_provider::LlmService;
 use crate::spi::config::AiConfig;
 use llmrag::{RagIndexManager, VectorStoreConfig};
 
-use super::config::{AgentsYaml, ConfigAgent, RagYamlConfig};
+use super::config::{SwebashAgentsYaml, ConfigAgent, RagYamlConfig};
 use super::AgentManager;
 
 /// Embedded default agents YAML, compiled into the binary.
@@ -24,7 +24,7 @@ const DEFAULT_AGENTS_YAML: &str = include_str!("default_agents.yaml");
 /// Useful in tests to avoid hardcoding a count that breaks whenever a
 /// new agent is added to `default_agents.yaml`.
 pub fn builtin_agent_count() -> usize {
-    AgentsYaml::from_yaml(DEFAULT_AGENTS_YAML)
+    SwebashAgentsYaml::from_yaml(DEFAULT_AGENTS_YAML)
         .expect("embedded YAML must parse")
         .agents
         .len()
@@ -32,7 +32,7 @@ pub fn builtin_agent_count() -> usize {
 
 /// Parsed YAML source with its base directory for agent loading.
 struct YamlSource {
-    parsed: AgentsYaml,
+    parsed: SwebashAgentsYaml,
     base_dir: Option<PathBuf>,
 }
 
@@ -53,7 +53,7 @@ pub fn create_default_registry(llm: Arc<dyn LlmService>, mut config: AiConfig) -
     let mut yaml_rag_config: Option<RagYamlConfig> = None;
 
     // 1. Embedded defaults
-    if let Ok(parsed) = AgentsYaml::from_yaml(DEFAULT_AGENTS_YAML) {
+    if let Ok(parsed) = SwebashAgentsYaml::from_yaml(DEFAULT_AGENTS_YAML) {
         if let Some(ref rag) = parsed.rag {
             yaml_rag_config = Some(rag.clone());
         }
@@ -69,7 +69,7 @@ pub fn create_default_registry(llm: Arc<dyn LlmService>, mut config: AiConfig) -
         if project_config.is_file() {
             if let Ok(contents) = std::fs::read_to_string(&project_config) {
                 tracing::info!("Loading project agents from {}", project_config.display());
-                if let Ok(parsed) = AgentsYaml::from_yaml(&contents) {
+                if let Ok(parsed) = SwebashAgentsYaml::from_yaml(&contents) {
                     if let Some(ref rag) = parsed.rag {
                         yaml_rag_config = Some(rag.clone());
                     }
@@ -88,7 +88,7 @@ pub fn create_default_registry(llm: Arc<dyn LlmService>, mut config: AiConfig) -
     if let Some(path) = find_user_agents_config() {
         if let Ok(contents) = std::fs::read_to_string(&path) {
             tracing::info!("Loading user agents from {}", path.display());
-            if let Ok(parsed) = AgentsYaml::from_yaml(&contents) {
+            if let Ok(parsed) = SwebashAgentsYaml::from_yaml(&contents) {
                 if let Some(ref rag) = parsed.rag {
                     yaml_rag_config = Some(rag.clone());
                 }
@@ -228,7 +228,7 @@ pub(crate) fn register_from_yaml(
     source: &str,
     base_dir: Option<&std::path::Path>,
 ) {
-    match AgentsYaml::from_yaml(yaml) {
+    match SwebashAgentsYaml::from_yaml(yaml) {
         Ok(parsed) => {
             let defaults = parsed.defaults;
             for entry in parsed.agents {
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_embedded_yaml_parses() {
-        let parsed = AgentsYaml::from_yaml(DEFAULT_AGENTS_YAML)
+        let parsed = SwebashAgentsYaml::from_yaml(DEFAULT_AGENTS_YAML)
             .expect("Embedded default_agents.yaml should parse");
         assert_eq!(parsed.version, 1);
         assert_eq!(parsed.agents.len(), builtin_agent_count());
@@ -298,7 +298,7 @@ mod tests {
 
     #[test]
     fn test_shell_agent() {
-        let parsed = AgentsYaml::from_yaml(DEFAULT_AGENTS_YAML).unwrap();
+        let parsed = SwebashAgentsYaml::from_yaml(DEFAULT_AGENTS_YAML).unwrap();
         let defaults = parsed.defaults;
         let entry = parsed.agents.into_iter().find(|a| a.id == "shell").unwrap();
         let agent = ConfigAgent::from_entry(entry, &defaults);
@@ -311,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_review_agent() {
-        let parsed = AgentsYaml::from_yaml(DEFAULT_AGENTS_YAML).unwrap();
+        let parsed = SwebashAgentsYaml::from_yaml(DEFAULT_AGENTS_YAML).unwrap();
         let defaults = parsed.defaults;
         let entry = parsed.agents.into_iter().find(|a| a.id == "review").unwrap();
         let agent = ConfigAgent::from_entry(entry, &defaults);
@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn test_devops_agent() {
-        let parsed = AgentsYaml::from_yaml(DEFAULT_AGENTS_YAML).unwrap();
+        let parsed = SwebashAgentsYaml::from_yaml(DEFAULT_AGENTS_YAML).unwrap();
         let defaults = parsed.defaults;
         let entry = parsed.agents.into_iter().find(|a| a.id == "devops").unwrap();
         let agent = ConfigAgent::from_entry(entry, &defaults);
@@ -343,7 +343,7 @@ mod tests {
 
     #[test]
     fn test_git_agent() {
-        let parsed = AgentsYaml::from_yaml(DEFAULT_AGENTS_YAML).unwrap();
+        let parsed = SwebashAgentsYaml::from_yaml(DEFAULT_AGENTS_YAML).unwrap();
         let defaults = parsed.defaults;
         let entry = parsed.agents.into_iter().find(|a| a.id == "git").unwrap();
         let agent = ConfigAgent::from_entry(entry, &defaults);

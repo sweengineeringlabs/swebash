@@ -243,7 +243,8 @@ impl AgentManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use config::{AgentDefaults, AgentEntry};
+    use agent_controller::yaml::AgentEntry;
+    use config::{SwebashAgentExt, SwebashFullDefaults};
     use llm_provider::MockLlmService;
 
     fn make_test_agent(id: &str, keywords: Vec<String>) -> ConfigAgent {
@@ -258,12 +259,10 @@ mod tests {
                 tools: None,
                 trigger_keywords: keywords,
                 think_first: None,
-                bypass_confirmation: None,
-                max_iterations: None,
-                docs: None,
                 directives: None,
+                ext: SwebashAgentExt::default(),
             },
-            &AgentDefaults::default(),
+            &SwebashFullDefaults::default(),
         )
     }
 
@@ -630,12 +629,10 @@ mod tests {
                 tools: None,
                 trigger_keywords: vec![],
                 think_first: None,
-                bypass_confirmation: None,
-                max_iterations: None,
-                docs: None,
                 directives: None,
+                ext: SwebashAgentExt::default(),
             },
-            &AgentDefaults::default(),
+            &SwebashFullDefaults::default(),
         ));
         manager.register(ConfigAgent::from_entry(
             AgentEntry {
@@ -648,12 +645,10 @@ mod tests {
                 tools: None,
                 trigger_keywords: vec![],
                 think_first: None,
-                bypass_confirmation: None,
-                max_iterations: None,
-                docs: None,
                 directives: None,
+                ext: SwebashAgentExt::default(),
             },
-            &AgentDefaults::default(),
+            &SwebashFullDefaults::default(),
         ));
 
         assert_eq!(manager.list().len(), 1);
@@ -904,12 +899,10 @@ mod tests {
                 tools: None,
                 trigger_keywords: vec![],
                 think_first: None,
-                bypass_confirmation: None,
-                max_iterations: None,
-                docs: None,
                 directives: None,
+                ext: SwebashAgentExt::default(),
             },
-            &AgentDefaults::default(),
+            &SwebashFullDefaults::default(),
         );
 
         // Should succeed — verifies the factory respects descriptor params
