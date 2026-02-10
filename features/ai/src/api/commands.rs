@@ -1,5 +1,4 @@
 /// Parse AI command triggers from user input.
-
 /// Recognized AI command types.
 #[derive(Debug)]
 pub enum AiCommand {

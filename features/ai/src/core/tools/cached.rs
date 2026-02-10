@@ -5,7 +5,6 @@
 /// pass through transparently — the decorator is safe to wrap all tools.
 ///
 /// Cache errors degrade to cache miss (fail-open), never blocking execution.
-
 use std::any::Any;
 use std::sync::Arc;
 

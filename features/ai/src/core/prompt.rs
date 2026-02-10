@@ -1,5 +1,4 @@
 /// System prompt templates for each AI feature.
-
 /// System prompt for NL -> shell command translation.
 pub fn translate_system_prompt() -> String {
     r#"You are a shell command translator for swebash, a Unix-like shell.

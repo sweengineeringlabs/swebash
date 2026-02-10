@@ -2,7 +2,6 @@
 ///
 /// This module re-exports tool types from rustratify's tool crate
 /// for use in swebash-ai.
-
 pub mod cached;
 
 pub use tool::{

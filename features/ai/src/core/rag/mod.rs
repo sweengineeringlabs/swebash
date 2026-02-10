@@ -10,7 +10,6 @@
 /// - `stores` — `VectorStore` implementations (in-memory, file, SQLite)
 /// - `index` — `RagIndexManager` orchestrating build/query lifecycle
 /// - `tool` — `RagTool` implementing the rustratify `Tool` trait
-
 pub mod chunker {
     pub use llmrag::{chunk_text, ChunkerConfig};
 }

@@ -21,12 +21,12 @@ pub async fn handle_ai_command(
     match command {
         AiCommand::EnterMode => {
             // Signal to REPL that AI mode should be entered
-            return true;
+            true
         }
         AiCommand::ExitMode => {
             // This should only be called from AI mode, but handle gracefully
             super::output::ai_info("Not in AI mode.");
-            return false;
+            false
         }
         AiCommand::Status => {
             handle_status(service).await;

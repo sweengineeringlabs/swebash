@@ -221,6 +221,7 @@ fn create_rag_manager(config: &AiConfig) -> Option<Arc<RagIndexManager>> {
 /// are already registered.
 ///
 /// This function is exposed for tests that need to load agents from YAML.
+#[cfg(test)]
 pub(crate) fn register_from_yaml(
     manager: &mut AgentManager,
     yaml: &str,

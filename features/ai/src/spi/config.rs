@@ -1,5 +1,4 @@
 /// Configuration from environment variables.
-
 use std::path::PathBuf;
 
 use llmrag::VectorStoreConfig;

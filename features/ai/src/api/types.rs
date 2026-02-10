@@ -1,5 +1,4 @@
 /// L1 Common: Request/response types for the AI service.
-
 /// Role of a message participant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AiRole {

@@ -130,19 +130,14 @@ impl Default for ToolsConfig {
 }
 
 /// Strategy for how an agent consumes its documentation.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DocsStrategy {
     /// Preload: read files at startup and bake into the system prompt (default).
+    #[default]
     Preload,
     /// RAG: build a vector index; the agent invokes `rag_search` tool on demand.
     Rag,
-}
-
-impl Default for DocsStrategy {
-    fn default() -> Self {
-        Self::Preload
-    }
 }
 
 /// Document context configuration for loading reference material.

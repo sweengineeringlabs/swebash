@@ -10,7 +10,6 @@
 /// L2 API      - api/: AiService trait (consumer interface)
 /// L1 SPI      - spi/: AiClient trait, config, ChatProviderClient
 /// ```
-
 pub mod api;
 pub mod core;
 pub mod spi;

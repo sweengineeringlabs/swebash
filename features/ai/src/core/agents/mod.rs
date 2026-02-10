@@ -119,7 +119,7 @@ impl EngineFactory<ConfigAgent> for SwebashEngineFactory {
                                     let dir = base_dir.clone();
                                     // Use block_in_place to allow blocking within the
                                     // Tokio runtime (EngineFactory::create is sync).
-                                    let _ = tokio::task::block_in_place(|| {
+                                    tokio::task::block_in_place(|| {
                                         handle.block_on(async {
                                             if let Err(e) = mgr.ensure_index(&agent_id, &srcs, &dir).await {
                                                 tracing::warn!(
