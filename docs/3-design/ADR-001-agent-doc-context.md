@@ -3,7 +3,7 @@
 > **TLDR:** Decision to inject documentation files into agent system prompts via a `docs` YAML config block.
 
 **Audience**: Developers, architects
-**Status:** Proposed
+**Status:** Accepted (Implemented)
 **Date:** 2026-02-05
 **Authors:** Architecture Team
 **Reviewers:** —
@@ -117,28 +117,36 @@ Rationale:
 
 ## Implementation Outline
 
-1. Add `docs` field to `AgentEntry` struct in `config.rs`:
+1. Add `docs` field to the swebash extension type `SwebashAgentExt` (flattened into `AgentEntry<SwebashAgentExt>` via `#[serde(flatten)]`):
    ```rust
-   #[serde(default)]
-   pub docs: Option<DocsConfig>,
-   ```
-   ```rust
+   // in swebash-ai config.rs
+   pub struct SwebashAgentExt {
+       pub docs: Option<DocsConfig>,
+       pub bypass_confirmation: Option<bool>,
+       pub max_iterations: Option<usize>,
+   }
+
    pub struct DocsConfig {
-       pub budget: usize,             // max tokens
-       pub sources: Vec<String>,      // paths or globs, relative to project root
+       pub budget: usize,             // max characters
+       pub strategy: DocsStrategy,    // Preload (default) or Rag
+       pub sources: Vec<String>,      // paths or globs, relative to base_dir
+       pub top_k: usize,             // RAG results per query (default: 5)
    }
    ```
 
-2. In `ConfigAgent::from_entry()`, resolve globs, read files, truncate to
-   budget, and prepend to `system_prompt`.
+   Generic agent fields (`id`, `name`, `description`, `systemPrompt`, `tools`, `temperature`, etc.) are defined in `agent_controller::yaml::AgentEntry<Ext>`.
 
-3. Token counting: use a simple heuristic (chars / 4) or integrate a
-   tokenizer. Heuristic is sufficient for budget enforcement.
+2. In `ConfigAgent::from_entry_with_base_dir()`, resolve globs, read files, truncate to
+   budget, and prepend to `system_prompt` via a prompt modifier callback passed to
+   `YamlAgentDescriptor::from_entry_with_prompt_modifier()`.
+
+3. Token counting: uses a character-based heuristic (budget is in characters, not tokens).
+   Heuristic is sufficient for budget enforcement.
 
 4. If a source path doesn't exist, log a warning and skip — fail-open,
    consistent with agent system design.
 
-5. Add tests: docs loaded, docs missing, docs over budget, glob expansion.
+5. Tests: docs loaded, docs missing, docs over budget, glob expansion, RAG strategy auto-enables rag tool category.
 
 ## Consequences
 

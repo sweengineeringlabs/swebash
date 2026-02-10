@@ -4,7 +4,7 @@
 
 **Audience**: Users, DevOps
 **WHAT**: How to define, configure, and manage custom AI agents in swebash
-**WHY**: The 7 built-in agents cover common tasks, but teams often need domain-specific agents with tailored prompts, tool access, and trigger keywords
+**WHY**: The 10 built-in agents cover common tasks, but teams often need domain-specific agents with tailored prompts, tool access, and trigger keywords
 **HOW**: Create a YAML config file with agent definitions — no code changes or recompilation required
 
 ---
@@ -23,7 +23,7 @@
 
 ## Overview
 
-swebash ships with 7 built-in agents (shell, review, devops, git, web, seaaudit, rscagent). You can add custom agents or override built-in ones by creating a YAML config file — no code changes or recompilation required.
+swebash ships with 10 built-in agents (shell, review, devops, git, web, seaaudit, rscagent, docreview, clitester, apitester). You can add custom agents or override built-in ones by creating a YAML config file — no code changes or recompilation required.
 
 ## Config File Location
 
@@ -35,7 +35,7 @@ swebash looks for a user agents file in this order:
 | 2 | `~/.config/swebash/agents.yaml` |
 | 3 | `~/.swebash/agents.yaml` |
 
-The first file found wins. If none exist, only the 7 built-in agents are loaded.
+The first file found wins. If none exist, only the 10 built-in agents are loaded.
 
 ## YAML Schema
 

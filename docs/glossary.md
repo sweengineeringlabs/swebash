@@ -22,6 +22,7 @@
 - [S](#s)
 - [T](#t)
 - [W](#w)
+- [Y](#y)
 
 
 ## A
@@ -38,6 +39,9 @@ A feature that automatically switches to the most relevant agent based on keywor
 **Agent ID**
 A unique lowercase identifier for an agent (e.g., `shell`, `review`, `git`). Used with the `@` prefix to switch agents (`@review`).
 
+**AgentDefaults**
+Default values (temperature, maxTokens, tools, thinkFirst, directives) applied to agents that omit optional fields. Defined in rustratify's `agent-controller::yaml` module.
+
 **AgentDescriptor**
 A Rust trait from rustratify's `agent-controller` crate that defines an agent's properties: ID, display name, system prompt, tool filter, and trigger keywords.
 
@@ -53,7 +57,7 @@ An interactive REPL mode where all input is sent to the active AI agent. Entered
 A rustratify component (`SimpleChatEngine` or `ToolAwareChatEngine`) that manages conversation history and LLM interactions for a single agent.
 
 **ConfigAgent**
-A YAML-defined agent parsed from `default_agents.yaml` or a user config file. Implements `AgentDescriptor`.
+A YAML-defined agent parsed from `default_agents.yaml` or a user config file. Wraps `YamlAgentDescriptor` (from `agent-controller::yaml`) via composition and adds swebash-specific fields: docs context, `bypassConfirmation`, and `maxIterations`. Implements `AgentDescriptor`.
 
 ## H
 
@@ -114,10 +118,18 @@ A capability available to an agent: filesystem access (`fs`), command execution 
 **ToolFilter**
 Controls which tool categories an agent can access. `All` enables everything; `Categories(["fs"])` restricts to filesystem only. Intersected with global tool config.
 
+**ToolsConfig**
+A `HashMap<String, bool>` in `agent-controller::yaml` that maps tool category names (e.g., `fs`, `exec`, `web`, `rag`) to enabled/disabled state. Supports any category name — not hardcoded to specific categories.
+
 **Trigger keywords**
 Words that cause agent auto-detection. When a user types "scan this file" and the `security` agent has `triggerKeywords: [scan]`, swebash auto-switches to it.
 
 ## W
+
+## Y
+
+**YamlAgentDescriptor**
+A concrete `AgentDescriptor` implementation in rustratify's `agent-controller::yaml` module. Built from YAML config with defaults merging, tool filter computation, directives block, and thinkFirst suffix. `ConfigAgent` wraps this via composition.
 
 **Workspace**
 The root directory for shell operations, controlled by the sandbox policy. Defaults to `~/workspace/`, overridable via `SWEBASH_WORKSPACE` env var or `~/.config/swebash/config.toml`.

@@ -8,6 +8,15 @@
 
 ## [Unreleased]
 
+### Changed
+- **Extract generic YAML agent config into rustratify** (2026-02-10)
+  - Moved generic YAML-to-AgentDescriptor pipeline into rustratify's `agent-controller` crate (`yaml` feature)
+  - Generic types: `AgentsYaml<Ext>`, `AgentEntry<Ext>`, `AgentDefaults`, `ToolsConfig`, `YamlAgentDescriptor`
+  - `ConfigAgent` refactored to wrap `YamlAgentDescriptor` via composition
+  - `ToolsConfig` changed from named boolean fields to generic `HashMap<String, bool>`
+  - Swebash-specific types: `SwebashAgentsYaml`, `SwebashFullDefaults`, `SwebashAgentExt`
+  - No YAML schema changes — existing agent config files work unchanged
+
 ### Added
 - **Configurable Workspace Sandbox** (2025-02-07)
   - Path-based sandbox layer in the host runtime intercepts every filesystem import

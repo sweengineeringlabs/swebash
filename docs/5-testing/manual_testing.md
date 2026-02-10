@@ -105,9 +105,9 @@ cargo test -p swebash-ai -p swebash
 | Readline unit tests | `features/shell/readline/src/` | 54 |
 | Host integration | `features/shell/host/tests/integration.rs` | 60 |
 | Host readline tests | `features/shell/host/tests/readline_tests.rs` | 19 |
-| AI unit tests | `features/ai/src/` | 182 |
-| AI integration | `features/ai/tests/integration.rs` | 181 |
-| **Total** | | **516** |
+| AI unit tests | `features/ai/src/` | 123 |
+| AI integration | `features/ai/tests/integration.rs` | 189 |
+| **Total** | | **465** |
 
 ### Agent-Specific Automated Tests
 

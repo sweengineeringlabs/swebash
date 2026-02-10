@@ -99,7 +99,7 @@ agents:
       web: false
     docs:
       budget: 12000
-      files:
+      sources:
         - services_reference.md
         - iac_patterns.md
         - troubleshooting.md

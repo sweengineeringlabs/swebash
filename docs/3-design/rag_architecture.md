@@ -43,8 +43,12 @@ features/ai/src/
 ├── spi/
 │   └── rag.rs              # EmbeddingProvider + VectorStore traits, DocChunk, SearchResult
 └── core/agents/
-    ├── config.rs           # DocsStrategy enum, DocsConfig, RagYamlConfig
+    ├── config.rs           # ConfigAgent (wraps YamlAgentDescriptor), DocsStrategy, DocsConfig, RagYamlConfig
     └── builtins.rs         # create_rag_manager(), YAML+env config merge
+
+# Generic YAML types live in rustratify:
+agent-controller/src/
+└── yaml.rs                 # AgentEntry<Ext>, AgentDefaults, ToolsConfig, YamlAgentDescriptor
 ```
 
 ### Relationship to ADR-001
