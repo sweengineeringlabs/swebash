@@ -4,3 +4,5 @@ pub mod imports;
 pub mod runtime;
 pub mod sandbox;
 pub mod state;
+pub mod tab;
+pub mod tab_bar;

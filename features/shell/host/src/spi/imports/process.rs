@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::process::Command;
 use wasmtime::*;
 
-use crate::spi::sandbox::{self, AccessKind};
+use crate::spi::sandbox::{check_path_with_cwd, AccessKind};
 use crate::spi::state::HostState;
 
 pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
@@ -12,15 +12,19 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
         "env",
         "host_spawn",
         |mut caller: Caller<'_, HostState>, data_ptr: i32, data_len: i32| -> i32 {
+            // Read virtual CWD and env from HostState
+            let virtual_cwd = caller.data().virtual_cwd.clone();
+            let virtual_env = caller.data().virtual_env.clone();
+            let removed_env = caller.data().removed_env.clone();
+
             // Verify current working directory is within the sandbox before
             // spawning an external process.
             let sandbox = &caller.data().sandbox;
             if sandbox.enabled {
-                if let Ok(cwd) = std::env::current_dir() {
-                    let cwd_str = cwd.to_string_lossy();
-                    if sandbox::check_path(sandbox, &cwd_str, AccessKind::Read).is_err() {
-                        return -1;
-                    }
+                let cwd_str = virtual_cwd.to_string_lossy();
+                if check_path_with_cwd(sandbox, &cwd_str, AccessKind::Read, &virtual_cwd).is_err()
+                {
+                    return -1;
                 }
             }
 
@@ -52,6 +56,17 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
             let program = parts[0];
             let args = &parts[1..];
 
+            // Build the child command with virtual CWD and env overlays
+            let build_cmd = |cmd: &mut Command| {
+                cmd.current_dir(&virtual_cwd);
+                for (key, val) in &virtual_env {
+                    cmd.env(key, val);
+                }
+                for key in &removed_env {
+                    cmd.env_remove(key);
+                }
+            };
+
             // On Windows, use cmd /C for better compatibility
             let result = if cfg!(windows) {
                 let mut full_cmd = String::from(program);
@@ -59,11 +74,15 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                     full_cmd.push(' ');
                     full_cmd.push_str(arg);
                 }
-                Command::new("cmd")
-                    .args(["/C", &full_cmd])
-                    .status()
+                let mut cmd = Command::new("cmd");
+                cmd.args(["/C", &full_cmd]);
+                build_cmd(&mut cmd);
+                cmd.status()
             } else {
-                Command::new(program).args(args).status()
+                let mut cmd = Command::new(program);
+                cmd.args(args);
+                build_cmd(&mut cmd);
+                cmd.status()
             };
 
             match result {

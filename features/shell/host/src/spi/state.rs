@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 /// Whether a path rule grants read-only or read-write access.
@@ -61,4 +62,12 @@ pub struct HostState {
     pub response_buf_cap: u32,
     /// Sandbox access-control policy.
     pub sandbox: SandboxPolicy,
+    /// Per-session virtual current working directory (decoupled from process CWD).
+    pub virtual_cwd: PathBuf,
+    /// Per-session env var overlay. Keys set here take precedence over the
+    /// process environment.
+    pub virtual_env: HashMap<String, String>,
+    /// Keys explicitly removed via `unset`. These suppress fallback to the
+    /// process environment in `host_get_env` / `host_list_env`.
+    pub removed_env: HashSet<String>,
 }

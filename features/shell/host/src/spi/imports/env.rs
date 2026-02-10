@@ -46,6 +46,15 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return -1,
             };
 
+            // Check virtual overlay first, then fall back to process env
+            let state = caller.data();
+            if state.removed_env.contains(&key) {
+                return -1;
+            }
+            if let Some(val) = state.virtual_env.get(&key) {
+                let val = val.clone();
+                return write_response(&mut caller, val.as_bytes());
+            }
             match std::env::var(&key) {
                 Ok(val) => write_response(&mut caller, val.as_bytes()),
                 Err(_) => -1,
@@ -82,7 +91,10 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 );
             }
 
-            std::env::set_var(&key, &val);
+            // Write to virtual overlay instead of process env
+            let state = caller.data_mut();
+            state.removed_env.remove(&key);
+            state.virtual_env.insert(key, val);
         },
     )?;
 
@@ -91,11 +103,23 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
         "env",
         "host_list_env",
         |mut caller: Caller<'_, HostState>| -> i32 {
-            let mut result = String::new();
+            // Merge: start with process env, overlay virtual env, remove removed keys
+            let state = caller.data();
+            let mut merged = std::collections::HashMap::new();
             for (key, val) in std::env::vars() {
-                result.push_str(&key);
+                if !state.removed_env.contains(&key) {
+                    merged.insert(key, val);
+                }
+            }
+            for (key, val) in &state.virtual_env {
+                merged.insert(key.clone(), val.clone());
+            }
+
+            let mut result = String::new();
+            for (key, val) in &merged {
+                result.push_str(key);
                 result.push('=');
-                result.push_str(&val);
+                result.push_str(val);
                 result.push('\n');
             }
             write_response(&mut caller, result.as_bytes())

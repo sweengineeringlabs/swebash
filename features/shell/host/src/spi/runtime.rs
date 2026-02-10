@@ -1,3 +1,6 @@
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+
 use anyhow::{Context, Result};
 use wasmtime::*;
 
@@ -12,7 +15,7 @@ const EMBEDDED_ENGINE_WASM: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/en
 /// If the `ENGINE_WASM` environment variable is set at runtime, the module is
 /// loaded from that file path (useful during development).  Otherwise the
 /// compile-time embedded bytes are used.
-pub fn setup(sandbox: SandboxPolicy) -> Result<(Store<HostState>, Instance)> {
+pub fn setup(sandbox: SandboxPolicy, initial_cwd: PathBuf) -> Result<(Store<HostState>, Instance)> {
     let engine = Engine::default();
 
     let module = if let Ok(path) = std::env::var("ENGINE_WASM") {
@@ -26,6 +29,9 @@ pub fn setup(sandbox: SandboxPolicy) -> Result<(Store<HostState>, Instance)> {
         response_buf_ptr: 0,
         response_buf_cap: 0,
         sandbox,
+        virtual_cwd: initial_cwd,
+        virtual_env: HashMap::new(),
+        removed_env: HashSet::new(),
     };
     let mut store = Store::new(&engine, state);
     let mut linker = Linker::new(&engine);

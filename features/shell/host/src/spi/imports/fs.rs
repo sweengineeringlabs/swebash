@@ -1,9 +1,8 @@
 use anyhow::Result;
 use std::fs;
-use std::path::Path;
 use wasmtime::*;
 
-use crate::spi::sandbox::{check_path, AccessKind};
+use crate::spi::sandbox::{self, check_path_with_cwd, AccessKind};
 use crate::spi::state::HostState;
 
 /// Helper: read a string from wasm memory at (ptr, len).
@@ -89,11 +88,14 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return -1,
             };
 
-            if check_path(&caller.data().sandbox, &path, AccessKind::Read).is_err() {
+            let cwd = caller.data().virtual_cwd.clone();
+            if check_path_with_cwd(&caller.data().sandbox, &path, AccessKind::Read, &cwd).is_err()
+            {
                 return -1;
             }
 
-            match fs::read(&path) {
+            let resolved = sandbox::resolve_path_with_cwd(&path, &cwd);
+            match fs::read(&resolved) {
                 Ok(contents) => write_response(&mut caller, &contents),
                 Err(_) => -1,
             }
@@ -114,11 +116,14 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return -1,
             };
 
-            if check_path(&caller.data().sandbox, &path, AccessKind::Read).is_err() {
+            let cwd = caller.data().virtual_cwd.clone();
+            if check_path_with_cwd(&caller.data().sandbox, &path, AccessKind::Read, &cwd).is_err()
+            {
                 return -1;
             }
 
-            let entries = match fs::read_dir(&path) {
+            let resolved = sandbox::resolve_path_with_cwd(&path, &cwd);
+            let entries = match fs::read_dir(&resolved) {
                 Ok(rd) => rd,
                 Err(_) => return -1,
             };
@@ -151,11 +156,14 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return -1,
             };
 
-            if check_path(&caller.data().sandbox, &path, AccessKind::Read).is_err() {
+            let cwd = caller.data().virtual_cwd.clone();
+            if check_path_with_cwd(&caller.data().sandbox, &path, AccessKind::Read, &cwd).is_err()
+            {
                 return -1;
             }
 
-            let meta = match fs::metadata(&path) {
+            let resolved = sandbox::resolve_path_with_cwd(&path, &cwd);
+            let meta = match fs::metadata(&resolved) {
                 Ok(m) => m,
                 Err(_) => return -1,
             };
@@ -206,10 +214,13 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return -1,
             };
 
-            if check_path(&caller.data().sandbox, &path, AccessKind::Write).is_err() {
+            let cwd = caller.data().virtual_cwd.clone();
+            if check_path_with_cwd(&caller.data().sandbox, &path, AccessKind::Write, &cwd).is_err()
+            {
                 return -1;
             }
 
+            let resolved = sandbox::resolve_path_with_cwd(&path, &cwd);
             let content = if data_len > 0 {
                 match read_bytes(&memory, &caller, data_ptr, data_len) {
                     Some(b) => b,
@@ -224,11 +235,11 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(&path)
+                    .open(&resolved)
                     .and_then(|mut f| f.write_all(&content))
             } else {
                 // For touch: if file exists and content is empty, just update mtime
-                if content.is_empty() && Path::new(&path).exists() {
+                if content.is_empty() && resolved.exists() {
                     // File already exists, nothing to write
                     return 0;
                 }
@@ -238,10 +249,10 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                     std::fs::OpenOptions::new()
                         .create(true)
                         .write(true)
-                        .open(&path)
+                        .open(&resolved)
                         .map(|_| ())
                 } else {
-                    fs::write(&path, &content)
+                    fs::write(&resolved, &content)
                 }
             };
 
@@ -266,11 +277,13 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return -1,
             };
 
-            if check_path(&caller.data().sandbox, &path, AccessKind::Write).is_err() {
+            let cwd = caller.data().virtual_cwd.clone();
+            if check_path_with_cwd(&caller.data().sandbox, &path, AccessKind::Write, &cwd).is_err()
+            {
                 return -1;
             }
 
-            let p = Path::new(&path);
+            let p = sandbox::resolve_path_with_cwd(&path, &cwd);
             let result = if p.is_dir() {
                 if recursive != 0 {
                     fs::remove_dir_all(p)
@@ -311,15 +324,18 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return -1,
             };
 
+            let cwd = caller.data().virtual_cwd.clone();
             let sandbox = &caller.data().sandbox;
-            if check_path(sandbox, &src, AccessKind::Read).is_err() {
+            if check_path_with_cwd(sandbox, &src, AccessKind::Read, &cwd).is_err() {
                 return -1;
             }
-            if check_path(sandbox, &dst, AccessKind::Write).is_err() {
+            if check_path_with_cwd(sandbox, &dst, AccessKind::Write, &cwd).is_err() {
                 return -1;
             }
 
-            match fs::copy(&src, &dst) {
+            let resolved_src = sandbox::resolve_path_with_cwd(&src, &cwd);
+            let resolved_dst = sandbox::resolve_path_with_cwd(&dst, &cwd);
+            match fs::copy(&resolved_src, &resolved_dst) {
                 Ok(_) => 0,
                 Err(_) => -1,
             }
@@ -349,15 +365,18 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return -1,
             };
 
+            let cwd = caller.data().virtual_cwd.clone();
             let sandbox = &caller.data().sandbox;
-            if check_path(sandbox, &src, AccessKind::Write).is_err() {
+            if check_path_with_cwd(sandbox, &src, AccessKind::Write, &cwd).is_err() {
                 return -1;
             }
-            if check_path(sandbox, &dst, AccessKind::Write).is_err() {
+            if check_path_with_cwd(sandbox, &dst, AccessKind::Write, &cwd).is_err() {
                 return -1;
             }
 
-            match fs::rename(&src, &dst) {
+            let resolved_src = sandbox::resolve_path_with_cwd(&src, &cwd);
+            let resolved_dst = sandbox::resolve_path_with_cwd(&dst, &cwd);
+            match fs::rename(&resolved_src, &resolved_dst) {
                 Ok(_) => 0,
                 Err(_) => -1,
             }
@@ -382,14 +401,17 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return -1,
             };
 
-            if check_path(&caller.data().sandbox, &path, AccessKind::Write).is_err() {
+            let cwd = caller.data().virtual_cwd.clone();
+            if check_path_with_cwd(&caller.data().sandbox, &path, AccessKind::Write, &cwd).is_err()
+            {
                 return -1;
             }
 
+            let resolved = sandbox::resolve_path_with_cwd(&path, &cwd);
             let result = if recursive != 0 {
-                fs::create_dir_all(&path)
+                fs::create_dir_all(&resolved)
             } else {
-                fs::create_dir(&path)
+                fs::create_dir(&resolved)
             };
 
             match result {
@@ -404,13 +426,8 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
         "env",
         "host_get_cwd",
         |mut caller: Caller<'_, HostState>| -> i32 {
-            match std::env::current_dir() {
-                Ok(cwd) => {
-                    let s = cwd.to_string_lossy();
-                    write_response(&mut caller, s.as_bytes())
-                }
-                Err(_) => -1,
-            }
+            let s = caller.data().virtual_cwd.to_string_lossy().into_owned();
+            write_response(&mut caller, s.as_bytes())
         },
     )?;
 
@@ -428,14 +445,19 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 None => return -1,
             };
 
-            if check_path(&caller.data().sandbox, &path, AccessKind::Read).is_err() {
+            let cwd = caller.data().virtual_cwd.clone();
+            if check_path_with_cwd(&caller.data().sandbox, &path, AccessKind::Read, &cwd).is_err()
+            {
                 return -1;
             }
 
-            match std::env::set_current_dir(&path) {
-                Ok(_) => 0,
-                Err(_) => -1,
+            // Resolve relative paths against current virtual CWD
+            let resolved = sandbox::resolve_path_with_cwd(&path, &cwd);
+            if !resolved.is_dir() {
+                return -1;
             }
+            caller.data_mut().virtual_cwd = resolved;
+            0
         },
     )?;
 

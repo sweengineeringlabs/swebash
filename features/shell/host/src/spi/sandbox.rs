@@ -22,9 +22,10 @@ fn normalize_for_comparison(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-/// Resolve a potentially-relative path against the current working directory
-/// and canonicalize it. Falls back to joining with CWD if canonicalization
-/// fails (the target may not yet exist for write operations).
+/// Resolve a potentially-relative path against the process-global current
+/// working directory and canonicalize it. Retained for backward compatibility;
+/// prefer `resolve_path_with_cwd` for virtualized per-tab resolution.
+#[allow(dead_code)]
 pub fn resolve_path(raw: &str) -> PathBuf {
     let p = Path::new(raw);
     if p.is_absolute() {
@@ -33,6 +34,19 @@ pub fn resolve_path(raw: &str) -> PathBuf {
     } else {
         let base = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
         let joined = base.join(p);
+        joined.canonicalize().unwrap_or(joined)
+    }
+}
+
+/// Resolve a potentially-relative path against an explicit virtual CWD
+/// (instead of the process-global `current_dir`). Used by virtualized
+/// host imports so each tab can have its own working directory.
+pub fn resolve_path_with_cwd(raw: &str, cwd: &Path) -> PathBuf {
+    let p = Path::new(raw);
+    if p.is_absolute() {
+        p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+    } else {
+        let joined = cwd.join(p);
         joined.canonicalize().unwrap_or(joined)
     }
 }
@@ -79,11 +93,28 @@ pub fn check_access(
     ))
 }
 
-/// Convenience: resolve the raw path string, then check access.
-/// Returns `Ok(())` on success or prints the denial to stderr and returns
-/// `Err(())` on failure. Callers should return -1 to the WASM engine on error.
+/// Convenience: resolve via process-global CWD, then check access.
+/// Retained for backward compatibility; prefer `check_path_with_cwd`.
+#[allow(dead_code)]
 pub fn check_path(policy: &SandboxPolicy, raw: &str, kind: AccessKind) -> Result<(), ()> {
     let resolved = resolve_path(raw);
+    match check_access(policy, &resolved, kind) {
+        Ok(()) => Ok(()),
+        Err(msg) => {
+            eprintln!("{msg}");
+            Err(())
+        }
+    }
+}
+
+/// Like `check_path` but resolves relative paths against an explicit virtual CWD.
+pub fn check_path_with_cwd(
+    policy: &SandboxPolicy,
+    raw: &str,
+    kind: AccessKind,
+    cwd: &Path,
+) -> Result<(), ()> {
+    let resolved = resolve_path_with_cwd(raw, cwd);
     match check_access(policy, &resolved, kind) {
         Ok(()) => Ok(()),
         Err(msg) => {

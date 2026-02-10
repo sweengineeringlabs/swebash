@@ -12,11 +12,25 @@ use crate::core::history::History;
 use super::hinter::Hinter;
 use super::config::ReadlineConfig;
 
-/// Control flow for key event handling
-enum ControlFlow {
+/// Result of a key event or a completed readline interaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorAction {
+    /// Normal editing — keep reading keys.
     Continue,
+    /// User pressed Enter — the line is ready.
     Submit,
+    /// End-of-file (Ctrl-D on empty line, or Ctrl-C on empty line).
     Eof,
+    /// Request to open a new tab.
+    TabNew,
+    /// Request to close the current tab.
+    TabClose,
+    /// Switch to the next tab.
+    TabNext,
+    /// Switch to the previous tab.
+    TabPrev,
+    /// Switch to tab N (1-based index from the user, stored 0-based).
+    TabGoto(usize),
 }
 
 /// Calculate the visible width of a string, excluding ANSI escape sequences.
@@ -76,8 +90,12 @@ impl LineEditor {
         }
     }
 
-    /// Read a line with full readline support
-    pub fn read_line(&mut self, prompt: &str, history: &History) -> Result<Option<String>> {
+    /// Read a line with full readline support.
+    ///
+    /// Returns `EditorAction::Submit` with the line in `self.buffer`,
+    /// `EditorAction::Eof` for Ctrl-D, or a tab-related action that the
+    /// caller should handle.
+    pub fn read_line(&mut self, prompt: &str, history: &History) -> Result<EditorAction> {
         // Check if stdin is a terminal (interactive mode)
         if crossterm::tty::IsTty::is_tty(&std::io::stdin()) {
             // Interactive mode: use raw terminal
@@ -91,8 +109,13 @@ impl LineEditor {
         }
     }
 
+    /// Retrieve the buffer contents after a `Submit` action.
+    pub fn line(&self) -> &str {
+        &self.buffer
+    }
+
     /// Simple line reading for non-interactive mode (pipes, tests)
-    fn read_line_simple(&mut self, prompt: &str) -> Result<Option<String>> {
+    fn read_line_simple(&mut self, prompt: &str) -> Result<EditorAction> {
         use std::io::{self, BufRead};
 
         print!("{}", prompt);
@@ -103,7 +126,7 @@ impl LineEditor {
         let n = stdin.lock().read_line(&mut line)?;
 
         if n == 0 {
-            return Ok(None);
+            return Ok(EditorAction::Eof);
         }
 
         // Trim newline but preserve leading/trailing spaces
@@ -114,10 +137,11 @@ impl LineEditor {
             }
         }
 
-        Ok(Some(line))
+        self.buffer = line;
+        Ok(EditorAction::Submit)
     }
 
-    fn read_line_raw(&mut self, prompt: &str, history: &History) -> Result<Option<String>> {
+    fn read_line_raw(&mut self, prompt: &str, history: &History) -> Result<EditorAction> {
         // Initialize state
         self.buffer.clear();
         self.cursor = 0;
@@ -135,78 +159,103 @@ impl LineEditor {
                     continue;
                 }
                 match self.handle_key(key_event, history)? {
-                    ControlFlow::Continue => {
+                    EditorAction::Continue => {
                         self.render(prompt, history)?;
                     }
-                    ControlFlow::Submit => {
+                    EditorAction::Submit => {
                         // Move to new line (use \r\n for raw mode)
                         print!("\r\n");
                         io::stdout().flush()?;
-                        return Ok(Some(self.buffer.clone()));
+                        return Ok(EditorAction::Submit);
                     }
-                    ControlFlow::Eof => {
+                    EditorAction::Eof => {
                         // Move to new line (use \r\n for raw mode)
                         print!("\r\n");
                         io::stdout().flush()?;
-                        return Ok(None);
+                        return Ok(EditorAction::Eof);
+                    }
+                    // Tab-related actions: finish editing and bubble up
+                    action @ (EditorAction::TabNew
+                    | EditorAction::TabClose
+                    | EditorAction::TabNext
+                    | EditorAction::TabPrev
+                    | EditorAction::TabGoto(_)) => {
+                        print!("\r\n");
+                        io::stdout().flush()?;
+                        return Ok(action);
                     }
                 }
             }
         }
     }
 
-    fn handle_key(&mut self, key: KeyEvent, history: &History) -> Result<ControlFlow> {
+    fn handle_key(&mut self, key: KeyEvent, history: &History) -> Result<EditorAction> {
         match (key.code, key.modifiers) {
             // Enter - submit line
-            (KeyCode::Enter, _) => Ok(ControlFlow::Submit),
+            (KeyCode::Enter, _) => Ok(EditorAction::Submit),
 
             // Ctrl-C - clear line or EOF if empty
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
                 if self.buffer.is_empty() {
-                    Ok(ControlFlow::Eof)
+                    Ok(EditorAction::Eof)
                 } else {
                     self.buffer.clear();
                     self.cursor = 0;
                     self.history_pos = None;
-                    Ok(ControlFlow::Continue)
+                    Ok(EditorAction::Continue)
                 }
             }
 
             // Ctrl-D - EOF if empty, else delete char at cursor
             (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
                 if self.buffer.is_empty() {
-                    Ok(ControlFlow::Eof)
+                    Ok(EditorAction::Eof)
                 } else if self.cursor < self.buffer.len() {
                     self.buffer.remove(self.cursor);
-                    Ok(ControlFlow::Continue)
+                    Ok(EditorAction::Continue)
                 } else {
-                    Ok(ControlFlow::Continue)
+                    Ok(EditorAction::Continue)
                 }
+            }
+
+            // Ctrl-T - new tab
+            (KeyCode::Char('t'), KeyModifiers::CONTROL) => Ok(EditorAction::TabNew),
+
+            // Ctrl-PageUp - previous tab
+            (KeyCode::PageUp, KeyModifiers::CONTROL) => Ok(EditorAction::TabPrev),
+
+            // Ctrl-PageDown - next tab
+            (KeyCode::PageDown, KeyModifiers::CONTROL) => Ok(EditorAction::TabNext),
+
+            // Alt+1..9 - switch to tab N
+            (KeyCode::Char(c @ '1'..='9'), KeyModifiers::ALT) => {
+                let n = (c as usize) - ('0' as usize);
+                Ok(EditorAction::TabGoto(n - 1))
             }
 
             // Ctrl-A - move to start of line
             (KeyCode::Char('a'), KeyModifiers::CONTROL) | (KeyCode::Home, _) => {
                 self.cursor = 0;
-                Ok(ControlFlow::Continue)
+                Ok(EditorAction::Continue)
             }
 
             // Ctrl-E - move to end of line
             (KeyCode::Char('e'), KeyModifiers::CONTROL) | (KeyCode::End, _) => {
                 self.cursor = self.buffer.len();
-                Ok(ControlFlow::Continue)
+                Ok(EditorAction::Continue)
             }
 
             // Ctrl-U - clear line before cursor
             (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
                 self.buffer.drain(..self.cursor);
                 self.cursor = 0;
-                Ok(ControlFlow::Continue)
+                Ok(EditorAction::Continue)
             }
 
             // Ctrl-K - clear line after cursor
             (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
                 self.buffer.truncate(self.cursor);
-                Ok(ControlFlow::Continue)
+                Ok(EditorAction::Continue)
             }
 
             // Ctrl-W - delete word before cursor
@@ -228,31 +277,31 @@ impl LineEditor {
                     self.buffer.drain(pos..self.cursor);
                     self.cursor = pos;
                 }
-                Ok(ControlFlow::Continue)
+                Ok(EditorAction::Continue)
             }
 
             // Arrow Up - previous history
             (KeyCode::Up, _) => {
                 self.history_prev(history);
-                Ok(ControlFlow::Continue)
+                Ok(EditorAction::Continue)
             }
 
             // Arrow Down - next history
             (KeyCode::Down, _) => {
                 self.history_next(history);
-                Ok(ControlFlow::Continue)
+                Ok(EditorAction::Continue)
             }
 
             // Arrow Left - move cursor left
             (KeyCode::Left, _) => {
                 self.move_cursor_left();
-                Ok(ControlFlow::Continue)
+                Ok(EditorAction::Continue)
             }
 
             // Arrow Right - move cursor right
             (KeyCode::Right, _) => {
                 self.move_cursor_right();
-                Ok(ControlFlow::Continue)
+                Ok(EditorAction::Continue)
             }
 
             // Backspace - delete char before cursor
@@ -261,7 +310,7 @@ impl LineEditor {
                     self.cursor -= 1;
                     self.buffer.remove(self.cursor);
                 }
-                Ok(ControlFlow::Continue)
+                Ok(EditorAction::Continue)
             }
 
             // Delete - delete char at cursor
@@ -269,7 +318,7 @@ impl LineEditor {
                 if self.cursor < self.buffer.len() {
                     self.buffer.remove(self.cursor);
                 }
-                Ok(ControlFlow::Continue)
+                Ok(EditorAction::Continue)
             }
 
             // Tab - accept hint if available, otherwise insert tab
@@ -282,24 +331,24 @@ impl LineEditor {
                         // Append hint to buffer
                         self.buffer.push_str(&hint_text);
                         self.cursor = self.buffer.len();
-                        return Ok(ControlFlow::Continue);
+                        return Ok(EditorAction::Continue);
                     }
                 }
                 // No hint available, insert tab character
                 self.buffer.insert(self.cursor, '\t');
                 self.cursor += 1;
-                Ok(ControlFlow::Continue)
+                Ok(EditorAction::Continue)
             }
 
             // Regular character - insert at cursor
             (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
                 self.buffer.insert(self.cursor, c);
                 self.cursor += 1;
-                Ok(ControlFlow::Continue)
+                Ok(EditorAction::Continue)
             }
 
             // Ignore other key combinations
-            _ => Ok(ControlFlow::Continue),
+            _ => Ok(EditorAction::Continue),
         }
     }
 
@@ -610,7 +659,7 @@ mod tests {
         let result = editor.handle_key(key, &history).unwrap();
 
         match result {
-            ControlFlow::Submit => (),
+            EditorAction::Submit => (),
             _ => panic!("Expected Submit"),
         }
     }
@@ -629,7 +678,7 @@ mod tests {
         assert_eq!(editor.buffer, "");
         assert_eq!(editor.cursor, 0);
         match result {
-            ControlFlow::Continue => (),
+            EditorAction::Continue => (),
             _ => panic!("Expected Continue"),
         }
     }
@@ -645,7 +694,7 @@ mod tests {
         let result = editor.handle_key(key, &history).unwrap();
 
         match result {
-            ControlFlow::Eof => (),
+            EditorAction::Eof => (),
             _ => panic!("Expected Eof"),
         }
     }
@@ -659,7 +708,7 @@ mod tests {
         let result = editor.handle_key(key, &history).unwrap();
 
         match result {
-            ControlFlow::Eof => (),
+            EditorAction::Eof => (),
             _ => panic!("Expected Eof"),
         }
     }
