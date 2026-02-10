@@ -33,5 +33,14 @@ impl fmt::Display for AiError {
 
 impl std::error::Error for AiError {}
 
+impl From<llmrag::RagError> for AiError {
+    fn from(e: llmrag::RagError) -> Self {
+        match e {
+            llmrag::RagError::NotConfigured(msg) => AiError::NotConfigured(msg),
+            other => AiError::IndexError(other.to_string()),
+        }
+    }
+}
+
 /// Result type alias for AI operations.
 pub type AiResult<T> = Result<T, AiError>;

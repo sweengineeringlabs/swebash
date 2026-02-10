@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::core::rag::stores::VectorStoreConfig;
+use llmrag::VectorStoreConfig;
 
 /// AI service configuration.
 #[derive(Debug, Clone)]

@@ -11,8 +11,7 @@ use std::sync::Arc;
 use llm_provider::LlmService;
 
 use crate::spi::config::AiConfig;
-use crate::core::rag::index::RagIndexManager;
-use crate::core::rag::stores::VectorStoreConfig;
+use llmrag::{RagIndexManager, VectorStoreConfig};
 
 use super::config::{AgentsYaml, ConfigAgent, RagYamlConfig};
 use super::AgentManager;
@@ -169,12 +168,11 @@ pub fn create_default_registry(llm: Arc<dyn LlmService>, mut config: AiConfig) -
 fn create_rag_manager(config: &AiConfig) -> Option<Arc<RagIndexManager>> {
     #[cfg(feature = "rag-local")]
     {
-        use crate::core::rag::chunker::ChunkerConfig;
-        use crate::core::rag::embeddings::FastEmbedProvider;
+        use llmrag::{ChunkerConfig, FastEmbedProvider, build_vector_store};
 
         match FastEmbedProvider::new() {
             Ok(embedder) => {
-                let store = match config.rag.vector_store.build() {
+                let store = match build_vector_store(&config.rag.vector_store) {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!(error = %e, "failed to build vector store, RAG disabled");

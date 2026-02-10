@@ -32,7 +32,7 @@ use swebash_ai::core::agents::{AgentDescriptor, ToolFilter};
 use swebash_ai::core::DefaultAiService;
 use swebash_ai::spi::chat_provider::ChatProviderClient;
 use swebash_ai::core::rag::chunker::ChunkerConfig;
-use swebash_ai::core::rag::index::RagIndexManager;
+use swebash_ai::core::rag::index::{RagIndexManager, RagIndexService};
 use swebash_ai::core::rag::stores::InMemoryVectorStore;
 use swebash_ai::core::rag::tool::RagTool;
 use swebash_ai::spi::rag::{EmbeddingProvider, VectorStore};

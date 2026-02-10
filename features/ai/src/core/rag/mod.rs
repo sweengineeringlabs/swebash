@@ -1,7 +1,7 @@
 /// RAG (Retrieval-Augmented Generation) subsystem.
 ///
-/// Provides document chunking, embedding, vector storage, index management,
-/// and a tool that agents can invoke to search their documentation on demand.
+/// Re-exports from the `llmrag` crate. Preserves existing import paths
+/// (`crate::core::rag::*`) for backwards compatibility.
 ///
 /// # Module layout
 ///
@@ -11,8 +11,29 @@
 /// - `index` — `RagIndexManager` orchestrating build/query lifecycle
 /// - `tool` — `RagTool` implementing the rustratify `Tool` trait
 
-pub mod chunker;
-pub mod embeddings;
-pub mod index;
-pub mod stores;
-pub mod tool;
+pub mod chunker {
+    pub use llmrag::{chunk_text, ChunkerConfig};
+}
+
+pub mod embeddings {
+    #[cfg(feature = "rag-local")]
+    pub use llmrag::FastEmbedProvider;
+}
+
+pub mod stores {
+    pub use llmrag::{build_vector_store, FileVectorStore, InMemoryVectorStore, VectorStoreConfig};
+
+    #[cfg(feature = "rag-sqlite")]
+    pub use llmrag::SqliteVectorStore;
+
+    #[cfg(feature = "rag-swevecdb")]
+    pub use llmrag::SweVecdbVectorStore;
+}
+
+pub mod index {
+    pub use llmrag::{RagIndexManager, RagIndexService};
+}
+
+pub mod tool {
+    pub use llmrag::RagTool;
+}

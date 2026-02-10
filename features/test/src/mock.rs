@@ -14,6 +14,8 @@ use swebash_ai::core::DefaultAiService;
 use swebash_ai::spi::rag::EmbeddingProvider;
 use swebash_ai::{AiConfig, ToolConfig};
 
+use llmrag::RagResult;
+
 // ── MockAiClient ─────────────────────────────────────────────────────
 
 /// Mock `AiClient` that returns fixed "mock" responses.
@@ -90,7 +92,7 @@ pub struct MockEmbedder;
 
 #[async_trait::async_trait]
 impl EmbeddingProvider for MockEmbedder {
-    async fn embed(&self, texts: &[String]) -> AiResult<Vec<Vec<f32>>> {
+    async fn embed(&self, texts: &[String]) -> RagResult<Vec<Vec<f32>>> {
         Ok(texts
             .iter()
             .map(|t| {

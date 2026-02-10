@@ -17,8 +17,7 @@ pub use agent_controller::{AgentDescriptor, ToolFilter};
 
 use crate::spi::config::{AiConfig, ToolConfig};
 use crate::core::tools;
-use crate::core::rag::index::RagIndexManager;
-use crate::core::rag::tool::RagTool;
+use llmrag::{RagIndexManager, RagIndexService, RagTool};
 
 use config::{ConfigAgent, DocsStrategy};
 
