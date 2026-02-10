@@ -79,6 +79,7 @@ export LLM_PROVIDER=anthropic SWEBASH_AI_ENABLED=true
 | Document | Domain | Tests |
 |----------|--------|-------|
 | [Shell Tests](manual_shell_tests.md) | Shell basics, file ops, history, workspace sandbox | 32 |
+| [Tab Tests](manual_tab_tests.md) | Tab commands, CWD isolation, tab bar, shortcuts, mode tabs | 68 |
 | [AI Tests](manual_ai_tests.md) | AI commands, agents, config, memory, docs context | 97 |
 | [RAG Tests](manual_rag_tests.md) | RAG indexing, retrieval, staleness, vector stores, SweVecDB | 53 |
 | [sbh Launcher Tests](manual_sbh_tests.md) | sbh/sbh.ps1 help, build, test, gen-aws-docs | 42 |

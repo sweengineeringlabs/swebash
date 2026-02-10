@@ -10,7 +10,7 @@ use swebash_readline::{
     Validator,
 };
 
-use spi::tab::{TabKind, TabManager};
+use spi::tab::{TabInner, TabKind, TabManager};
 
 /// Maximum number of recent commands kept per tab for AI context.
 const MAX_RECENT: usize = 10;
@@ -180,12 +180,12 @@ async fn main() -> Result<()> {
         let multiline_empty = tab.multiline_buffer.is_empty();
 
         // Determine prompt based on tab kind and AI mode
-        let tab_kind = tab.kind.clone();
-        let prompt = match &tab_kind {
+        let tab_kind = tab.kind();
+        let prompt = match tab_kind {
             TabKind::HistoryView => "\x1b[1;33m[history]\x1b[0m search> ".to_string(),
-            TabKind::Ai { agent_id } => {
+            TabKind::Ai => {
                 if multiline_empty {
-                    format!("\x1b[1;36m[AI:{}]\x1b[0m > ", agent_id)
+                    format!("\x1b[1;36m[AI:{}]\x1b[0m > ", ai_agent_id)
                 } else {
                     "\x1b[1;36m...\x1b[0m> ".to_string()
                 }
@@ -323,9 +323,9 @@ async fn main() -> Result<()> {
         // Handle exit/quit: close mode tabs, exit AI mode, or close shell tab
         if cmd == "exit" || cmd == "quit" {
             let tab = tab_mgr.active_tab();
-            let kind = tab.kind.clone();
+            let kind = tab.kind();
             match kind {
-                TabKind::Ai { .. } | TabKind::HistoryView => {
+                TabKind::Ai | TabKind::HistoryView => {
                     // Mode tabs: close the tab on exit/quit
                     if tab_mgr.close_active() {
                         break;
@@ -350,7 +350,7 @@ async fn main() -> Result<()> {
         }
 
         // For HistoryView tabs: 'q' also closes the tab
-        if cmd == "q" && matches!(tab_mgr.active_tab().kind, TabKind::HistoryView) {
+        if cmd == "q" && tab_mgr.active_tab().kind() == TabKind::HistoryView {
             if tab_mgr.close_active() {
                 break;
             }
@@ -371,14 +371,14 @@ async fn main() -> Result<()> {
         }
 
         // --- Dispatch based on tab kind ---
-        let kind = tab_mgr.active_tab().kind.clone();
+        let kind = tab_mgr.active_tab().kind();
         match kind {
             TabKind::HistoryView => {
                 // In history tab: typed text searches history, Enter copies to clipboard
                 process_history_view(&tab_mgr, &cmd);
                 continue;
             }
-            TabKind::Ai { .. } => {
+            TabKind::Ai => {
                 // AI tabs are always in AI mode
                 process_ai_mode(&mut tab_mgr, &ai_service, &cmd).await;
                 continue;
@@ -429,24 +429,25 @@ async fn main() -> Result<()> {
             }
         }
 
-        // Dispatch to WASM engine (shell tabs only)
+        // Dispatch to WASM engine (shell tabs only — type-level guarantee)
         {
             let tab = tab_mgr.active_tab_mut();
-            if let Some(ref mut wasm) = tab.wasm {
-                let cmd_bytes = cmd.as_bytes();
-                if cmd_bytes.len() > wasm.buf_cap {
-                    eprintln!(
-                        "[host] command too long ({} bytes, max {})",
-                        cmd_bytes.len(),
-                        wasm.buf_cap
-                    );
-                    continue;
-                }
-                wasm.memory
-                    .write(&mut wasm.store, wasm.buf_ptr, cmd_bytes)?;
-                wasm.shell_eval
-                    .call(&mut wasm.store, cmd_bytes.len() as u32)?;
+            let TabInner::Shell(ref mut wasm) = tab.inner else {
+                unreachable!("only Shell tabs reach WASM dispatch");
+            };
+            let cmd_bytes = cmd.as_bytes();
+            if cmd_bytes.len() > wasm.buf_cap {
+                eprintln!(
+                    "[host] command too long ({} bytes, max {})",
+                    cmd_bytes.len(),
+                    wasm.buf_cap
+                );
+                continue;
             }
+            wasm.memory
+                .write(&mut wasm.store, wasm.buf_ptr, cmd_bytes)?;
+            wasm.shell_eval
+                .call(&mut wasm.store, cmd_bytes.len() as u32)?;
         }
     }
 

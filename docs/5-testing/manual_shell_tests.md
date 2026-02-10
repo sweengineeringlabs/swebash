@@ -104,5 +104,6 @@
 ## See Also
 
 - [Manual Testing Hub](manual_testing.md) — prerequisites and setup
+- [Manual Tab Tests](manual_tab_tests.md) — tab system tests (CWD isolation, mode tabs, shortcuts)
 - [Manual AI Tests](manual_ai_tests.md) — AI feature tests
 - [Workspace Sandbox Design](../3-design/workspace_sandbox.md) — sandbox architecture
