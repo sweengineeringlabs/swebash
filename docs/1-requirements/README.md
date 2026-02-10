@@ -12,4 +12,6 @@
 
 ## Contents
 
-_No documents yet. Add feature requirements and specifications here using the `.spec` extension._
+| Document | Description |
+|----------|-------------|
+| [SRS](srs.md) | Software Requirements Specification — stakeholder, system, and software requirements per ISO/IEC/IEEE 29148:2018 |

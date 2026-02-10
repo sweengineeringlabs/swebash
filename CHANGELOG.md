@@ -18,6 +18,23 @@
   - No YAML schema changes — existing agent config files work unchanged
 
 ### Added
+- **Multi-Tab Shell** (2026-02-10)
+  - `tab` builtin command with subcommands: `new`, `close`, `list`, `rename`, `ai`, `history`
+  - Each shell tab backed by its own WASM engine instance — full CWD and environment isolation
+  - Three tab types: `Shell` (WASM-backed), `Ai` (dedicated AI chat), `HistoryView` (searchable history browser)
+  - Tab bar UI rendered at terminal row 0 when 2+ tabs open (bold white for active, grey for inactive)
+  - Tab bar auto-hides when only 1 tab remains; truncates with `...` when labels exceed terminal width
+  - Keyboard shortcuts: `Ctrl+T` (new tab), `Ctrl+PageDown`/`Ctrl+PageUp` (next/prev), `Alt+1`–`Alt+9` (direct switch)
+  - Context tabs: `tab new /path` opens a shell tab with a specific CWD
+  - AI mode tabs: `tab ai [agent]` opens a dedicated AI tab with the specified agent
+  - History view tabs: `tab history` opens a searchable history browser shared across all tabs
+  - Tab rename: `tab rename <name>` sets a custom label shown in the tab bar
+  - Per-tab state: multiline buffer, recent commands, AI mode flag, active agent ID
+  - `exit` in a non-last tab closes only that tab; `exit` in the last tab exits the shell
+  - Shared command history across all tabs via `Arc<Mutex<History>>`
+  - 68 manual test scenarios across 11 test sections
+  - Source: `host/src/spi/tab.rs`, `host/src/spi/tab_bar.rs`
+
 - **Configurable Workspace Sandbox** (2025-02-07)
   - Path-based sandbox layer in the host runtime intercepts every filesystem import
   - Default workspace: `~/workspace/` (auto-created on first launch) in read-only mode

@@ -109,6 +109,27 @@ The hidden instruction given to the LLM before any user messages. Defines the ag
 
 ## T
 
+**Tab**
+A single session within the shell. Each tab has its own ID, label, multiline buffer, recent commands, AI mode flag, and active agent. Shell tabs are backed by a WASM engine instance; mode tabs (AI, History) are lightweight with only a fallback CWD.
+
+**`tab` command**
+A shell builtin that manages tabs. Subcommands: `tab list` (or just `tab`), `tab new [path]`, `tab close`, `tab rename <name>`, `tab ai [agent]`, `tab history`, `tab <N>` (switch).
+
+**TabBar**
+A UI component rendered at terminal row 0 when 2+ tabs are open. Shows each tab as `[N:icon:label]` with the active tab in bold white and inactive tabs in grey. Implemented in `host/src/spi/tab_bar.rs`.
+
+**TabId**
+A `u32` unique identifier assigned to each tab by `TabManager`. Monotonically increasing; never reused within a session.
+
+**TabInner**
+An enum encoding tab content type: `Shell(WasmSession)` for WASM-backed shell tabs, `Ai { fallback_cwd }` for AI chat tabs, and `HistoryView { fallback_cwd }` for history browser tabs.
+
+**TabKind**
+A lightweight `Copy + Eq` discriminant (`Shell`, `Ai`, `HistoryView`) derived from `TabInner`. Used for matching tab type without borrowing the inner data.
+
+**TabManager**
+The struct in `host/src/spi/tab.rs` that owns all open tabs, tracks the active tab index, and provides methods for creating, closing, switching, and navigating tabs. Holds a shared `Arc<Mutex<History>>` for cross-tab history.
+
 **thinkFirst**
 An agent YAML option that appends "explain your reasoning before acting" to the system prompt, making the agent plan before using tools.
 
