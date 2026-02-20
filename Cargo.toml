@@ -17,3 +17,8 @@ swe-readline = { path = "swe-readline" }
 opt-level = "s"
 lto = true
 strip = true
+
+# Patch llm-provider from the local registry with our vendored version that
+# adds the `oauth` feature while preserving API compatibility with `react`.
+[patch."file:///mnt/c/Users/elvis/.cargo/registry.local/index"]
+llm-provider = { path = "vendor/llm-provider" }

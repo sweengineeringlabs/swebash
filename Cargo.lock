@@ -2011,10 +2011,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 
 [[package]]
-name = "llm-provider"
+name = "llm-oauth"
 version = "0.1.0"
 source = "registry+file:///mnt/c/Users/elvis/.cargo/registry.local/index"
-checksum = "a017df5c7ba254b819f9a0054eb2d01b8fa6c095b43216e43f1df1ca217cb672"
+checksum = "f1dd6aa3918a371b0002356fe9fbb060d8caf53d2d3be3f9481ebea91faca295"
+dependencies = [
+ "async-trait",
+ "dirs 5.0.1",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "llm-provider"
+version = "0.1.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2023,6 +2037,7 @@ dependencies = [
  "dev-engineeringlabs-rustboot-ratelimit",
  "dev-engineeringlabs-rustboot-resilience",
  "futures",
+ "llm-oauth",
  "reqwest",
  "serde",
  "serde_json",
@@ -3533,6 +3548,7 @@ dependencies = [
  "chat",
  "futures",
  "glob",
+ "llm-oauth",
  "llm-provider",
  "llmrag",
  "parking_lot",

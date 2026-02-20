@@ -51,9 +51,9 @@ pub async fn create_ai_service() -> AiResult<DefaultAiService> {
         ));
     }
 
-    if !config.has_api_key() {
+    if !config.has_api_key() && !config.has_oauth_credentials() {
         return Err(AiError::NotConfigured(format!(
-            "No API key found for provider '{}'. Set the appropriate environment variable.",
+            "No credentials found for provider '{}'. Set the API key env var or configure Claude Code OAuth.",
             config.provider
         )));
     }

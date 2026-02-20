@@ -1,0 +1,39 @@
+[package]
+name = "llm-provider"
+version = "0.1.0"
+edition = "2021"
+description = "Unified LLM client following SEA pattern with enforced encapsulation"
+license = "MIT"
+
+[features]
+all-providers = ["openai", "anthropic", "gemini"]
+anthropic = []
+default = ["openai", "anthropic", "gemini"]
+gemini = []
+openai = []
+secrets = ["dep:swe-secrets"]
+testing = []
+oauth = ["dep:llm-oauth", "anthropic"]
+
+[dependencies]
+async-stream = "0.3"
+async-trait = "0.1"
+futures = "0.3"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+thiserror = "2.0"
+tokio = { version = "1.0", features = ["sync", "rt-multi-thread", "time", "macros", "net"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tracing = "0.1"
+
+# Local registry deps (rustratify infrastructure)
+rustboot-config     = { version = "0.1.0", registry = "local", package = "dev-engineeringlabs-rustboot-config" }
+rustboot-observability = { version = "0.1.0", registry = "local", package = "dev-engineeringlabs-rustboot-observability" }
+rustboot-ratelimit  = { version = "0.1.0", registry = "local", package = "dev-engineeringlabs-rustboot-ratelimit" }
+rustboot-resilience = { version = "0.1.0", registry = "local", package = "dev-engineeringlabs-rustboot-resilience" }
+
+# Optional deps
+swe-secrets = { version = "0.1.0", registry = "local", optional = true }
+llm-oauth   = { version = "0.1.0", registry = "local", optional = true }

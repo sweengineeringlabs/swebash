@@ -11,7 +11,7 @@ use crate::api::types::{AiMessage, AiResponse, AiRole, CompletionOptions};
 use super::config::AiConfig;
 use crate::spi::AiClient;
 
-use llm_provider::{CompletionBuilder, DefaultLlmService, LlmError, LlmService};
+use llm_provider::{CompletionBuilder, DefaultLlmService, LlmError, LlmService, LlmServiceBuilder, ProviderConfig};
 
 /// Wrapper around `llm_provider::DefaultLlmService` with `chat` crate integration.
 ///
@@ -28,11 +28,11 @@ pub struct ChatProviderClient {
 impl ChatProviderClient {
     /// Create a new client from configuration.
     ///
-    /// Async because `llm_provider::create_service()` initializes providers asynchronously.
+    /// Async because provider initialization is asynchronous. Prefers Claude Code OAuth
+    /// credentials for the `anthropic` provider; falls back to `ANTHROPIC_API_KEY` when
+    /// OAuth credentials are unavailable.
     pub async fn new(config: &AiConfig) -> AiResult<Self> {
-        let service = llm_provider::create_service()
-            .await
-            .map_err(map_llm_error)?;
+        let service = Arc::new(build_llm_service(config).await?);
 
         tracing::info!(
             provider = %config.provider,
@@ -40,7 +40,6 @@ impl ChatProviderClient {
             "Chat provider client initialized via chat/llm-provider crates"
         );
 
-        let service = Arc::new(service);
         let llm = super::logging::LoggingLlmService::wrap(
             service.clone(),
             config.log_dir.clone(),
@@ -60,6 +59,33 @@ impl ChatProviderClient {
     /// so that all LLM calls (stateless and chat) are logged.
     pub fn llm_service(&self) -> Arc<dyn LlmService> {
         self.llm.clone()
+    }
+}
+
+/// Build the `DefaultLlmService`, choosing OAuth credentials or API key automatically.
+///
+/// Priority:
+/// 1. Claude Code OAuth credentials from `~/.claude/.credentials.json` (anthropic only)
+/// 2. `ANTHROPIC_API_KEY` env var (when provider == "anthropic")
+/// 3. `create_service()` env-driven defaults (openai / gemini)
+async fn build_llm_service(config: &AiConfig) -> AiResult<DefaultLlmService> {
+    if config.provider == "anthropic" {
+        if let Ok(oauth) = llm_oauth::from_claude_credentials() {
+            Ok(LlmServiceBuilder::new()
+                .with_anthropic_oauth(std::sync::Arc::new(oauth), None)
+                .build()
+                .await)
+        } else if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+            let mut pc = ProviderConfig::default();
+            pc.api_key = Some(key);
+            Ok(LlmServiceBuilder::new().with_anthropic(pc).build().await)
+        } else {
+            Err(AiError::NotConfigured(
+                "No credentials found for provider 'anthropic'. Configure Claude Code OAuth or set ANTHROPIC_API_KEY.".into()
+            ))
+        }
+    } else {
+        llm_provider::create_service().await.map_err(map_llm_error)
     }
 }
 

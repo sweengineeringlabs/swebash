@@ -296,6 +296,12 @@ impl AiConfig {
         };
         std::env::var(key_var).is_ok()
     }
+
+    /// Check if Claude Code OAuth credentials are available (`~/.claude/.credentials.json`).
+    /// Only meaningful when `provider == "anthropic"`.
+    pub fn has_oauth_credentials(&self) -> bool {
+        self.provider == "anthropic" && llm_oauth::from_claude_credentials().is_ok()
+    }
 }
 
 /// Return the default model for a given provider.

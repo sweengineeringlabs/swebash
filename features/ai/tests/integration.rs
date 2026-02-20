@@ -942,11 +942,10 @@ async fn service_disabled_rejects_requests() {
 #[tokio::test]
 #[serial]
 async fn error_bad_api_key_propagates() {
-    // Save whatever key is (or isn't) present, inject a bogus one.
-    let original = std::env::var("ANTHROPIC_API_KEY").ok();
-    std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-INVALID-KEY");
-
-    let config = AiConfig {
+    // OAuth credentials take priority over the API key. When `~/.claude/.credentials.json`
+    // is present the bad key is never used and the service succeeds. Only when OAuth
+    // credentials are absent does the bad key propagate as an error.
+    let config_for_check = AiConfig {
         enabled: true,
         provider: "anthropic".to_string(),
         model: "claude-sonnet-4-20250514".to_string(),
@@ -958,15 +957,23 @@ async fn error_bad_api_key_propagates() {
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
     };
+    let has_oauth = config_for_check.has_oauth_credentials();
+
+    // Save whatever key is (or isn't) present, inject a bogus one.
+    let original = std::env::var("ANTHROPIC_API_KEY").ok();
+    std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-INVALID-KEY");
 
     // The error may surface at client creation or at the first API call —
     // both are valid propagation paths.
-    let outcome = match ChatProviderClient::new(&config).await {
+    let outcome = match ChatProviderClient::new(&config_for_check).await {
         Err(e) => Err(e),
         Ok(client) => {
             let llm = client.llm_service();
-            let agents = swebash_ai::core::agents::builtins::create_default_registry(llm, config.clone());
-            let service = DefaultAiService::new(Box::new(client), agents, config);
+            let agents = swebash_ai::core::agents::builtins::create_default_registry(
+                llm,
+                config_for_check.clone(),
+            );
+            let service = DefaultAiService::new(Box::new(client), agents, config_for_check);
             service
                 .translate(TranslateRequest {
                     natural_language: "list files".to_string(),
@@ -983,10 +990,20 @@ async fn error_bad_api_key_propagates() {
         None => std::env::remove_var("ANTHROPIC_API_KEY"),
     }
 
-    assert!(
-        outcome.is_err(),
-        "Expected an error with an invalid API key, got Ok"
-    );
+    if has_oauth {
+        // OAuth credentials took priority; the invalid API key was never sent.
+        assert!(
+            outcome.is_ok(),
+            "Expected success when OAuth credentials are present (API key ignored), got: {:?}",
+            outcome.err()
+        );
+    } else {
+        // No OAuth credentials; the bad key must propagate as an error.
+        assert!(
+            outcome.is_err(),
+            "Expected an error with an invalid API key and no OAuth credentials, got Ok"
+        );
+    }
 }
 
 #[tokio::test]

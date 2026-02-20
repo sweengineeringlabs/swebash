@@ -16,7 +16,10 @@ rag-swevecdb = ["llmrag/rag-swevecdb"] # Remote SweVecDB vector store
 chat-engine = { package = "chat", version = "0.1.0", registry = "local" }
 
 # LLM provider (from rustratify) — used for CompletionBuilder and service creation
-llm-provider = { version = "0.1.0", registry = "local" }
+llm-provider = { version = "0.1.0", registry = "local", features = ["oauth"] }
+
+# OAuth credentials (from rustratify) — Claude Code ~/.claude/.credentials.json support
+llm-oauth = { version = "0.1.0", registry = "local" }
 
 # React (from rustratify) — provides AgentEventSender for chat engine
 react = { version = "0.1.0", registry = "local" }
@@ -60,7 +63,7 @@ tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
 async-trait = "0.1"
 futures = "0.3"
 agent-controller = { version = "0.1.0", registry = "local", features = ["testing", "yaml"] }
-llm-provider = { version = "0.1.0", registry = "local", features = ["testing"] }
+llm-provider = { version = "0.1.0", registry = "local" }
 serial_test = "3"
 tempfile = "3"
 swebash-test = { path = "../test" }
