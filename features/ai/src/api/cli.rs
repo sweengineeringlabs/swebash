@@ -160,15 +160,26 @@ async fn handle_chat(service: &DefaultAiService, text: &str) -> AiResult<()> {
     super::output::ai_thinking_done();
     super::output::ai_reply_start();
 
+    let mut had_deltas = false;
+    let mut done_content = String::new();
     while let Some(event) = rx.recv().await {
         match event {
             ChatStreamEvent::Delta(delta) => {
+                had_deltas = true;
                 super::output::ai_reply_delta(&delta);
             }
-            ChatStreamEvent::Done(_) => {
+            ChatStreamEvent::Done(content) => {
+                done_content = content;
                 break;
             }
         }
+    }
+
+    // If the engine returned no streaming deltas (e.g. tool-aware engine
+    // that buffers the full response before emitting), fall back to
+    // displaying the assembled content from the Done event.
+    if !had_deltas && !done_content.is_empty() {
+        super::output::ai_reply_delta(&done_content);
     }
 
     super::output::ai_reply_end();
