@@ -1,10 +1,9 @@
 # Manual Test Report — 2026-02-20
 
-**Build**: release (`/tmp/swebash-target/release/swebash` — pre-built, no source changes since build)
+**Build**: release (`/tmp/swebash-target/release/swebash` — binary built at 12:34, pre-dating OAuth commit `fdd6bda` at 16:33; see Notes)
 **Platform**: WSL2 (Linux 6.6.87.2-microsoft-standard-WSL2)
 **Provider**: anthropic / claude-sonnet-4-20250514
 **API key status**: Invalid (`authentication_error: invalid x-api-key`) — all LLM requests reach the Anthropic API but fail auth; all non-LLM code paths pass.
-**AI enabled**: `SWEBASH_AI_ENABLED=true` required (new — see §7 note)
 **User agents config**: `~/.config/swebash/agents.yaml` loaded (ragtest agent) — 11 agents total.
 
 ---
@@ -204,7 +203,7 @@
 
 - **All non-LLM features pass**: shell basics, workspace sandbox, agent listing/switching, auto-detection, history/clear, logging infrastructure, sbh launcher.
 - **API key invalid**: `.env` `ANTHROPIC_API_KEY` returns `authentication_error: invalid x-api-key` — all LLM requests reach Anthropic but are rejected at auth. Error propagation via `AiEvent::Error` continues to work correctly.
-- **`SWEBASH_AI_ENABLED=true` now required** (new finding): AI features do not activate from `LLM_PROVIDER` + API key alone. This env var must be set explicitly. Related to commit `fdd6bda feat(ai): wire OAuth credentials as primary auth for anthropic provider`. Recommend adding `SWEBASH_AI_ENABLED=true` to `.env.example` and the manual testing prerequisites.
+- **Stale binary — `SWEBASH_AI_ENABLED=true` observation retracted**: The release binary used for this session was built at 12:34, before the OAuth credentials commit `fdd6bda` at 16:33. The observation that `SWEBASH_AI_ENABLED=true` was required was an artefact of the pre-OAuth binary's initialisation path, not a real behaviour change. Current source code defaults `SWEBASH_AI_ENABLED` to `true` (`unwrap_or(true)`) — AI features activate without any explicit flag when credentials are present. Retested with a fresh binary: `ai status` works without `SWEBASH_AI_ENABLED` set.
 - **Double switch message for `@review` and `@git`**: These two agents print "Switched to X" twice in AI mode (once from the AI layer, once from the shell/UI layer). `@devops` and `@shell` print it once. Pre-existing behavior; consistent with 2026-02-10 report.
 - **User config loaded correctly**: `~/.config/swebash/agents.yaml` ragtest agent present — 11 agents listed.
 - **Workspace sandbox**: All sandbox modes (RO, RW, allow-path, disable/enable, env-var override) work correctly.
