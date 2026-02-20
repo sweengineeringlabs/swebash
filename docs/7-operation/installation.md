@@ -110,7 +110,7 @@ git checkout main    # or dev for latest development
 The engine must be built first as the host binary embeds the compiled WASM module.
 
 ```bash
-cargo build --manifest-path engine/Cargo.toml \
+cargo build --manifest-path features/shell/engine/Cargo.toml \
   --target wasm32-unknown-unknown \
   --release
 ```
@@ -122,7 +122,7 @@ Output: `target/wasm32-unknown-unknown/release/engine.wasm`
 **Debug build** (faster compilation, slower runtime):
 
 ```bash
-cargo build --manifest-path host/Cargo.toml
+cargo build --manifest-path features/shell/host/Cargo.toml
 ```
 
 Output: `target/debug/swebash`
@@ -130,7 +130,7 @@ Output: `target/debug/swebash`
 **Release build** (optimized for size and performance):
 
 ```bash
-cargo build --manifest-path host/Cargo.toml --release
+cargo build --manifest-path features/shell/host/Cargo.toml --release
 ```
 
 Output: `target/release/swebash`
@@ -145,9 +145,9 @@ The release profile applies:
 For convenience, run both steps together:
 
 ```bash
-cargo build --manifest-path engine/Cargo.toml \
+cargo build --manifest-path features/shell/engine/Cargo.toml \
   --target wasm32-unknown-unknown --release && \
-cargo build --manifest-path host/Cargo.toml --release
+cargo build --manifest-path features/shell/host/Cargo.toml --release
 ```
 
 ## Installation
@@ -352,13 +352,13 @@ After building, verify the installation with the test suite:
 
 ```bash
 # Engine unit tests
-cargo test --manifest-path engine/Cargo.toml
+cargo test --manifest-path features/shell/engine/Cargo.toml
 
 # Host integration tests (requires engine.wasm)
-cargo test --manifest-path host/Cargo.toml --test integration
+cargo test --manifest-path features/shell/host/Cargo.toml --test integration
 
 # AI module tests
-cargo test --manifest-path ai/Cargo.toml
+cargo test --manifest-path features/ai/Cargo.toml
 
 # All workspace tests
 cargo test --workspace
@@ -436,7 +436,7 @@ echo $CARGO_REGISTRIES_LOCAL_INDEX
 The WASM engine must be built before the host binary or tests:
 
 ```bash
-cargo build --manifest-path engine/Cargo.toml \
+cargo build --manifest-path features/shell/engine/Cargo.toml \
   --target wasm32-unknown-unknown --release
 ```
 
@@ -470,7 +470,7 @@ Clean the build cache and rebuild:
 
 ```bash
 cargo clean
-cargo build --manifest-path engine/Cargo.toml \
+cargo build --manifest-path features/shell/engine/Cargo.toml \
   --target wasm32-unknown-unknown --release
-cargo build --manifest-path host/Cargo.toml --release
+cargo build --manifest-path features/shell/host/Cargo.toml --release
 ```
