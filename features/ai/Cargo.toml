@@ -58,6 +58,9 @@ agent-cache = { version = "0.1.0", registry = "local" }
 # RAG (from rustratify) — provides RAG pipeline (chunking, vector storage, index management)
 llmrag = { version = "0.1.0", registry = "local", default-features = false }
 
+# SHA-256 fingerprinting for PreprocessingRagIndexService
+sha2 = "0.10"
+
 [dev-dependencies]
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
 async-trait = "0.1"
@@ -66,4 +69,5 @@ agent-controller = { version = "0.1.0", registry = "local", features = ["testing
 llm-provider = { version = "0.1.0", registry = "local" }
 serial_test = "3"
 tempfile = "3"
+filetime = "0.2"
 swebash-test = { path = "../test" }

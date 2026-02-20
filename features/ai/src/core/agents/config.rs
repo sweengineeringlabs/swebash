@@ -90,10 +90,13 @@ pub struct SwebashAgentExt {
 /// Example YAML:
 /// ```yaml
 /// rag:
-///   store: sqlite          # memory, file, or sqlite
-///   path: .swebash/rag.db  # path for file/sqlite backends
-///   chunk_size: 2000       # document chunk size in chars
-///   chunk_overlap: 200     # overlap between chunks in chars
+///   store: sqlite           # memory, file, or sqlite
+///   path: .swebash/rag.db   # path for file/sqlite backends
+///   chunk_size: 2000        # document chunk size in chars
+///   chunk_overlap: 200      # overlap between chunks in chars
+///   show_scores: false      # hide cosine scores from LLM output
+///   min_score: 0.1          # drop results below this threshold
+///   normalize_markdown: true # convert tables to prose before indexing
 /// ```
 #[derive(Debug, Clone, Deserialize)]
 pub struct RagYamlConfig {
@@ -109,6 +112,15 @@ pub struct RagYamlConfig {
     /// Overlap between chunks in characters.
     #[serde(default = "default_chunk_overlap")]
     pub chunk_overlap: usize,
+    /// Override global `show_scores` setting.
+    #[serde(default)]
+    pub show_scores: Option<bool>,
+    /// Override global `min_score` threshold.
+    #[serde(default)]
+    pub min_score: Option<f32>,
+    /// Override global `normalize_markdown` setting.
+    #[serde(default)]
+    pub normalize_markdown: Option<bool>,
 }
 
 impl Default for RagYamlConfig {
@@ -118,6 +130,9 @@ impl Default for RagYamlConfig {
             path: None,
             chunk_size: default_chunk_size(),
             chunk_overlap: default_chunk_overlap(),
+            show_scores: None,
+            min_score: None,
+            normalize_markdown: None,
         }
     }
 }
@@ -162,6 +177,15 @@ pub struct DocsConfig {
     pub top_k: usize,
     /// File paths or glob patterns to load as documentation.
     pub sources: Vec<String>,
+    /// Per-agent override: include `score: X.XXX` in rag_search output.
+    #[serde(default)]
+    pub show_scores: Option<bool>,
+    /// Per-agent override: drop RAG results below this cosine similarity.
+    #[serde(default)]
+    pub min_score: Option<f32>,
+    /// Per-agent override: convert Markdown tables to prose before embedding.
+    #[serde(default)]
+    pub normalize_markdown: Option<bool>,
 }
 
 fn default_top_k() -> usize {
@@ -286,6 +310,12 @@ pub struct ConfigAgent {
     docs_sources: Vec<String>,
     /// Number of RAG results per query (only used when `docs_strategy == Rag`).
     docs_top_k: usize,
+    /// Per-agent override for score display in rag_search output.
+    docs_show_scores: Option<bool>,
+    /// Per-agent override for minimum score threshold.
+    docs_min_score: Option<f32>,
+    /// Per-agent override for Markdown normalization before indexing.
+    docs_normalize_markdown: Option<bool>,
 }
 
 impl ConfigAgent {
@@ -332,6 +362,9 @@ impl ConfigAgent {
         let docs_top_k = docs_config
             .map(|d| d.top_k)
             .unwrap_or(default_top_k());
+        let docs_show_scores = docs_config.and_then(|d| d.show_scores);
+        let docs_min_score = docs_config.and_then(|d| d.min_score);
+        let docs_normalize_markdown = docs_config.and_then(|d| d.normalize_markdown);
         let bypass_confirmation = entry
             .ext
             .bypass_confirmation
@@ -367,6 +400,9 @@ impl ConfigAgent {
                                 strategy: docs_info.strategy.clone(),
                                 top_k: docs_info.top_k,
                                 sources: docs_info.sources.clone(),
+                                show_scores: None,
+                                min_score: None,
+                                normalize_markdown: None,
                             };
                             let result = load_docs_context(&docs, dir);
                             if let Some(docs_content) = result.content {
@@ -431,6 +467,9 @@ impl ConfigAgent {
             docs_strategy,
             docs_sources,
             docs_top_k,
+            docs_show_scores,
+            docs_min_score,
+            docs_normalize_markdown,
         }
     }
 
@@ -457,6 +496,27 @@ impl ConfigAgent {
     /// Number of search results per RAG query.
     pub fn docs_top_k(&self) -> usize {
         self.docs_top_k
+    }
+
+    /// Per-agent override for score display in rag_search output.
+    ///
+    /// Returns `None` to fall back to the global `RagConfig::show_scores`.
+    pub fn docs_show_scores(&self) -> Option<bool> {
+        self.docs_show_scores
+    }
+
+    /// Per-agent override for the minimum cosine similarity threshold.
+    ///
+    /// Returns `None` to fall back to the global `RagConfig::min_score`.
+    pub fn docs_min_score(&self) -> Option<f32> {
+        self.docs_min_score
+    }
+
+    /// Per-agent override for Markdown table normalization before indexing.
+    ///
+    /// Returns `None` to fall back to the global `RagConfig::normalize_markdown`.
+    pub fn docs_normalize_markdown(&self) -> Option<bool> {
+        self.docs_normalize_markdown
     }
 }
 
@@ -983,6 +1043,9 @@ agents:
             strategy: DocsStrategy::default(),
             top_k: 5,
             sources: vec!["docs/*.md".to_string()],
+            show_scores: None,
+            min_score: None,
+            normalize_markdown: None,
         };
 
         let result = load_docs_context(&config, dir.path());
@@ -1003,6 +1066,9 @@ agents:
             strategy: DocsStrategy::default(),
             top_k: 5,
             sources: vec!["nonexistent/*.md".to_string()],
+            show_scores: None,
+            min_score: None,
+            normalize_markdown: None,
         };
 
         let result = load_docs_context(&config, dir.path());
@@ -1025,6 +1091,9 @@ agents:
             strategy: DocsStrategy::default(),
             top_k: 5,
             sources: vec!["docs/*.md".to_string()],
+            show_scores: None,
+            min_score: None,
+            normalize_markdown: None,
         };
 
         let result = load_docs_context(&config, dir.path());
@@ -1042,6 +1111,9 @@ agents:
             strategy: DocsStrategy::default(),
             top_k: 5,
             sources: vec![],
+            show_scores: None,
+            min_score: None,
+            normalize_markdown: None,
         };
 
         let result = load_docs_context(&config, dir.path());
@@ -1063,6 +1135,9 @@ agents:
             strategy: DocsStrategy::default(),
             top_k: 5,
             sources: vec!["crates/compiler/*/README.md".to_string()],
+            show_scores: None,
+            min_score: None,
+            normalize_markdown: None,
         };
 
         let result = load_docs_context(&config, dir.path());
@@ -1087,6 +1162,9 @@ agents:
                 "docs/exists.md".to_string(),
                 "missing/*.md".to_string(),
             ],
+            show_scores: None,
+            min_score: None,
+            normalize_markdown: None,
         };
 
         let result = load_docs_context(&config, dir.path());
@@ -1239,6 +1317,9 @@ agents:
                     strategy: DocsStrategy::default(),
                     top_k: 5,
                     sources: vec!["docs/ref.md".into()],
+                    show_scores: None,
+                    min_score: None,
+                    normalize_markdown: None,
                 }),
                 ..SwebashAgentExt::default()
             },

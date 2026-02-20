@@ -41,6 +41,22 @@ pub struct RagConfig {
     pub chunk_size: usize,
     /// Overlap between chunks (characters).
     pub chunk_overlap: usize,
+    /// Whether to include `score: X.XXX` in `rag_search` tool output.
+    ///
+    /// When `true` (default), the LLM sees raw cosine similarity scores
+    /// and may use them as a relevance gate.  Set to `false` to hide scores
+    /// and let the LLM rely solely on content quality.
+    pub show_scores: bool,
+    /// Minimum cosine similarity threshold for RAG results.
+    ///
+    /// Results below this score are dropped before being returned to the LLM.
+    /// `None` (default) means no server-side threshold is applied.
+    pub min_score: Option<f32>,
+    /// Normalize Markdown tables to prose before embedding.
+    ///
+    /// When `true`, table cells are converted to `Header: value.` sentences
+    /// before chunking, improving embedding quality for tabular data.
+    pub normalize_markdown: bool,
 }
 
 impl Default for RagConfig {
@@ -49,6 +65,9 @@ impl Default for RagConfig {
             vector_store: VectorStoreConfig::Memory,
             chunk_size: 2000,
             chunk_overlap: 200,
+            show_scores: true,
+            min_score: None,
+            normalize_markdown: false,
         }
     }
 }
@@ -156,6 +175,9 @@ impl AiConfig {
     /// | `SWEBASH_AI_RAG_SWEVECDB_ENDPOINT` | `http://localhost:8080` | SweVecDB server endpoint |
     /// | `SWEBASH_AI_RAG_CHUNK_SIZE` | `2000` | Document chunk size (chars) |
     /// | `SWEBASH_AI_RAG_CHUNK_OVERLAP` | `200` | Chunk overlap (chars) |
+    /// | `SWEBASH_AI_RAG_SHOW_SCORES` | `true` | Include `score: X.XXX` in rag_search output |
+    /// | `SWEBASH_AI_RAG_MIN_SCORE` | _(none)_ | Drop results below this cosine similarity threshold |
+    /// | `SWEBASH_AI_RAG_NORMALIZE_MARKDOWN` | `false` | Convert Markdown tables to prose before embedding |
     pub fn from_env() -> Self {
         let enabled = std::env::var("SWEBASH_AI_ENABLED")
             .map(|v| v != "false" && v != "0")
@@ -270,6 +292,15 @@ impl AiConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(200),
+            show_scores: std::env::var("SWEBASH_AI_RAG_SHOW_SCORES")
+                .map(|v| v != "false" && v != "0")
+                .unwrap_or(true),
+            min_score: std::env::var("SWEBASH_AI_RAG_MIN_SCORE")
+                .ok()
+                .and_then(|v| v.parse::<f32>().ok()),
+            normalize_markdown: std::env::var("SWEBASH_AI_RAG_NORMALIZE_MARKDOWN")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
         };
 
         Self {

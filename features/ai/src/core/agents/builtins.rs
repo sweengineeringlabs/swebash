@@ -11,10 +11,10 @@ use std::sync::Arc;
 use llm_provider::LlmService;
 
 use crate::spi::config::AiConfig;
-use llmrag::{RagIndexManager, VectorStoreConfig};
+use llmrag::{ChunkerConfig, EmbeddingProvider, RagIndexManager, VectorStore, VectorStoreConfig};
 
 use super::config::{SwebashAgentsYaml, ConfigAgent, RagYamlConfig};
-use super::AgentManager;
+use super::{AgentManager, RagComponents};
 
 /// Embedded default agents YAML, compiled into the binary.
 const DEFAULT_AGENTS_YAML: &str = include_str!("default_agents.yaml");
@@ -111,6 +111,9 @@ pub fn create_default_registry(llm: Arc<dyn LlmService>, mut config: AiConfig) -
         let env_path_set = std::env::var("SWEBASH_AI_RAG_STORE_PATH").is_ok();
         let env_chunk_size_set = std::env::var("SWEBASH_AI_RAG_CHUNK_SIZE").is_ok();
         let env_chunk_overlap_set = std::env::var("SWEBASH_AI_RAG_CHUNK_OVERLAP").is_ok();
+        let env_show_scores_set = std::env::var("SWEBASH_AI_RAG_SHOW_SCORES").is_ok();
+        let env_min_score_set = std::env::var("SWEBASH_AI_RAG_MIN_SCORE").is_ok();
+        let env_normalize_set = std::env::var("SWEBASH_AI_RAG_NORMALIZE_MARKDOWN").is_ok();
 
         if !env_store_set || !env_path_set {
             let store = VectorStoreConfig::from_yaml(&yaml_rag.store, yaml_rag.path.clone());
@@ -124,19 +127,32 @@ pub fn create_default_registry(llm: Arc<dyn LlmService>, mut config: AiConfig) -
         if !env_chunk_overlap_set {
             config.rag.chunk_overlap = yaml_rag.chunk_overlap;
         }
+        if !env_show_scores_set {
+            config.rag.show_scores = yaml_rag.show_scores.unwrap_or(config.rag.show_scores);
+        }
+        if !env_min_score_set {
+            config.rag.min_score = yaml_rag.min_score.or(config.rag.min_score);
+        }
+        if !env_normalize_set {
+            config.rag.normalize_markdown =
+                yaml_rag.normalize_markdown.unwrap_or(config.rag.normalize_markdown);
+        }
 
         tracing::debug!(
             store = ?config.rag.vector_store,
             chunk_size = config.rag.chunk_size,
             chunk_overlap = config.rag.chunk_overlap,
+            show_scores = config.rag.show_scores,
+            min_score = ?config.rag.min_score,
+            normalize_markdown = config.rag.normalize_markdown,
             "RAG config merged from YAML"
         );
     }
 
-    // Phase 3: Create RAG manager with final config.
-    let rag_manager = create_rag_manager(&config);
-    let rag_available = rag_manager.is_some();
-    let mut manager = AgentManager::new(llm, config, rag_manager);
+    // Phase 3: Create RAG components with final config.
+    let rag_components = create_rag_components(&config);
+    let rag_available = rag_components.is_some();
+    let mut manager = AgentManager::new(llm, config, rag_components);
 
     // Phase 4: Register agents from all YAML sources.
     for source in yaml_sources {
@@ -155,38 +171,45 @@ pub fn create_default_registry(llm: Arc<dyn LlmService>, mut config: AiConfig) -
     manager
 }
 
-/// Create a RAG index manager with the configured embedding provider and vector store.
+/// Create RAG components (manager, embedder, store, chunker config) with the configured
+/// embedding provider and vector store.
 ///
 /// Returns `Some` when a local embedding provider is available (the `rag-local` feature),
 /// `None` otherwise. When `None`, agents configured with `strategy: rag` will fall back
 /// to preload behavior.
 ///
+/// The store `Arc` is shared between the `RagIndexManager` (non-preprocessing path) and
+/// the `RagComponents` struct so that `PreprocessingRagIndexService` instances can share
+/// the same vector backend.
+///
 /// The vector store backend is selected via `config.rag.vector_store`:
 /// - `Memory` (default): ephemeral in-memory store
 /// - `File { path }`: JSON file persistence
 /// - `Sqlite { path }`: SQLite database (requires `rag-sqlite` feature)
-fn create_rag_manager(config: &AiConfig) -> Option<Arc<RagIndexManager>> {
+fn create_rag_components(config: &AiConfig) -> Option<RagComponents> {
     #[cfg(feature = "rag-local")]
     {
-        use llmrag::{ChunkerConfig, FastEmbedProvider, build_vector_store};
+        use llmrag::{build_vector_store, FastEmbedProvider};
 
         match FastEmbedProvider::new() {
             Ok(embedder) => {
-                let store = match build_vector_store(&config.rag.vector_store) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        tracing::warn!(error = %e, "failed to build vector store, RAG disabled");
-                        return None;
-                    }
-                };
+                let store: Arc<dyn VectorStore> =
+                    match build_vector_store(&config.rag.vector_store) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::warn!(error = %e, "failed to build vector store, RAG disabled");
+                            return None;
+                        }
+                    };
                 let chunker_config = ChunkerConfig {
                     chunk_size: config.rag.chunk_size,
                     overlap: config.rag.chunk_overlap,
                 };
+                let embedder: Arc<dyn EmbeddingProvider> = Arc::new(embedder);
                 let manager = RagIndexManager::new(
-                    Arc::new(embedder),
-                    store,
-                    chunker_config,
+                    embedder.clone(),
+                    store.clone(),
+                    chunker_config.clone(),
                 );
                 tracing::info!(
                     store = ?config.rag.vector_store,
@@ -194,7 +217,12 @@ fn create_rag_manager(config: &AiConfig) -> Option<Arc<RagIndexManager>> {
                     chunk_overlap = config.rag.chunk_overlap,
                     "RAG index manager initialized"
                 );
-                Some(Arc::new(manager))
+                Some(RagComponents {
+                    manager: Arc::new(manager),
+                    embedder,
+                    store,
+                    chunker_config,
+                })
             }
             Err(e) => {
                 tracing::warn!(error = %e, "failed to initialize FastEmbed, RAG disabled");

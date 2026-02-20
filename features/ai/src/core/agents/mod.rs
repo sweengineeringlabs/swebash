@@ -17,11 +17,30 @@ pub use agent_controller::{AgentDescriptor, ToolFilter};
 
 use crate::spi::config::{AiConfig, ToolConfig};
 use crate::core::tools;
-use llmrag::{RagIndexManager, RagIndexService, RagTool};
+use crate::core::rag::service::PreprocessingRagIndexService;
+use crate::core::rag::tool::SwebashRagTool;
+use llmrag::{ChunkerConfig, EmbeddingProvider, RagIndexManager, RagIndexService, VectorStore};
 
 use config::{ConfigAgent, DocsStrategy};
 
 use std::time::Duration;
+
+// ── RagComponents ──────────────────────────────────────────────────
+
+/// All RAG primitives created together so the `Arc<dyn VectorStore>` and
+/// `Arc<dyn EmbeddingProvider>` can be shared between the standard
+/// `RagIndexManager` (non-preprocessing path) and per-agent
+/// `PreprocessingRagIndexService` instances.
+pub struct RagComponents {
+    /// Standard index manager (used when `normalize_markdown = false`).
+    pub manager: Arc<RagIndexManager>,
+    /// Shared embedding provider.
+    pub embedder: Arc<dyn EmbeddingProvider>,
+    /// Shared vector store backend.
+    pub store: Arc<dyn VectorStore>,
+    /// Chunker configuration used when building new preprocessing services.
+    pub chunker_config: ChunkerConfig,
+}
 
 // ── SwebashEngineFactory ───────────────────────────────────────────
 
@@ -32,8 +51,14 @@ use std::time::Duration;
 pub struct SwebashEngineFactory {
     llm: Arc<dyn LlmService>,
     config: AiConfig,
-    /// Optional RAG index manager, shared across all agents.
+    /// Optional RAG index manager (non-preprocessing path), shared across all agents.
     rag_index_manager: Option<Arc<RagIndexManager>>,
+    /// Optional embedding provider for creating per-agent preprocessing services.
+    rag_embedder: Option<Arc<dyn EmbeddingProvider>>,
+    /// Optional vector store shared with the standard manager.
+    rag_store: Option<Arc<dyn VectorStore>>,
+    /// Chunker configuration forwarded to preprocessing services.
+    rag_chunker_config: ChunkerConfig,
 }
 
 impl SwebashEngineFactory {
@@ -102,30 +127,53 @@ impl EngineFactory<ConfigAgent> for SwebashEngineFactory {
                 tools::create_standard_registry(&rustratify_config)
             };
 
-            // Register RagTool for agents using the RAG docs strategy.
+            // Register SwebashRagTool for agents using the RAG docs strategy.
             if effective_tools.enable_rag {
                 if let Some(ref rag_mgr) = self.rag_index_manager {
                     if *descriptor.docs_strategy() == DocsStrategy::Rag {
+                        // Resolve per-agent overrides, falling back to global config.
+                        let show_scores = descriptor
+                            .docs_show_scores()
+                            .unwrap_or(self.config.rag.show_scores);
+                        let min_score = descriptor
+                            .docs_min_score()
+                            .or(self.config.rag.min_score);
+                        let normalize = descriptor
+                            .docs_normalize_markdown()
+                            .unwrap_or(self.config.rag.normalize_markdown);
+
+                        // Choose between the shared standard manager and a per-agent
+                        // preprocessing service based on the normalize flag.
+                        let index_svc: Arc<dyn RagIndexService> = if normalize {
+                            // Safe: rag_available was checked above via rag_index_manager.
+                            Arc::new(PreprocessingRagIndexService::new(
+                                self.rag_embedder.clone().unwrap(),
+                                self.rag_store.clone().unwrap(),
+                                self.rag_chunker_config.clone(),
+                            ))
+                        } else {
+                            rag_mgr.clone() as Arc<dyn RagIndexService>
+                        };
+
                         // Build the index eagerly (blocking in the factory).
-                        // If docs_base_dir is available, ensure the index is built.
                         if let Some(ref base_dir) = self.config.docs_base_dir {
                             let sources = descriptor.docs_sources();
                             if !sources.is_empty() {
-                                let rt = tokio::runtime::Handle::try_current();
-                                if let Ok(handle) = rt {
-                                    let mgr = rag_mgr.clone();
+                                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                                    let svc = index_svc.clone();
                                     let agent_id = descriptor.id().to_string();
                                     let srcs = sources.to_vec();
                                     let dir = base_dir.clone();
-                                    // Use block_in_place to allow blocking within the
-                                    // Tokio runtime (EngineFactory::create is sync).
                                     tokio::task::block_in_place(|| {
                                         handle.block_on(async {
-                                            if let Err(e) = mgr.ensure_index(&agent_id, &srcs, &dir).await {
+                                            if let Err(e) =
+                                                svc.ensure_index(&agent_id, &srcs, &dir).await
+                                            {
                                                 tracing::warn!(
                                                     agent = %agent_id,
                                                     error = %e,
-                                                    "failed to build RAG index, rag_search may return no results"
+                                                    "failed to build RAG index, \
+                                                     rag_search may return no results"
                                                 );
                                             }
                                         })
@@ -134,10 +182,12 @@ impl EngineFactory<ConfigAgent> for SwebashEngineFactory {
                             }
                         }
 
-                        registry.register(Box::new(RagTool::new(
+                        registry.register(Box::new(SwebashRagTool::new(
                             descriptor.id(),
-                            rag_mgr.clone(),
+                            index_svc,
                             descriptor.docs_top_k(),
+                            min_score,
+                            show_scores,
                         )));
                     }
                 }
@@ -166,16 +216,25 @@ pub struct AgentManager {
 }
 
 impl AgentManager {
-    /// Create a new manager with the given LLM service, config, and optional RAG index manager.
+    /// Create a new manager with the given LLM service, config, and optional RAG components.
     pub fn new(
         llm: Arc<dyn LlmService>,
         config: AiConfig,
-        rag_index_manager: Option<Arc<RagIndexManager>>,
+        rag_components: Option<RagComponents>,
     ) -> Self {
+        let (rag_index_manager, rag_embedder, rag_store, rag_chunker_config) =
+            match rag_components {
+                Some(c) => (Some(c.manager), Some(c.embedder), Some(c.store), c.chunker_config),
+                None => (None, None, None, ChunkerConfig::default()),
+            };
+
         let factory = SwebashEngineFactory {
             llm,
             config: config.clone(),
             rag_index_manager,
+            rag_embedder,
+            rag_store,
+            rag_chunker_config,
         };
         Self {
             registry: agent_controller::AgentRegistry::new(),
@@ -285,6 +344,9 @@ mod tests {
             llm: Arc::new(MockLlmService::new()),
             config: config.clone(),
             rag_index_manager: None,
+            rag_embedder: None,
+            rag_store: None,
+            rag_chunker_config: ChunkerConfig::default(),
         };
 
         // ToolFilter::Categories(empty) disables everything
@@ -682,6 +744,9 @@ mod tests {
             llm: Arc::new(MockLlmService::new()),
             config,
             rag_index_manager: None,
+            rag_embedder: None,
+            rag_store: None,
+            rag_chunker_config: ChunkerConfig::default(),
         };
 
         let effective = factory.effective_tool_config(&ToolFilter::All);
@@ -709,6 +774,9 @@ mod tests {
             llm: Arc::new(MockLlmService::new()),
             config: config.clone(),
             rag_index_manager: None,
+            rag_embedder: None,
+            rag_store: None,
+            rag_chunker_config: ChunkerConfig::default(),
         };
 
         // AllowList is unused by swebash, should pass-through global config
@@ -746,6 +814,9 @@ mod tests {
             llm: Arc::new(MockLlmService::new()),
             config,
             rag_index_manager: None,
+            rag_embedder: None,
+            rag_store: None,
+            rag_chunker_config: ChunkerConfig::default(),
         };
 
         // Agent requests web — but global disables it
@@ -791,6 +862,9 @@ mod tests {
             llm: Arc::new(MockLlmService::new()),
             config,
             rag_index_manager: None,
+            rag_embedder: None,
+            rag_store: None,
+            rag_chunker_config: ChunkerConfig::default(),
         };
 
         // Categories should preserve fs_max_size, exec_timeout, etc.
@@ -823,6 +897,9 @@ mod tests {
             llm: Arc::new(MockLlmService::new()),
             config,
             rag_index_manager: None,
+            rag_embedder: None,
+            rag_store: None,
+            rag_chunker_config: ChunkerConfig::default(),
         };
 
         let agent = make_test_agent("shell", vec![]);
@@ -854,6 +931,9 @@ mod tests {
             llm: Arc::new(MockLlmService::new()),
             config,
             rag_index_manager: None,
+            rag_embedder: None,
+            rag_store: None,
+            rag_chunker_config: ChunkerConfig::default(),
         };
 
         let agent = make_test_agent("chat-only", vec![]);
@@ -885,6 +965,9 @@ mod tests {
             llm: Arc::new(MockLlmService::new()),
             config,
             rag_index_manager: None,
+            rag_embedder: None,
+            rag_store: None,
+            rag_chunker_config: ChunkerConfig::default(),
         };
 
         // Agent with explicit temperature/tokens

@@ -34,7 +34,7 @@ use swebash_ai::spi::chat_provider::ChatProviderClient;
 use swebash_ai::core::rag::chunker::ChunkerConfig;
 use swebash_ai::core::rag::index::{RagIndexManager, RagIndexService};
 use swebash_ai::core::rag::stores::InMemoryVectorStore;
-use swebash_ai::core::rag::tool::RagTool;
+use swebash_ai::core::rag::tool::SwebashRagTool;
 use swebash_ai::spi::rag::{EmbeddingProvider, VectorStore};
 use swebash_test::prelude::*;
 use tool::Tool;
@@ -5104,6 +5104,9 @@ fn yaml_docs_context_warns_on_unresolved_sources() {
             "nonexistent/path/*.md".to_string(),
             "also/missing/*.txt".to_string(),
         ],
+        show_scores: None,
+        min_score: None,
+        normalize_markdown: None,
     };
 
     let result = load_docs_context(&config, dir.path());
@@ -5129,6 +5132,9 @@ fn yaml_docs_context_partial_resolution_loads_available() {
             "docs/real.md".to_string(),
             "missing/nothing/*.md".to_string(),
         ],
+        show_scores: None,
+        min_score: None,
+        normalize_markdown: None,
     };
 
     let result = load_docs_context(&config, dir.path());
@@ -5267,7 +5273,7 @@ async fn rag_tool_e2e_searches_chunked_documents() {
         .await
         .unwrap();
 
-    let tool = RagTool::new("api-agent", manager, 5);
+    let tool = SwebashRagTool::new("api-agent", manager, 5, None, true);
 
     // Execute search via the Tool interface.
     let result = tool
@@ -5301,7 +5307,7 @@ async fn rag_tool_e2e_handles_no_results() {
         .await
         .unwrap();
 
-    let tool = RagTool::new("readme-agent", manager, 5);
+    let tool = SwebashRagTool::new("readme-agent", manager, 5, None, true);
 
     // Search for something not in the document.
     let result = tool
@@ -5341,7 +5347,7 @@ async fn rag_tool_e2e_with_large_documents() {
         .await
         .unwrap();
 
-    let tool = RagTool::new("large-doc-agent", manager, 3);
+    let tool = SwebashRagTool::new("large-doc-agent", manager, 3, None, true);
 
     let result = tool
         .execute(serde_json::json!({"query": "paragraph testing"}))
@@ -5362,14 +5368,15 @@ async fn rag_tool_e2e_validates_query_parameter() {
         ChunkerConfig::default(),
     ));
 
-    let tool = RagTool::new("test-agent", manager, 5);
+    let tool = SwebashRagTool::new("test-agent", manager, 5, None, true);
 
     // Missing query parameter.
-    let result = tool.execute(serde_json::json!({})).await;
+    let result: tool::ToolResult<tool::ToolOutput> = tool.execute(serde_json::json!({})).await;
     assert!(result.is_err(), "should error on missing query");
 
     // Empty query parameter.
-    let result = tool.execute(serde_json::json!({"query": "   "})).await;
+    let result: tool::ToolResult<tool::ToolOutput> =
+        tool.execute(serde_json::json!({"query": "   "})).await;
     assert!(result.is_err(), "should error on empty query");
 }
 
@@ -5676,7 +5683,7 @@ async fn rag_tool_swevecdb_e2e_search() {
         .await
         .unwrap();
 
-    let tool = RagTool::new(agent_id, manager, 5);
+    let tool = SwebashRagTool::new(agent_id, manager, 5, None, true);
     let result = tool
         .execute(serde_json::json!({"query": "API endpoint"}))
         .await

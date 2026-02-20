@@ -5,11 +5,18 @@
 ///
 /// # Module layout
 ///
+/// - `normalize` — converts Markdown tables to prose before embedding
+/// - `tool` — `SwebashRagTool` with score filtering and configurable display
+/// - `service` — `PreprocessingRagIndexService` with normalize hook
 /// - `chunker` — splits documents into overlapping text chunks
 /// - `embeddings` — `EmbeddingProvider` implementations (local ONNX, API)
 /// - `stores` — `VectorStore` implementations (in-memory, file, SQLite)
 /// - `index` — `RagIndexManager` orchestrating build/query lifecycle
-/// - `tool` — `RagTool` implementing the rustratify `Tool` trait
+
+pub mod normalize;
+pub mod tool;
+pub mod service;
+
 pub mod chunker {
     pub use llmrag::{chunk_text, ChunkerConfig};
 }
@@ -31,8 +38,4 @@ pub mod stores {
 
 pub mod index {
     pub use llmrag::{RagIndexManager, RagIndexService};
-}
-
-pub mod tool {
-    pub use llmrag::RagTool;
 }
