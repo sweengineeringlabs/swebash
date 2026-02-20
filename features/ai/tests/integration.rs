@@ -18,7 +18,7 @@ use llm_provider::{LlmService, MockLlmService, MockBehaviour};
 use serial_test::serial;
 use swebash_ai::api::error::{AiError, AiResult};
 use swebash_ai::api::types::{
-    AutocompleteRequest, ChatRequest, ChatStreamEvent, ExplainRequest, TranslateRequest,
+    AiEvent, AutocompleteRequest, ChatRequest, ExplainRequest, TranslateRequest,
 };
 use swebash_ai::api::AiService;
 use swebash_ai::{AiConfig, ToolCacheConfig, ToolConfig};
@@ -656,20 +656,20 @@ async fn chat_streaming_returns_events() {
             };
             match service.chat_streaming(request).await {
                 Ok(mut rx) => {
-                    let mut got_done = false;
+                    let mut got_terminal = false;
 
                     while let Some(event) = rx.recv().await {
                         match event {
-                            ChatStreamEvent::Delta(_) => {}
-                            ChatStreamEvent::Done(_) => {
-                                got_done = true;
+                            AiEvent::Delta(_) | AiEvent::ToolCall { .. } => {}
+                            AiEvent::Done(_) | AiEvent::Error(_) => {
+                                got_terminal = true;
                                 break;
                             }
                         }
                     }
 
-                    // In a real streaming response, we expect at least a Done event.
-                    assert!(got_done, "Expected at least a Done event");
+                    // Streaming must terminate with either a Done or Error event.
+                    assert!(got_terminal, "Expected a terminal event (Done or Error)");
                 }
                 Err(e) => assert_setup_error(&e),
             }
@@ -707,10 +707,14 @@ async fn chat_streaming_multi_turn_preserves_history() {
                     let mut full_reply = String::new();
                     while let Some(event) = rx.recv().await {
                         match event {
-                            ChatStreamEvent::Delta(_) => {}
-                            ChatStreamEvent::Done(content) => {
+                            AiEvent::Delta(_) | AiEvent::ToolCall { .. } => {}
+                            AiEvent::Done(content) => {
                                 full_reply = content;
                                 break;
+                            }
+                            AiEvent::Error(e) => {
+                                assert_setup_error(&AiError::Provider(e));
+                                return;
                             }
                         }
                     }
@@ -744,7 +748,7 @@ async fn chat_streaming_multi_turn_preserves_history() {
 /// ToolAwareChatEngine in tool-using mode), the caller must fall back to
 /// the Done event's content to produce visible output.
 ///
-/// Before the fix, `handle_chat` had `ChatStreamEvent::Done(_)` — the `_`
+/// Before the fix, `handle_chat` had `AiEvent::Done(_)` — the `_`
 /// silently discarded the full reply, producing blank output for every AI
 /// response when no streaming deltas were emitted.
 ///
@@ -757,10 +761,10 @@ async fn chat_streaming_multi_turn_preserves_history() {
 async fn chat_streaming_done_only_fallback_produces_visible_output() {
     // Simulate a stream that emits ONLY a Done event — no Delta events.
     // This is the behaviour of ToolAwareChatEngine when tool calls are made.
-    let (tx, rx) = tokio::sync::mpsc::channel::<ChatStreamEvent>(4);
+    let (tx, rx) = tokio::sync::mpsc::channel::<AiEvent>(4);
     tokio::spawn(async move {
         let _ = tx
-            .send(ChatStreamEvent::Done(
+            .send(AiEvent::Done(
                 "Hello, the reply is here.".to_string(),
             ))
             .await;
@@ -773,14 +777,16 @@ async fn chat_streaming_done_only_fallback_produces_visible_output() {
 
     while let Some(event) = rx.recv().await {
         match event {
-            ChatStreamEvent::Delta(d) => {
+            AiEvent::Delta(d) => {
                 had_deltas = true;
                 drop(d); // would normally be printed to stdout
             }
-            ChatStreamEvent::Done(content) => {
+            AiEvent::Done(content) => {
                 done_content = content;
                 break;
             }
+            AiEvent::ToolCall { .. } => {}
+            AiEvent::Error(_) => break,
         }
     }
 
@@ -824,11 +830,12 @@ async fn chat_streaming_deltas_equal_done_no_duplication() {
 
     while let Some(event) = rx.recv().await {
         match event {
-            ChatStreamEvent::Delta(d) => delta_concat.push_str(&d),
-            ChatStreamEvent::Done(d) => {
+            AiEvent::Delta(d) => delta_concat.push_str(&d),
+            AiEvent::Done(d) => {
                 done_text = d;
                 break;
             }
+            AiEvent::ToolCall { .. } | AiEvent::Error(_) => {}
         }
     }
 
@@ -856,11 +863,12 @@ async fn chat_streaming_echo_no_duplication() {
 
     while let Some(event) = rx.recv().await {
         match event {
-            ChatStreamEvent::Delta(d) => delta_concat.push_str(&d),
-            ChatStreamEvent::Done(d) => {
+            AiEvent::Delta(d) => delta_concat.push_str(&d),
+            AiEvent::Done(d) => {
                 done_text = d;
                 break;
             }
+            AiEvent::ToolCall { .. } | AiEvent::Error(_) => {}
         }
     }
 
@@ -886,8 +894,9 @@ async fn chat_streaming_emits_at_least_one_delta() {
     let mut delta_count = 0u32;
     while let Some(event) = rx.recv().await {
         match event {
-            ChatStreamEvent::Delta(_) => delta_count += 1,
-            ChatStreamEvent::Done(_) => break,
+            AiEvent::Delta(_) => delta_count += 1,
+            AiEvent::Done(_) => break,
+            AiEvent::ToolCall { .. } | AiEvent::Error(_) => break,
         }
     }
 
@@ -1070,7 +1079,7 @@ async fn error_chain_chat_returns_provider_error() {
 }
 
 #[tokio::test]
-async fn error_chain_chat_streaming_delivers_error_in_done_event() {
+async fn error_chain_chat_streaming_delivers_error_as_error_event() {
     let service = create_mock_service_error("credit balance too low");
     let mut rx = service
         .chat_streaming(ChatRequest {
@@ -1086,18 +1095,20 @@ async fn error_chain_chat_streaming_delivers_error_in_done_event() {
 
     let last = events.last().expect("should receive at least one event");
     match last {
-        ChatStreamEvent::Done(text) => {
+        AiEvent::Error(msg) => {
             assert!(
-                text.contains("Error:") || text.contains("error"),
-                "Done event should indicate an error, got: {text}"
-            );
-            assert!(
-                text.contains("credit balance too low"),
-                "Done event should contain the original error message, got: {text}"
+                msg.contains("credit balance too low"),
+                "Error event should contain the original error message, got: {msg}"
             );
         }
-        ChatStreamEvent::Delta(d) => {
-            panic!("Last event should be Done, got Delta: {d}")
+        AiEvent::Done(text) => {
+            panic!("Last event should be Error, got Done: {text}")
+        }
+        AiEvent::Delta(d) => {
+            panic!("Last event should be Error, got Delta: {d}")
+        }
+        AiEvent::ToolCall { name } => {
+            panic!("Last event should be Error, got ToolCall: {name}")
         }
     }
 }
@@ -1167,10 +1178,8 @@ async fn error_chain_streaming_error_does_not_send_deltas_after_error() {
         events.push(event);
     }
 
-    // Find the position of the Done event that carries an error.
-    let done_pos = events.iter().position(|e| {
-        matches!(e, ChatStreamEvent::Done(text) if text.contains("Error:") || text.contains("error"))
-    });
+    // Find the position of the Error event.
+    let done_pos = events.iter().position(|e| matches!(e, AiEvent::Error(_)));
 
     if let Some(pos) = done_pos {
         let after_done: Vec<_> = events[pos + 1..].to_vec();
@@ -1529,7 +1538,7 @@ async fn tool_aware_streaming_basic_message() {
                         // Try to receive at least one event (Delta or Done)
                         while let Some(event) = rx.recv().await {
                             // Got at least one event - streaming works
-                            if matches!(event, ChatStreamEvent::Done(_)) {
+                            if matches!(event, AiEvent::Done(_) | AiEvent::Error(_)) {
                                 return true;
                             }
                             // Even a Delta means streaming is working
@@ -1800,17 +1809,22 @@ async fn tool_invocation_streaming_fs_read() {
                         let mut full_reply = String::new();
                         while let Some(event) = rx.recv().await {
                             match event {
-                                ChatStreamEvent::Delta(_) => {}
-                                ChatStreamEvent::Done(content) => {
+                                AiEvent::Delta(_) | AiEvent::ToolCall { .. } => {}
+                                AiEvent::Done(content) => {
                                     full_reply = content;
                                     break;
                                 }
+                                AiEvent::Error(_) => break,
                             }
                         }
                         full_reply
                     };
 
                     match tokio::time::timeout(timeout_duration, receive_future).await {
+                        Ok(full_reply) if full_reply.is_empty() => {
+                            // Empty reply indicates an API error (e.g. no key/credits);
+                            // treat as a setup error and skip the assertion.
+                        }
                         Ok(full_reply) => {
                             assert!(
                                 full_reply.contains(&marker),

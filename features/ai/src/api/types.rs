@@ -141,9 +141,13 @@ pub struct AgentInfo {
 
 /// Events emitted during a streaming chat response.
 #[derive(Debug, Clone)]
-pub enum ChatStreamEvent {
+pub enum AiEvent {
     /// A partial content delta (token chunk).
     Delta(String),
     /// Stream complete — contains the full assembled reply.
     Done(String),
+    /// A tool was invoked by the agent (name only; future use: spinner/display).
+    ToolCall { name: String },
+    /// An error occurred mid-stream; the stream will close after this event.
+    Error(String),
 }

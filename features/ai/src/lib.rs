@@ -18,8 +18,8 @@ pub mod spi;
 
 pub use api::error::{AiError, AiResult};
 pub use api::types::{
-    AgentInfo, AiMessage, AiResponse, AiRole, AiStatus, AutocompleteRequest, AutocompleteResponse,
-    ChatRequest, ChatResponse, ChatStreamEvent, CompletionOptions, ExplainRequest,
+    AgentInfo, AiEvent, AiMessage, AiResponse, AiRole, AiStatus, AutocompleteRequest,
+    AutocompleteResponse, ChatRequest, ChatResponse, CompletionOptions, ExplainRequest,
     ExplainResponse, TranslateRequest, TranslateResponse,
 };
 pub use api::AiService;

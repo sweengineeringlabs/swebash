@@ -199,7 +199,7 @@ impl ChatEngine for ToolAwareChatEngine {
 #[async_trait]
 pub trait AiService: Send + Sync {
     async fn chat(&self, request: ChatRequest) -> AiResult<ChatResponse>;
-    async fn chat_streaming(&self, ...) -> AiResult<Receiver<ChatStreamEvent>>;
+    async fn chat_streaming(&self, ...) -> AiResult<Receiver<AiEvent>>;
     async fn translate(&self, ...) -> AiResult<TranslateResponse>;
     async fn explain(&self, ...) -> AiResult<ExplainResponse>;
     async fn autocomplete(&self, ...) -> AiResult<AutocompleteResponse>;

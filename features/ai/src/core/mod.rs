@@ -86,7 +86,7 @@ impl AiService for DefaultAiService {
     async fn chat_streaming(
         &self,
         request: ChatRequest,
-    ) -> AiResult<tokio::sync::mpsc::Receiver<ChatStreamEvent>> {
+    ) -> AiResult<tokio::sync::mpsc::Receiver<AiEvent>> {
         self.ensure_ready().await?;
         let engine = self.active_engine().await?;
         chat::chat_streaming(&engine, request).await

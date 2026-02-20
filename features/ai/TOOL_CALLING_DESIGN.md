@@ -371,9 +371,9 @@ User Message
 
 For streaming responses with tools:
 1. Stream text content normally
-2. When tool call starts, emit `ChatStreamEvent::ToolCall(name, args)`
-3. While tool executes, emit `ChatStreamEvent::ToolExecuting(name)`
-4. When tool completes, emit `ChatStreamEvent::ToolResult(name, result)`
+2. When tool call starts, emit `AiEvent::ToolCall(name, args)`
+3. While tool executes, emit `AiEvent::ToolExecuting(name)`
+4. When tool completes, emit `AiEvent::ToolResult(name, result)`
 5. Continue streaming LLM response
 
 ## Configuration
@@ -449,7 +449,7 @@ ai/
 ├── src/
 │   ├── api/
 │   │   ├── mod.rs           # AiService trait
-│   │   ├── types.rs         # Add ChatStreamEvent::ToolCall variants
+│   │   ├── types.rs         # Add AiEvent::ToolCall variants
 │   │   └── error.rs         # Add ToolError variant
 │   ├── core/
 │   │   ├── mod.rs           # DefaultAiService
@@ -497,11 +497,11 @@ ai/
 
 ## API Changes
 
-### Enhanced ChatStreamEvent (api/types.rs)
+### Enhanced AiEvent (api/types.rs)
 
 ```rust
 #[derive(Debug, Clone)]
-pub enum ChatStreamEvent {
+pub enum AiEvent {
     /// A partial content delta (token chunk)
     Delta(String),
     /// Stream complete — contains the full assembled reply
@@ -548,7 +548,7 @@ Be concise but informative in your responses."#
 - [ ] Create `core/tools/loop.rs` with tool calling loop
 - [ ] Update `AiConfig` with tool configuration
 - [ ] Update `create_ai_service()` to create ToolRegistry
-- [ ] Add new event types to `ChatStreamEvent`
+- [ ] Add new event types to `AiEvent`
 
 ### Phase 2: File System Tool (Week 1)
 - [ ] Implement `FileSystemTool` with read/list/exists operations

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use futures::StreamExt;
 
 use crate::api::error::{AiError, AiResult};
-use crate::api::types::{ChatRequest, ChatResponse, ChatStreamEvent};
+use crate::api::types::{AiEvent, ChatRequest, ChatResponse};
 
 use chat_engine::{ChatEngine, ChatMessage};
 use react::AgentEvent;
@@ -40,12 +40,13 @@ pub async fn chat(
 /// Process a chat message with token-by-token streaming.
 ///
 /// Spawns the engine call in a background task and returns a receiver
-/// that yields `ChatStreamEvent::Delta` for each token chunk, followed
-/// by `ChatStreamEvent::Done` with the full assembled reply.
+/// that yields `AiEvent::Delta` for each token chunk, `AiEvent::ToolCall`
+/// when the agent invokes a tool, and finally `AiEvent::Done` with the
+/// full assembled reply (or `AiEvent::Error` on failure).
 pub async fn chat_streaming(
     engine: &Arc<dyn ChatEngine>,
     request: ChatRequest,
-) -> AiResult<tokio::sync::mpsc::Receiver<ChatStreamEvent>> {
+) -> AiResult<tokio::sync::mpsc::Receiver<AiEvent>> {
     let (tx, rx) = tokio::sync::mpsc::channel(64);
     let message = ChatMessage::user(&request.message);
     let (events, mut event_stream) = react::event_stream(64);
@@ -53,28 +54,36 @@ pub async fn chat_streaming(
     let engine = engine.clone();
     let tx_err = tx.clone();
 
-    // Task B: forward real-time content deltas.
+    // Task B: forward real-time content deltas and tool-call notifications.
     //
-    // Only non-final events are forwarded as Delta.  The final
-    // `is_final: true` event carries the full accumulated content
-    // (duplicating the deltas), so it is intentionally ignored here.
-    // Task A is the sole source of the Done event.
+    // Content { is_final: false } → AiEvent::Delta  (streaming token)
+    // ToolStart { tool, .. }      → AiEvent::ToolCall (agent invoked a tool)
+    // Content { is_final: true }  → ignored (full content duplicates the deltas;
+    //                               Task A is the sole source of AiEvent::Done)
     let task_b = tokio::spawn(async move {
         while let Some(event) = event_stream.next().await {
-            if let AgentEvent::Content { content, is_final: false } = event {
-                if tx.send(ChatStreamEvent::Delta(content)).await.is_err() {
-                    tracing::warn!("stream receiver dropped, stopping delta forwarding");
-                    break;
+            match event {
+                AgentEvent::Content { content, is_final: false } => {
+                    if tx.send(AiEvent::Delta(content)).await.is_err() {
+                        tracing::warn!("stream receiver dropped, stopping delta forwarding");
+                        break;
+                    }
                 }
+                AgentEvent::ToolStart { tool, .. } => {
+                    if tx.send(AiEvent::ToolCall { name: tool }).await.is_err() {
+                        break;
+                    }
+                }
+                _ => {}
             }
         }
     });
 
-    // Task A: drive the engine, then send Done.
+    // Task A: drive the engine, then send Done (or Error).
     //
     // After `send_streaming` returns, the event sender is dropped,
     // which closes the event stream and lets Task B finish.  We wait
-    // for Task B to drain any remaining buffered deltas, then send
+    // for Task B to drain any remaining buffered events, then send
     // Done with the authoritative response content.
     tokio::spawn(async move {
         match engine.as_ref().send_streaming(message, events).await {
@@ -83,7 +92,7 @@ pub async fn chat_streaming(
                     tracing::error!("delta forwarding task panicked: {e}");
                 }
                 if tx_err
-                    .send(ChatStreamEvent::Done(
+                    .send(AiEvent::Done(
                         response.message.content.trim().to_string(),
                     ))
                     .await
@@ -93,9 +102,9 @@ pub async fn chat_streaming(
                 }
             }
             Err(e) => {
-                let err_msg = format!("Error: {e}");
+                let err_msg = e.to_string();
                 if tx_err
-                    .send(ChatStreamEvent::Done(err_msg.clone()))
+                    .send(AiEvent::Error(err_msg.clone()))
                     .await
                     .is_err()
                 {

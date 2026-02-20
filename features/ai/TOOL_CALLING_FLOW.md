@@ -380,25 +380,25 @@ Time  Event
 ─────────────────────────────────────────────────────────────
 0ms   User sends: "Check if package.json exists"
       │
-10ms  ├─> ChatStreamEvent::Delta("Let me check")
-20ms  ├─> ChatStreamEvent::Delta(" that file")
-30ms  ├─> ChatStreamEvent::Delta(" for you")
+10ms  ├─> AiEvent::Delta("Let me check")
+20ms  ├─> AiEvent::Delta(" that file")
+30ms  ├─> AiEvent::Delta(" for you")
       │
-40ms  ├─> ChatStreamEvent::ToolCallStart
+40ms  ├─> AiEvent::ToolCallStart
       │    { name: "filesystem", args: "..." }
       │
-50ms  ├─> ChatStreamEvent::ToolExecuting
+50ms  ├─> AiEvent::ToolExecuting
       │    { name: "filesystem" }
       │
-200ms ├─> ChatStreamEvent::ToolCallEnd
+200ms ├─> AiEvent::ToolCallEnd
       │    { name: "filesystem", result: "true" }
       │
-250ms ├─> ChatStreamEvent::Delta("Yes, package")
-260ms ├─> ChatStreamEvent::Delta(".json exists")
-270ms ├─> ChatStreamEvent::Delta(" in the current")
-280ms ├─> ChatStreamEvent::Delta(" directory.")
+250ms ├─> AiEvent::Delta("Yes, package")
+260ms ├─> AiEvent::Delta(".json exists")
+270ms ├─> AiEvent::Delta(" in the current")
+280ms ├─> AiEvent::Delta(" directory.")
       │
-300ms └─> ChatStreamEvent::Done("...")
+300ms └─> AiEvent::Done("...")
 ```
 
 ## Concurrent Tool Execution

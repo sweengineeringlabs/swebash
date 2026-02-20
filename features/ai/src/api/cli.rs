@@ -1,7 +1,7 @@
 use std::io::{self, BufRead};
 
 use crate::{
-    AiResult, AiService, AutocompleteRequest, ChatRequest, ChatStreamEvent, DefaultAiService,
+    AiError, AiEvent, AiResult, AiService, AutocompleteRequest, ChatRequest, DefaultAiService,
     ExplainRequest, TranslateRequest,
 };
 
@@ -162,14 +162,23 @@ async fn handle_chat(service: &DefaultAiService, text: &str) -> AiResult<()> {
 
     let mut had_deltas = false;
     let mut done_content = String::new();
+    let mut stream_error: Option<String> = None;
+
     while let Some(event) = rx.recv().await {
         match event {
-            ChatStreamEvent::Delta(delta) => {
+            AiEvent::Delta(delta) => {
                 had_deltas = true;
                 super::output::ai_reply_delta(&delta);
             }
-            ChatStreamEvent::Done(content) => {
+            AiEvent::Done(content) => {
                 done_content = content;
+                break;
+            }
+            AiEvent::ToolCall { .. } => {
+                // Tool activity — no output for now; future: show spinner
+            }
+            AiEvent::Error(msg) => {
+                stream_error = Some(msg);
                 break;
             }
         }
@@ -183,6 +192,10 @@ async fn handle_chat(service: &DefaultAiService, text: &str) -> AiResult<()> {
     }
 
     super::output::ai_reply_end();
+
+    if let Some(msg) = stream_error {
+        return Err(AiError::Provider(msg));
+    }
     Ok(())
 }
 

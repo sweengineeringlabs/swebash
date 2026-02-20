@@ -29,7 +29,7 @@ pub trait AiService: Send + Sync {
     async fn chat_streaming(
         &self,
         request: ChatRequest,
-    ) -> AiResult<tokio::sync::mpsc::Receiver<ChatStreamEvent>>;
+    ) -> AiResult<tokio::sync::mpsc::Receiver<AiEvent>>;
 
     /// Get autocomplete suggestions based on context.
     async fn autocomplete(&self, request: AutocompleteRequest) -> AiResult<AutocompleteResponse>;

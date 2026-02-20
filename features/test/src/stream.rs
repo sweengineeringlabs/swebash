@@ -1,31 +1,33 @@
-/// Streaming test helpers for `ChatStreamEvent`.
+/// Streaming test helpers for `AiEvent`.
 ///
 /// Provides utilities for collecting events from a streaming chat receiver
 /// and asserting properties of the event sequence.
 
-use swebash_ai::api::types::ChatStreamEvent;
+use swebash_ai::api::types::AiEvent;
 use tokio::sync::mpsc;
 
-/// Drain all events from a `ChatStreamEvent` receiver.
+/// Drain all events from an `AiEvent` receiver.
 ///
 /// Returns `(deltas, done_text)` where:
 /// - `deltas` is the list of `Delta` content strings in order
 /// - `done_text` is the content of the `Done` event, if received
 ///
-/// The function returns once a `Done` event is received or the channel closes.
+/// The function returns once a `Done` or `Error` event is received or the channel closes.
 pub async fn collect_stream_events(
-    rx: &mut mpsc::Receiver<ChatStreamEvent>,
+    rx: &mut mpsc::Receiver<AiEvent>,
 ) -> (Vec<String>, Option<String>) {
     let mut deltas = Vec::new();
     let mut done_text = None;
 
     while let Some(event) = rx.recv().await {
         match event {
-            ChatStreamEvent::Delta(d) => deltas.push(d),
-            ChatStreamEvent::Done(d) => {
+            AiEvent::Delta(d) => deltas.push(d),
+            AiEvent::Done(d) => {
                 done_text = Some(d);
                 break;
             }
+            AiEvent::ToolCall { .. } => {}
+            AiEvent::Error(_) => break,
         }
     }
 
@@ -74,7 +76,7 @@ pub fn assert_no_duplication(deltas: &[String], done_text: &str) {
 /// # Panics
 ///
 /// Panics if any event is received within the timeout period.
-pub async fn assert_no_events_after_done(rx: &mut mpsc::Receiver<ChatStreamEvent>) {
+pub async fn assert_no_events_after_done(rx: &mut mpsc::Receiver<AiEvent>) {
     let result = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
     match result {
         Ok(Some(event)) => panic!(
@@ -93,13 +95,13 @@ mod tests {
     #[tokio::test]
     async fn collect_stream_events_captures_deltas_and_done() {
         let (tx, mut rx) = mpsc::channel(16);
-        tx.send(ChatStreamEvent::Delta("Hello ".into()))
+        tx.send(AiEvent::Delta("Hello ".into()))
             .await
             .unwrap();
-        tx.send(ChatStreamEvent::Delta("world".into()))
+        tx.send(AiEvent::Delta("world".into()))
             .await
             .unwrap();
-        tx.send(ChatStreamEvent::Done("Hello world".into()))
+        tx.send(AiEvent::Done("Hello world".into()))
             .await
             .unwrap();
 
@@ -111,7 +113,7 @@ mod tests {
     #[tokio::test]
     async fn collect_stream_events_handles_no_done() {
         let (tx, mut rx) = mpsc::channel(16);
-        tx.send(ChatStreamEvent::Delta("partial".into()))
+        tx.send(AiEvent::Delta("partial".into()))
             .await
             .unwrap();
         drop(tx); // Close channel without sending Done.
@@ -155,14 +157,14 @@ mod tests {
 
     #[tokio::test]
     async fn assert_no_events_after_done_passes_on_closed_channel() {
-        let (_tx, mut rx) = mpsc::channel::<ChatStreamEvent>(16);
+        let (_tx, mut rx) = mpsc::channel::<AiEvent>(16);
         drop(_tx);
         assert_no_events_after_done(&mut rx).await;
     }
 
     #[tokio::test]
     async fn assert_no_events_after_done_passes_on_timeout() {
-        let (_tx, mut rx) = mpsc::channel::<ChatStreamEvent>(16);
+        let (_tx, mut rx) = mpsc::channel::<AiEvent>(16);
         // Keep tx alive but send nothing.
         assert_no_events_after_done(&mut rx).await;
     }
