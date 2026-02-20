@@ -1,8 +1,3 @@
-/// L3 Core: readline implementation modules.
+/// L3 Core: shell-specific readline implementations.
 pub mod completer;
-pub mod config;
-pub mod editor;
 pub mod highlighter;
-pub mod hinter;
-pub mod history;
-pub mod validator;

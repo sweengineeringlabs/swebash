@@ -5413,3 +5413,85 @@ async fn rag_index_manager_swevecdb_agents_isolated() {
 
     store.delete_agent(agent_b).await.unwrap();
 }
+
+// ── CLI error propagation tests ──────────────────────────────────────────
+
+/// Chat with a service that returns LLM errors should not panic.
+/// The centralized error handler in handle_ai_command catches the Err.
+#[tokio::test]
+async fn cli_chat_error_does_not_panic() {
+    let service = create_mock_service_full_error("credit balance too low");
+    let result = swebash_ai::handle_ai_command(
+        &Some(service),
+        swebash_ai::AiCommand::Chat("hello".to_string()),
+        &[],
+    )
+    .await;
+    assert!(!result, "Chat should return false even on error");
+}
+
+/// Explain with a service that returns errors should not panic.
+#[tokio::test]
+async fn cli_explain_error_does_not_panic() {
+    let service = create_mock_service_full_error("insufficient credits");
+    let result = swebash_ai::handle_ai_command(
+        &Some(service),
+        swebash_ai::AiCommand::Explain("ls -la".to_string()),
+        &[],
+    )
+    .await;
+    assert!(!result, "Explain should return false even on error");
+}
+
+/// Ask with a service that returns errors should not panic.
+#[tokio::test]
+async fn cli_ask_error_does_not_panic() {
+    let service = create_mock_service_full_error("rate limited");
+    let result = swebash_ai::handle_ai_command(
+        &Some(service),
+        swebash_ai::AiCommand::Ask("list files".to_string()),
+        &[],
+    )
+    .await;
+    assert!(!result, "Ask should return false even on error");
+}
+
+/// Suggest with a service that returns errors should not panic.
+#[tokio::test]
+async fn cli_suggest_error_does_not_panic() {
+    let service = create_mock_service_full_error("timeout");
+    let result = swebash_ai::handle_ai_command(
+        &Some(service),
+        swebash_ai::AiCommand::Suggest,
+        &[],
+    )
+    .await;
+    assert!(!result, "Suggest should return false even on error");
+}
+
+/// Chat with a working mock service should not panic.
+#[tokio::test]
+async fn cli_chat_success_does_not_panic() {
+    let service = create_mock_service_fixed("hello there");
+    let result = swebash_ai::handle_ai_command(
+        &Some(service),
+        swebash_ai::AiCommand::Chat("hi".to_string()),
+        &[],
+    )
+    .await;
+    assert!(!result, "Chat should return false");
+}
+
+/// Commands that require a service should not panic when service is None.
+#[tokio::test]
+async fn cli_no_service_does_not_panic() {
+    for cmd in [
+        swebash_ai::AiCommand::Chat("hi".to_string()),
+        swebash_ai::AiCommand::Explain("ls".to_string()),
+        swebash_ai::AiCommand::Ask("list files".to_string()),
+        swebash_ai::AiCommand::Suggest,
+    ] {
+        let result = swebash_ai::handle_ai_command(&None, cmd, &[]).await;
+        assert!(!result, "Should return false when service is None");
+    }
+}

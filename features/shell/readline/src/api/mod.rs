@@ -1,10 +1,18 @@
-/// L2 API: Public types and traits for the readline crate.
+/// L2 API: Public types and traits for the swebash readline crate.
 ///
-/// Re-exports the main user-facing types from the core layer.
-pub use crate::core::completer::{Completer, Completion};
-pub use crate::core::config::{ColorConfig, ReadlineConfig};
-pub use crate::core::editor::{EditorAction, LineEditor};
-pub use crate::core::highlighter::Highlighter;
-pub use crate::core::hinter::Hinter;
-pub use crate::core::history::History;
-pub use crate::core::validator::{ValidationResult, Validator};
+/// Re-exports everything from swe-readline, plus shell-specific types.
+
+// Re-export all generic readline types
+pub use swe_readline::{
+    common_prefix, ColorConfig, Complete, Completion, EditMode, EditorAction, Highlight, Hinter,
+    History, LineEditor, NoComplete, NoHighlight, PathCompleter, ReadlineConfig, ValidationResult,
+    Validator, visible_width,
+};
+
+// Re-export shell-specific implementations (aliased for backward compat)
+pub use crate::core::completer::ShellCompleter as Completer;
+pub use crate::core::highlighter::ShellHighlighter as Highlighter;
+
+// Also export the unaliased names for new code
+pub use crate::core::completer::ShellCompleter;
+pub use crate::core::highlighter::ShellHighlighter;

@@ -1,18 +1,11 @@
-use std::path::PathBuf;
+use swe_readline::{Complete, Completion, PathCompleter};
 
-/// Completion candidate
-#[derive(Debug, Clone)]
-pub struct Completion {
-    pub text: String,
-    pub display: String,
-}
-
-/// Tab completion handler
-pub struct Completer {
+/// Shell-specific completer with builtin commands and path completion.
+pub struct ShellCompleter {
     builtin_commands: Vec<String>,
 }
 
-impl Completer {
+impl ShellCompleter {
     pub fn new() -> Self {
         Self {
             builtin_commands: vec![
@@ -23,20 +16,6 @@ impl Completer {
             .into_iter()
             .map(String::from)
             .collect(),
-        }
-    }
-
-    /// Complete the input line at the cursor position
-    pub fn complete(&self, line: &str, pos: usize) -> Vec<Completion> {
-        let before_cursor = &line[..pos];
-
-        // Determine what to complete
-        if before_cursor.trim().is_empty() || !before_cursor.contains(char::is_whitespace) {
-            // Complete command
-            self.complete_command(before_cursor)
-        } else {
-            // Complete path/argument
-            self.complete_path(before_cursor)
         }
     }
 
@@ -52,83 +31,29 @@ impl Completer {
     }
 
     fn complete_path(&self, line: &str) -> Vec<Completion> {
-        // Extract the path component to complete
         let parts: Vec<&str> = line.split_whitespace().collect();
         let partial_path = parts.last().unwrap_or(&"");
-
-        // Expand ~ to home directory
-        let expanded = if partial_path.starts_with("~/") {
-            dirs::home_dir()
-                .map(|h| h.join(&partial_path[2..]))
-                .unwrap_or_else(|| PathBuf::from(partial_path))
-        } else if *partial_path == "~" {
-            dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
-        } else {
-            PathBuf::from(partial_path)
-        };
-
-        // Get parent directory and filename prefix
-        let (dir, prefix) = if expanded.to_string_lossy().ends_with('/') {
-            (expanded.clone(), String::new())
-        } else if let Some(parent) = expanded.parent() {
-            let filename = expanded
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            (parent.to_path_buf(), filename)
-        } else {
-            (PathBuf::from("."), partial_path.to_string())
-        };
-
-        // Read directory and filter matches
-        std::fs::read_dir(&dir)
-            .ok()
-            .into_iter()
-            .flat_map(|entries| entries.filter_map(Result::ok))
-            .filter(|entry| {
-                entry
-                    .file_name()
-                    .to_string_lossy()
-                    .starts_with(&prefix)
-            })
-            .map(|entry| {
-                let name = entry.file_name().to_string_lossy().to_string();
-                let display = if entry.path().is_dir() {
-                    format!("{}/", name)
-                } else {
-                    name.clone()
-                };
-                Completion {
-                    text: name,
-                    display,
-                }
-            })
-            .collect()
+        PathCompleter::complete_path(partial_path)
     }
 
-    /// Get common prefix of all completions
-    pub fn common_prefix(completions: &[Completion]) -> String {
-        if completions.is_empty() {
-            return String::new();
+    /// Complete the input line at the cursor position.
+    ///
+    /// This inherent method provides backward compatibility so callers
+    /// don't need to import the `Complete` trait.
+    pub fn complete(&self, line: &str, pos: usize) -> Vec<Completion> {
+        <Self as Complete>::complete(self, line, pos)
+    }
+}
+
+impl Complete for ShellCompleter {
+    fn complete(&self, line: &str, pos: usize) -> Vec<Completion> {
+        let before_cursor = &line[..pos];
+
+        if before_cursor.trim().is_empty() || !before_cursor.contains(char::is_whitespace) {
+            self.complete_command(before_cursor)
+        } else {
+            self.complete_path(before_cursor)
         }
-
-        if completions.len() == 1 {
-            return completions[0].text.clone();
-        }
-
-        let first = &completions[0].text;
-        let mut prefix_len = first.len();
-
-        for comp in &completions[1..] {
-            prefix_len = first
-                .chars()
-                .zip(comp.text.chars())
-                .take(prefix_len)
-                .take_while(|(a, b)| a == b)
-                .count();
-        }
-
-        first.chars().take(prefix_len).collect()
     }
 }
 
@@ -138,7 +63,7 @@ mod tests {
 
     #[test]
     fn test_complete_command() {
-        let completer = Completer::new();
+        let completer = ShellCompleter::new();
         let completions = completer.complete("ec", 2);
         assert_eq!(completions.len(), 1);
         assert_eq!(completions[0].text, "echo");
@@ -146,7 +71,7 @@ mod tests {
 
     #[test]
     fn test_complete_multiple_commands() {
-        let completer = Completer::new();
+        let completer = ShellCompleter::new();
         let completions = completer.complete("e", 1);
         assert!(completions.len() >= 2); // echo, env, export, exit
         assert!(completions.iter().any(|c| c.text == "echo"));
@@ -165,7 +90,7 @@ mod tests {
                 display: "env".to_string(),
             },
         ];
-        assert_eq!(Completer::common_prefix(&completions), "e");
+        assert_eq!(swe_readline::common_prefix(&completions), "e");
     }
 
     #[test]
@@ -174,6 +99,6 @@ mod tests {
             text: "echo".to_string(),
             display: "echo".to_string(),
         }];
-        assert_eq!(Completer::common_prefix(&completions), "echo");
+        assert_eq!(swe_readline::common_prefix(&completions), "echo");
     }
 }

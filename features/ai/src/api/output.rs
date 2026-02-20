@@ -29,7 +29,7 @@ pub fn ai_warn(msg: &str) {
 
 /// Print an AI-prefixed error message.
 pub fn ai_error(msg: &str) {
-    let _ = writeln!(io::stderr(), "{}{}[ai]{} {}", BOLD, RED, RESET, msg);
+    let _ = writeln!(io::stdout(), "{}{}[ai]{} {}", BOLD, RED, RESET, msg);
 }
 
 /// Print a suggested command with highlight.

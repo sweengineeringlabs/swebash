@@ -4,8 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-crossterm = "0.29"
-serde = { version = "1.0", features = ["derive"] }
-toml = "0.8"
-dirs = "5"
-anyhow = "1"
+swe-readline = { workspace = true }

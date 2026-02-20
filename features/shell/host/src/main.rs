@@ -131,7 +131,7 @@ async fn main() -> Result<()> {
     let ai_service = swebash_ai::create_ai_service().await.ok();
 
     // Load readline configuration
-    let rl_config = ReadlineConfig::load();
+    let rl_config = ReadlineConfig::load("swebash");
 
     // Initialize history with file persistence (shared across all tabs)
     let history_path = std::env::var_os("HOME")

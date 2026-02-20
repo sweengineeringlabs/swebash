@@ -1,7 +1,7 @@
 use std::io::{self, BufRead};
 
 use crate::{
-    AiService, AutocompleteRequest, ChatRequest, ChatStreamEvent, DefaultAiService,
+    AiResult, AiService, AutocompleteRequest, ChatRequest, ChatStreamEvent, DefaultAiService,
     ExplainRequest, TranslateRequest,
 };
 
@@ -58,12 +58,17 @@ pub async fn handle_ai_command(
                 super::output::ai_not_configured();
                 return false;
             };
-            match command {
+            super::output::ai_thinking();
+            let result = match command {
                 AiCommand::Ask(text) => handle_ask(svc, &text, recent_commands).await,
                 AiCommand::Explain(cmd) => handle_explain(svc, &cmd).await,
                 AiCommand::Chat(text) => handle_chat(svc, &text).await,
                 AiCommand::Suggest => handle_suggest(svc, recent_commands).await,
                 _ => unreachable!(),
+            };
+            if let Err(e) = result {
+                super::output::ai_thinking_done();
+                super::output::ai_error(&e.to_string());
             }
             false
         }
@@ -71,7 +76,11 @@ pub async fn handle_ai_command(
 }
 
 /// Handle `ai ask` / `?` — translate NL to shell command.
-async fn handle_ask(service: &DefaultAiService, text: &str, recent_commands: &[String]) {
+async fn handle_ask(
+    service: &DefaultAiService,
+    text: &str,
+    recent_commands: &[String],
+) -> AiResult<()> {
     let cwd = std::env::current_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
@@ -82,119 +91,92 @@ async fn handle_ask(service: &DefaultAiService, text: &str, recent_commands: &[S
         recent_commands: recent_commands.to_vec(),
     };
 
-    super::output::ai_thinking();
-    let result = service.translate(request).await;
+    let response = service.translate(request).await?;
     super::output::ai_thinking_done();
 
-    match result {
-        Ok(response) => {
-            super::output::ai_command(&response.command);
-            super::output::ai_confirm_prompt();
+    super::output::ai_command(&response.command);
+    super::output::ai_confirm_prompt();
 
-            // Read confirmation
-            let mut input = String::new();
-            let _ = io::stdin().lock().read_line(&mut input);
-            let choice = input.trim().to_lowercase();
+    // Read confirmation
+    let mut input = String::new();
+    let _ = io::stdin().lock().read_line(&mut input);
+    let choice = input.trim().to_lowercase();
 
-            match choice.as_str() {
-                "" | "y" | "yes" => {
-                    // Execute the command by printing it so the user can see what ran
-                    // The host REPL will need to execute this - we print it for now
-                    super::output::ai_info(&format!("Executing: {}", response.command));
-                    // Return the command to the caller would be ideal,
-                    // but for now we use the OS to run it directly
-                    let status = std::process::Command::new(if cfg!(windows) {
-                        "cmd"
-                    } else {
-                        "sh"
-                    })
-                    .args(if cfg!(windows) {
-                        vec!["/C", &response.command]
-                    } else {
-                        vec!["-c", &response.command]
-                    })
-                    .status();
+    match choice.as_str() {
+        "" | "y" | "yes" => {
+            super::output::ai_info(&format!("Executing: {}", response.command));
+            let status = std::process::Command::new(if cfg!(windows) {
+                "cmd"
+            } else {
+                "sh"
+            })
+            .args(if cfg!(windows) {
+                vec!["/C", &response.command]
+            } else {
+                vec!["-c", &response.command]
+            })
+            .status();
 
-                    match status {
-                        Ok(s) if !s.success() => {
-                            super::output::ai_warn(&format!("Command exited with {}", s));
-                        }
-                        Err(e) => {
-                            super::output::ai_error(&format!("Failed to execute: {}", e));
-                        }
-                        _ => {}
-                    }
+            match status {
+                Ok(s) if !s.success() => {
+                    super::output::ai_warn(&format!("Command exited with {}", s));
                 }
-                "e" | "edit" => {
-                    super::output::ai_info(&format!("Command: {}", response.command));
-                    super::output::ai_info("Copy and edit the command above, then paste it.");
+                Err(e) => {
+                    super::output::ai_error(&format!("Failed to execute: {}", e));
                 }
-                _ => {
-                    super::output::ai_info("Cancelled.");
-                }
+                _ => {}
             }
         }
-        Err(e) => {
-            super::output::ai_error(&e.to_string());
+        "e" | "edit" => {
+            super::output::ai_info(&format!("Command: {}", response.command));
+            super::output::ai_info("Copy and edit the command above, then paste it.");
+        }
+        _ => {
+            super::output::ai_info("Cancelled.");
         }
     }
+    Ok(())
 }
 
 /// Handle `ai explain` / `??` — explain a command.
-async fn handle_explain(service: &DefaultAiService, cmd: &str) {
+async fn handle_explain(service: &DefaultAiService, cmd: &str) -> AiResult<()> {
     let request = ExplainRequest {
         command: cmd.to_string(),
     };
 
-    super::output::ai_thinking();
-    let result = service.explain(request).await;
+    let response = service.explain(request).await?;
     super::output::ai_thinking_done();
-
-    match result {
-        Ok(response) => {
-            super::output::ai_explanation(&response.explanation);
-        }
-        Err(e) => {
-            super::output::ai_error(&e.to_string());
-        }
-    }
+    super::output::ai_explanation(&response.explanation);
+    Ok(())
 }
 
 /// Handle `ai chat` — conversational assistant with streaming output.
-async fn handle_chat(service: &DefaultAiService, text: &str) {
+async fn handle_chat(service: &DefaultAiService, text: &str) -> AiResult<()> {
     let request = ChatRequest {
         message: text.to_string(),
     };
 
-    super::output::ai_thinking();
+    let mut rx = service.chat_streaming(request).await?;
+    super::output::ai_thinking_done();
+    super::output::ai_reply_start();
 
-    match service.chat_streaming(request).await {
-        Ok(mut rx) => {
-            super::output::ai_thinking_done();
-            super::output::ai_reply_start();
-
-            while let Some(event) = rx.recv().await {
-                match event {
-                    ChatStreamEvent::Delta(delta) => {
-                        super::output::ai_reply_delta(&delta);
-                    }
-                    ChatStreamEvent::Done(_) => {
-                        break;
-                    }
-                }
+    while let Some(event) = rx.recv().await {
+        match event {
+            ChatStreamEvent::Delta(delta) => {
+                super::output::ai_reply_delta(&delta);
             }
-
-            super::output::ai_reply_end();
-        }
-        Err(e) => {
-            super::output::ai_thinking_done();
-            super::output::ai_error(&e.to_string());
+            ChatStreamEvent::Done(_) => {
+                break;
+            }
         }
     }
+
+    super::output::ai_reply_end();
+    Ok(())
 }
 
 /// Handle `ai suggest` — autocomplete suggestions.
-async fn handle_suggest(service: &DefaultAiService, recent_commands: &[String]) {
+async fn handle_suggest(service: &DefaultAiService, recent_commands: &[String]) -> AiResult<()> {
     let cwd = std::env::current_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
@@ -217,22 +199,15 @@ async fn handle_suggest(service: &DefaultAiService, recent_commands: &[String]) 
         recent_commands: recent_commands.to_vec(),
     };
 
-    super::output::ai_thinking();
-    let result = service.autocomplete(request).await;
+    let response = service.autocomplete(request).await?;
     super::output::ai_thinking_done();
 
-    match result {
-        Ok(response) => {
-            if response.suggestions.is_empty() {
-                super::output::ai_info("No suggestions available.");
-            } else {
-                super::output::ai_suggestions(&response.suggestions);
-            }
-        }
-        Err(e) => {
-            super::output::ai_error(&e.to_string());
-        }
+    if response.suggestions.is_empty() {
+        super::output::ai_info("No suggestions available.");
+    } else {
+        super::output::ai_suggestions(&response.suggestions);
     }
+    Ok(())
 }
 
 /// Handle `ai status` — show configuration.
@@ -328,8 +303,11 @@ async fn handle_agent_chat(service: &Option<DefaultAiService>, agent_id: &str, t
     let info = svc.current_agent().await;
     super::output::ai_info(&format!("[{}] {}", info.id, info.display_name));
 
-    // Chat with the agent
-    handle_chat(svc, text).await;
+    // Chat with the agent (thinking indicator managed by caller)
+    super::output::ai_thinking();
+    if let Err(e) = handle_chat(svc, text).await {
+        super::output::ai_error(&e.to_string());
+    }
 
     // Switch back to previous agent
     let _ = svc.switch_agent(&previous).await;

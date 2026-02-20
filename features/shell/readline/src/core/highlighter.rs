@@ -1,12 +1,12 @@
-use super::config::ColorConfig;
+use swe_readline::{ColorConfig, Highlight};
 
-/// Syntax highlighter for commands
-pub struct Highlighter {
+/// Shell-specific syntax highlighter with builtin commands, paths, operators.
+pub struct ShellHighlighter {
     builtin_commands: Vec<String>,
     colors: ColorConfig,
 }
 
-impl Highlighter {
+impl ShellHighlighter {
     pub fn new(colors: ColorConfig) -> Self {
         Self {
             builtin_commands: vec![
@@ -21,8 +21,23 @@ impl Highlighter {
         }
     }
 
-    /// Highlight a line of input
-    pub fn highlight(&self, line: &str) -> String {
+    fn highlight_word(&self, word: &str, is_command: bool) -> String {
+        if !is_command {
+            if word.starts_with('/') || word.starts_with("./") || word.starts_with("~/") {
+                format!("{}{}\x1b[0m", self.colors.path_ansi(), word)
+            } else {
+                word.to_string()
+            }
+        } else if self.builtin_commands.contains(&word.to_string()) {
+            format!("{}{}\x1b[0m", self.colors.builtin_ansi(), word)
+        } else {
+            format!("{}{}\x1b[0m", self.colors.external_ansi(), word)
+        }
+    }
+}
+
+impl Highlight for ShellHighlighter {
+    fn highlight(&self, line: &str) -> String {
         let mut result = String::new();
         let mut chars = line.chars().peekable();
         let mut in_string = false;
@@ -84,23 +99,6 @@ impl Highlighter {
         result.push_str("\x1b[0m");
         result
     }
-
-    fn highlight_word(&self, word: &str, is_command: bool) -> String {
-        if !is_command {
-            // Might be a file path or argument
-            if word.starts_with('/') || word.starts_with("./") || word.starts_with("~/") {
-                format!("{}{}\x1b[0m", self.colors.path_ansi(), word)
-            } else {
-                word.to_string() // No color for regular arguments
-            }
-        } else if self.builtin_commands.contains(&word.to_string()) {
-            format!("{}{}\x1b[0m", self.colors.builtin_ansi(), word)
-        } else {
-            // For now, assume external commands are valid
-            // In future, we could check PATH
-            format!("{}{}\x1b[0m", self.colors.external_ansi(), word)
-        }
-    }
 }
 
 #[cfg(test)]
@@ -109,15 +107,14 @@ mod tests {
 
     #[test]
     fn test_highlight_builtin() {
-        let highlighter = Highlighter::new(ColorConfig::default());
+        let highlighter = ShellHighlighter::new(ColorConfig::default());
         let result = highlighter.highlight("echo hello");
-        // Should contain ANSI codes
         assert!(result.contains("\x1b["));
     }
 
     #[test]
     fn test_highlight_string() {
-        let highlighter = Highlighter::new(ColorConfig::default());
+        let highlighter = ShellHighlighter::new(ColorConfig::default());
         let result = highlighter.highlight("echo \"hello world\"");
         assert!(result.contains("\x1b["));
     }
