@@ -3694,6 +3694,234 @@ async fn logging_stream_preserves_all_chunks() {
     );
 }
 
+// ── LoggingAiClient integration tests ────────────────────────────────────
+
+use swebash_ai::spi::logging::LoggingAiClient;
+use swebash_ai::spi::AiClient as SpiAiClient;
+
+/// A minimal in-process AiClient stub used to drive LoggingAiClient integration tests
+/// without requiring a real LLM provider or API key.
+struct StubLoggingClient {
+    response: Result<String, String>,
+}
+
+impl StubLoggingClient {
+    fn ok(content: impl Into<String>) -> Self {
+        Self { response: Ok(content.into()) }
+    }
+    fn err(msg: impl Into<String>) -> Self {
+        Self { response: Err(msg.into()) }
+    }
+}
+
+#[async_trait::async_trait]
+impl SpiAiClient for StubLoggingClient {
+    async fn complete(
+        &self,
+        _messages: Vec<swebash_ai::AiMessage>,
+        _options: swebash_ai::CompletionOptions,
+    ) -> AiResult<swebash_ai::AiResponse> {
+        match &self.response {
+            Ok(content) => Ok(swebash_ai::AiResponse {
+                content: content.clone(),
+                model: "stub-model".into(),
+            }),
+            Err(msg) => Err(AiError::Provider(msg.clone())),
+        }
+    }
+    async fn is_ready(&self) -> bool { true }
+    fn description(&self) -> String { "stub".into() }
+    fn provider_name(&self) -> String { "stub".into() }
+    fn model_name(&self) -> String { "stub-model".into() }
+}
+
+/// Build a `DefaultAiService` with `LoggingAiClient` wrapping the given stub.
+///
+/// This mirrors what `lib.rs::create_ai_service()` does but uses a mock client,
+/// so no real API key is required.
+fn make_logging_service(log_dir: Option<PathBuf>, stub: StubLoggingClient) -> DefaultAiService {
+    let config = anthropic_config(); // struct-only; no network call
+    let client = LoggingAiClient::wrap(Box::new(stub), log_dir);
+    let agents = create_default_registry(Arc::new(MockLlmService::new()), config.clone());
+    DefaultAiService::new(client, agents, config)
+}
+
+/// `translate()` is routed through `AiClient::complete()`.
+/// Verify that `LoggingAiClient` writes one `ai-complete` log file per call
+/// when it is wired into `DefaultAiService`.
+#[tokio::test]
+async fn logging_ai_client_translate_writes_ai_complete_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = make_logging_service(
+        Some(dir.path().to_path_buf()),
+        StubLoggingClient::ok("ls -la"),
+    );
+
+    let request = TranslateRequest {
+        natural_language: "list files".into(),
+        cwd: "/tmp".into(),
+        recent_commands: vec![],
+    };
+    let _ = service.translate(request).await;
+
+    // Give the fire-and-forget write task time to flush.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let files: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
+        .collect();
+
+    assert_eq!(files.len(), 1, "Expected one ai-complete log file for translate");
+
+    let content = std::fs::read_to_string(files[0].path()).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(json["kind"], "ai-complete");
+    assert_eq!(json["result"]["status"], "success");
+    assert_eq!(json["result"]["response"]["content"], "ls -la");
+    assert_eq!(json["result"]["response"]["model"], "stub-model");
+    assert!(json["request"]["messages"].is_array());
+    assert!(json["duration_ms"].as_u64().is_some());
+}
+
+/// `explain()` also routes through `AiClient::complete()`.
+/// Verify that `LoggingAiClient` produces a log file for explain calls.
+#[tokio::test]
+async fn logging_ai_client_explain_writes_ai_complete_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = make_logging_service(
+        Some(dir.path().to_path_buf()),
+        StubLoggingClient::ok("Lists files in long format, showing permissions, sizes, and timestamps."),
+    );
+
+    let request = ExplainRequest { command: "ls -la".into() };
+    let _ = service.explain(request).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let files: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
+        .collect();
+
+    assert_eq!(files.len(), 1, "Expected one ai-complete log file for explain");
+
+    let content = std::fs::read_to_string(files[0].path()).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(json["kind"], "ai-complete");
+    assert_eq!(json["result"]["status"], "success");
+}
+
+/// When the inner client returns an error, `LoggingAiClient` must still write
+/// a log file with `status: "error"`.  The error propagates to the caller.
+#[tokio::test]
+async fn logging_ai_client_error_response_writes_error_log() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = make_logging_service(
+        Some(dir.path().to_path_buf()),
+        StubLoggingClient::err("provider unavailable"),
+    );
+
+    let request = TranslateRequest {
+        natural_language: "list files".into(),
+        cwd: "/tmp".into(),
+        recent_commands: vec![],
+    };
+    let result = service.translate(request).await;
+    assert!(result.is_err(), "translate should propagate the stub error");
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let files: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
+        .collect();
+
+    assert_eq!(files.len(), 1, "An error response should still produce a log file");
+
+    let content = std::fs::read_to_string(files[0].path()).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(json["kind"], "ai-complete");
+    assert_eq!(json["result"]["status"], "error");
+    assert!(
+        json["result"]["error"]
+            .as_str()
+            .unwrap_or("")
+            .contains("provider unavailable"),
+        "error message should be logged"
+    );
+}
+
+/// Each `AiClient::complete()` call produces a separate log file.
+/// Three translate calls must produce three `ai-complete` files.
+#[tokio::test]
+async fn logging_ai_client_multiple_calls_produce_multiple_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = make_logging_service(
+        Some(dir.path().to_path_buf()),
+        StubLoggingClient::ok("ls"),
+    );
+
+    for _ in 0..3 {
+        let _ = service.translate(TranslateRequest {
+            natural_language: "list files".into(),
+            cwd: "/tmp".into(),
+            recent_commands: vec![],
+        }).await;
+    }
+
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+    let count = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
+        .count();
+
+    assert_eq!(count, 3, "Each AiClient::complete() call should produce a separate log file");
+}
+
+/// The logged `request.messages` array must contain the natural language
+/// request text passed by the caller, proving that messages are serialised
+/// before being forwarded to the inner client.
+#[tokio::test]
+async fn logging_ai_client_request_messages_are_logged() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = make_logging_service(
+        Some(dir.path().to_path_buf()),
+        StubLoggingClient::ok("echo hello"),
+    );
+
+    let request = TranslateRequest {
+        natural_language: "print hello world".into(),
+        cwd: "/home/user".into(),
+        recent_commands: vec!["ls".into(), "pwd".into()],
+    };
+    let _ = service.translate(request).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let files: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    let content = std::fs::read_to_string(files[0].path()).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+    let messages = json["request"]["messages"].as_array()
+        .expect("request.messages should be a JSON array");
+    assert!(!messages.is_empty(), "messages array should not be empty");
+
+    // The user's natural language must appear in at least one logged message.
+    let has_nl = messages.iter().any(|m| {
+        m["content"].as_str().unwrap_or("").contains("print hello world")
+    });
+    assert!(has_nl, "logged messages should include the natural language request text");
+}
+
 // ── thinkFirst config tests ──────────────────────────────────────────────
 
 #[test]

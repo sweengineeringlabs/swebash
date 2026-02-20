@@ -419,7 +419,7 @@ mod tests {
     use super::*;
     use llm_provider::MockLlmService;
     use crate::api::error::AiError;
-    use crate::api::types::{AiRole, CompletionOptions};
+    use crate::api::types::CompletionOptions;
 
     // ── Minimal AiClient mock for unit tests ─────────────────────────────
 

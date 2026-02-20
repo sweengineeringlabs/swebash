@@ -33,6 +33,7 @@
 - [Agent maxIterations](#19d-agent-maxiterations)
 - [DevOps Agent](#20-devops-agent-docker-specific)
 - [AWS Cloud Agent](#20b-aws-cloud-agent-user-level)
+- [Request/Response Logging](#21-requestresponse-logging)
 
 ---
 
@@ -292,6 +293,87 @@ Some agents override the global `SWEBASH_AI_TOOLS_MAX_ITER` with a per-agent `ma
 | 16 trigger keywords | Check awscli agent config | Keywords: aws, s3, ec2, lambda, iam, cloudformation, cdk, sam, ecs, rds, dynamodb, sqs, sns, route53, cloudwatch, terraform |
 | @awscli from shell | Type `@awscli` from shell prompt | Enters AI mode with awscli agent, prompt shows `[AI:awscli] >` |
 | Exit returns to shell | `@awscli` then `exit` then `echo hello` | Exits AI mode, `echo hello` prints `hello` normally |
+
+## 21. Request/Response Logging
+
+Setting `SWEBASH_AI_LOG_DIR` enables two complementary observability layers that each write one JSON file per request:
+
+| Layer | `kind` field | Captures |
+|-------|-------------|----------|
+| `LoggingAiClient` (higher) | `"ai-complete"` | `AiMessage[]`, `CompletionOptions`, `AiResponse` |
+| `LoggingLlmService` (lower) | `"complete"` / `"complete_stream"` | Raw `CompletionRequest` with tool definitions |
+
+Both layers write to the same directory and are activated by the same env var.
+
+### Setup
+
+```sh
+export SWEBASH_AI_LOG_DIR=/tmp/swebash-ai-logs
+mkdir -p $SWEBASH_AI_LOG_DIR
+```
+
+### Manual Test Cases
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| Logging disabled by default | Start shell without `SWEBASH_AI_LOG_DIR`, run `ai ask list files` | No log files created anywhere |
+| Log dir created automatically | Set `SWEBASH_AI_LOG_DIR` to a non-existent path, run `ai ask list files` | Directory is created; log files appear inside it |
+| ai-complete file created | `export SWEBASH_AI_LOG_DIR=/tmp/swebash-ai-logs`, run `ai ask list files` | One `*-ai-complete.json` file written to log dir |
+| complete file created | Same setup, run `ai ask list files` | One `*-complete.json` file also written (LLM layer) |
+| Streaming logs | Same setup, run `ai` then ask something in chat mode | One `*-complete_stream.json` file written when stream ends |
+| Error logged | Temporarily revoke API key or saturate quota, run `ai ask test` | Log file written with `"status": "error"` and error message |
+| Multiple requests | Run `ai ask` three times | Three separate `*-ai-complete.json` files with unique UUIDs |
+| Unset var disables logging | `unset SWEBASH_AI_LOG_DIR`, run `ai ask list files` | No new files written |
+
+### Inspecting a log file
+
+```sh
+ls -lt $SWEBASH_AI_LOG_DIR | head -5    # most recent files first
+cat $SWEBASH_AI_LOG_DIR/<uuid>-ai-complete.json | python3 -m json.tool
+```
+
+**Expected `ai-complete` file structure:**
+
+```json
+{
+  "id": "<uuid>-ai-complete",
+  "timestamp_epoch_ms": 1700000000000,
+  "duration_ms": 842,
+  "kind": "ai-complete",
+  "request": {
+    "messages": [
+      { "role": "system", "content": "..." },
+      { "role": "user", "content": "list files" }
+    ],
+    "options": { "temperature": 0.1, "max_tokens": 256 }
+  },
+  "result": {
+    "status": "success",
+    "response": {
+      "content": "ls -la",
+      "model": "claude-sonnet-4-20250514"
+    }
+  }
+}
+```
+
+**Expected `complete` file structure** (lower LLM layer, includes tool definitions):
+
+```json
+{
+  "id": "<uuid>-complete",
+  "kind": "complete",
+  "request": {
+    "model": "claude-sonnet-4-20250514",
+    "messages": [...],
+    "tools": [...]
+  },
+  "result": {
+    "status": "success",
+    "response": { "content": "...", "model": "...", "finish_reason": "stop" }
+  }
+}
+```
 
 ---
 
