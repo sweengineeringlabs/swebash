@@ -95,7 +95,7 @@ winget install Rustlang.Rustup
 After installation, restart your terminal and verify:
 
 ```powershell
-rustc --version    # 1.75+ required
+rustc --version    # 1.93+ required
 cargo --version
 ```
 

@@ -130,11 +130,22 @@ verify_registry() {
 }
 
 # ── Load .env ────────────────────────────────────────────────────────
+# Reads .env and exports variables that are NOT already set in the
+# environment. This ensures command-line overrides take precedence:
+#   CARGO_REGISTRIES_LOCAL_INDEX=file:///nonexistent ./sbh test engine
 load_env() {
   if [ -f "$REPO_ROOT/.env" ]; then
-    set -a
-    source "$REPO_ROOT/.env"
-    set +a
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      # Skip comments and blank lines
+      [[ "$line" =~ ^[[:space:]]*# ]] && continue
+      [[ -z "${line//[[:space:]]/}" ]] && continue
+      local key="${line%%=*}"
+      [[ -z "$key" ]] && continue
+      # Only export if not already set in the environment
+      if [[ ! -v "$key" ]]; then
+        export "$key"="${line#*=}"
+      fi
+    done < "$REPO_ROOT/.env"
   fi
 }
 
