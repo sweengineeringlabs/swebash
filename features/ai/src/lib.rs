@@ -62,8 +62,14 @@ pub async fn create_ai_service() -> AiResult<DefaultAiService> {
     let client = spi::chat_provider::ChatProviderClient::new(&config).await?;
     let llm = client.llm_service();
 
+    // Wrap with AiClient-level logging when log_dir is configured.
+    // LoggingLlmService (inside ChatProviderClient) handles lower-level LLM
+    // request/response logging; LoggingAiClient logs the higher-level
+    // AiMessage / CompletionOptions / AiResponse boundary.
+    let client = spi::logging::LoggingAiClient::wrap(Box::new(client), config.log_dir.clone());
+
     // Build the agent registry with built-in agents
     let agents = core::agents::builtins::create_default_registry(llm, config.clone());
 
-    Ok(DefaultAiService::new(Box::new(client), agents, config))
+    Ok(DefaultAiService::new(client, agents, config))
 }

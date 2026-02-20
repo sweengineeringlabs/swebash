@@ -1,6 +1,7 @@
 /// L1 Common: Request/response types for the AI service.
 /// Role of a message participant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum AiRole {
     System,
     User,
@@ -8,7 +9,7 @@ pub enum AiRole {
 }
 
 /// A single message in a conversation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct AiMessage {
     pub role: AiRole,
     pub content: String,
@@ -38,7 +39,7 @@ impl AiMessage {
 }
 
 /// Options controlling LLM completion behavior.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct CompletionOptions {
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,

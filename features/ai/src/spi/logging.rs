@@ -1,8 +1,15 @@
-/// Decorator that logs every LLM request/response to JSON files.
+/// Decorators that log every LLM and AiClient request/response to JSON files.
 ///
-/// When a `log_dir` is configured, `LoggingLlmService` wraps an inner
-/// `LlmService` and writes one JSON file per `complete()` or
-/// `complete_stream()` call. Other methods are passed through.
+/// When a `log_dir` is configured:
+/// - `LoggingLlmService` wraps an inner `LlmService` and writes one JSON file
+///   per `complete()` or `complete_stream()` call (`kind: "complete"` /
+///   `kind: "complete_stream"`).
+/// - `LoggingAiClient` wraps an inner `AiClient` and writes one JSON file
+///   per `complete()` call (`kind: "ai-complete"`), logging the higher-level
+///   `AiMessage` / `CompletionOptions` / `AiResponse` types.
+///
+/// Both decorators write to the same directory, differentiated by their
+/// `kind` field, giving two complementary layers of observability.
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -15,6 +22,10 @@ use llm_provider::{
     CompletionRequest, CompletionResponse, CompletionStream, LlmResult, LlmService,
     ModelInfo, StreamChunk,
 };
+
+use crate::api::error::AiResult;
+use crate::api::types::{AiMessage, AiResponse, CompletionOptions};
+use crate::spi::AiClient;
 
 // ── Public API ───────────────────────────────────────────────────────────
 
@@ -312,12 +323,145 @@ pub(crate) fn assemble_stream_response(chunks: &[StreamChunk]) -> AssembledStrea
     }
 }
 
+// ── AiClient logging decorator ───────────────────────────────────────────
+
+/// Logging decorator for `AiClient`.
+///
+/// Wraps any `AiClient` implementation and writes one JSON file per
+/// `complete()` call to `log_dir`. Files use `kind: "ai-complete"` to
+/// distinguish them from the lower-level LLM service logs.
+///
+/// Enabled by the same `SWEBASH_AI_LOG_DIR` environment variable that
+/// controls `LoggingLlmService`, so both layers are activated together.
+pub struct LoggingAiClient {
+    inner: Box<dyn AiClient>,
+    log_dir: PathBuf,
+}
+
+impl LoggingAiClient {
+    /// Conditionally wrap an `AiClient` with logging.
+    ///
+    /// Returns the inner client unchanged when `log_dir` is `None`,
+    /// or a logging wrapper when `Some`.
+    pub fn wrap(inner: Box<dyn AiClient>, log_dir: Option<PathBuf>) -> Box<dyn AiClient> {
+        match log_dir {
+            Some(dir) => Box::new(Self { inner, log_dir: dir }),
+            None => inner,
+        }
+    }
+}
+
+#[async_trait]
+impl AiClient for LoggingAiClient {
+    async fn complete(
+        &self,
+        messages: Vec<AiMessage>,
+        options: CompletionOptions,
+    ) -> AiResult<AiResponse> {
+        let id = format!("{}-ai-complete", uuid::Uuid::new_v4());
+        let timestamp = epoch_ms();
+        let request_value = serde_json::json!({
+            "messages": serde_json::to_value(&messages).unwrap_or_default(),
+            "options": serde_json::to_value(&options).unwrap_or_default(),
+        });
+        let start = Instant::now();
+
+        let result = self.inner.complete(messages, options).await;
+        let duration_ms = start.elapsed().as_millis();
+
+        let log_result = match &result {
+            Ok(resp) => LogResult::Success {
+                response: serde_json::json!({
+                    "content": resp.content,
+                    "model": resp.model,
+                }),
+            },
+            Err(e) => LogResult::Error {
+                error: e.to_string(),
+            },
+        };
+
+        let entry = LogEntry {
+            id: id.clone(),
+            timestamp_epoch_ms: timestamp,
+            duration_ms,
+            kind: "ai-complete",
+            request: request_value,
+            result: log_result,
+        };
+
+        write_log_entry(self.log_dir.clone(), id, entry);
+
+        result
+    }
+
+    async fn is_ready(&self) -> bool {
+        self.inner.is_ready().await
+    }
+
+    fn description(&self) -> String {
+        self.inner.description()
+    }
+
+    fn provider_name(&self) -> String {
+        self.inner.provider_name()
+    }
+
+    fn model_name(&self) -> String {
+        self.inner.model_name()
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use llm_provider::MockLlmService;
+    use crate::api::error::AiError;
+    use crate::api::types::{AiRole, CompletionOptions};
+
+    // ── Minimal AiClient mock for unit tests ─────────────────────────────
+
+    struct StubAiClient {
+        response: Result<String, String>,
+    }
+
+    impl StubAiClient {
+        fn ok(content: impl Into<String>) -> Self {
+            Self { response: Ok(content.into()) }
+        }
+        fn err(msg: impl Into<String>) -> Self {
+            Self { response: Err(msg.into()) }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AiClient for StubAiClient {
+        async fn complete(
+            &self,
+            _messages: Vec<AiMessage>,
+            _options: CompletionOptions,
+        ) -> AiResult<AiResponse> {
+            match &self.response {
+                Ok(content) => Ok(AiResponse {
+                    content: content.clone(),
+                    model: "stub-model".into(),
+                }),
+                Err(msg) => Err(AiError::Provider(msg.clone())),
+            }
+        }
+        async fn is_ready(&self) -> bool { true }
+        fn description(&self) -> String { "stub".into() }
+        fn provider_name(&self) -> String { "stub".into() }
+        fn model_name(&self) -> String { "stub-model".into() }
+    }
+
+    fn make_request() -> (Vec<AiMessage>, CompletionOptions) {
+        let messages = vec![AiMessage::user("hello")];
+        let options = CompletionOptions::default();
+        (messages, options)
+    }
 
     #[test]
     fn log_entry_serialization() {
@@ -406,5 +550,120 @@ mod tests {
         assert_eq!(assembled.content, Some("Hello world".into()));
         assert_eq!(assembled.chunk_count, 2);
         assert_eq!(assembled.finish_reason, Some("Stop".into()));
+    }
+
+    // ── LoggingAiClient tests ─────────────────────────────────────────────
+
+    #[test]
+    fn ai_client_wrap_none_passes_through() {
+        let client = LoggingAiClient::wrap(Box::new(StubAiClient::ok("hi")), None);
+        assert_eq!(client.provider_name(), "stub");
+        assert_eq!(client.model_name(), "stub-model");
+    }
+
+    #[test]
+    fn ai_client_wrap_some_is_logging_wrapper() {
+        let client = LoggingAiClient::wrap(
+            Box::new(StubAiClient::ok("hi")),
+            Some(PathBuf::from("/tmp/test-logs")),
+        );
+        // description/provider/model still delegate to inner
+        assert_eq!(client.provider_name(), "stub");
+        assert_eq!(client.model_name(), "stub-model");
+    }
+
+    #[tokio::test]
+    async fn ai_client_logging_writes_log_file_on_success() {
+        let log_dir = tempfile::tempdir().unwrap();
+        let client = LoggingAiClient::wrap(
+            Box::new(StubAiClient::ok("the answer")),
+            Some(log_dir.path().to_path_buf()),
+        );
+
+        let (messages, options) = make_request();
+        let result = client.complete(messages, options).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().content, "the answer");
+
+        // Give the fire-and-forget write task a moment to complete
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        let files: Vec<_> = std::fs::read_dir(log_dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .collect();
+        assert_eq!(files.len(), 1, "expected exactly one log file");
+
+        let content = std::fs::read_to_string(files[0].path()).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(json["kind"], "ai-complete");
+        assert_eq!(json["result"]["status"], "success");
+        assert_eq!(json["result"]["response"]["content"], "the answer");
+        assert_eq!(json["result"]["response"]["model"], "stub-model");
+        assert!(json["request"]["messages"].is_array());
+        assert!(json["duration_ms"].as_u64().unwrap() < 5000);
+    }
+
+    #[tokio::test]
+    async fn ai_client_logging_writes_log_file_on_error() {
+        let log_dir = tempfile::tempdir().unwrap();
+        let client = LoggingAiClient::wrap(
+            Box::new(StubAiClient::err("credit balance too low")),
+            Some(log_dir.path().to_path_buf()),
+        );
+
+        let (messages, options) = make_request();
+        let result = client.complete(messages, options).await;
+        assert!(result.is_err());
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        let files: Vec<_> = std::fs::read_dir(log_dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .collect();
+        assert_eq!(files.len(), 1, "expected exactly one log file");
+
+        let content = std::fs::read_to_string(files[0].path()).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(json["kind"], "ai-complete");
+        assert_eq!(json["result"]["status"], "error");
+        assert!(
+            json["result"]["error"]
+                .as_str()
+                .unwrap()
+                .contains("credit balance too low"),
+            "error message should be logged"
+        );
+    }
+
+    #[tokio::test]
+    async fn ai_client_logging_logs_request_messages() {
+        let log_dir = tempfile::tempdir().unwrap();
+        let client = LoggingAiClient::wrap(
+            Box::new(StubAiClient::ok("ok")),
+            Some(log_dir.path().to_path_buf()),
+        );
+
+        let messages = vec![
+            AiMessage::system("You are helpful."),
+            AiMessage::user("list files"),
+        ];
+        let _ = client.complete(messages, CompletionOptions::default()).await;
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        let files: Vec<_> = std::fs::read_dir(log_dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .collect();
+        let content = std::fs::read_to_string(files[0].path()).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        let msgs = &json["request"]["messages"];
+        assert_eq!(msgs[0]["role"], "system");
+        assert_eq!(msgs[0]["content"], "You are helpful.");
+        assert_eq!(msgs[1]["role"], "user");
+        assert_eq!(msgs[1]["content"], "list files");
     }
 }
