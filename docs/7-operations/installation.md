@@ -4,6 +4,10 @@
 
 **Audience**: Users, DevOps
 
+**Jump to your platform:**
+- [Linux / WSL2 quick start](#linux--wsl2-quick-start)
+- [Windows quick start](#windows-quick-start)
+
 ## Table of Contents
 
 - [System Requirements](#system-requirements)
@@ -16,6 +20,41 @@
 - [Production Deployment Notes](#production-deployment-notes)
 - [Uninstallation](#uninstallation)
 - [Troubleshooting](#troubleshooting)
+
+---
+
+## Linux / WSL2 Quick Start
+
+```bash
+# 1. Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# 2. One-time setup (WASM target, registry, .env)
+./sbh setup
+source ~/.bashrc
+
+# 3. Build and run
+./sbh build
+./sbh run
+```
+
+## Windows Quick Start
+
+```powershell
+# 1. Install Rust
+winget install Rustlang.Rustup
+# Restart terminal, then:
+
+# 2. One-time setup (WASM target, registry, .env)
+.\sbh setup
+
+# 3. Build and run
+.\sbh build
+.\sbh run
+```
+
+> For full details — registry setup, AI configuration, and troubleshooting — see the sections below.
 
 ---
 
