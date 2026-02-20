@@ -8,12 +8,13 @@
 **WHY**: Validates AI command dispatch, agent lifecycle, YAML config, and docs integration
 **HOW**: Step-by-step test tables with expected outcomes
 
-> Requires `ANTHROPIC_API_KEY` (or equivalent) and `LLM_PROVIDER` set. See [Manual Testing Hub](manual_testing.md) for prerequisites.
+> Requires `LLM_PROVIDER` set and at least one credential source: Claude Code OAuth (`~/.claude/.credentials.json`) or `ANTHROPIC_API_KEY` for Anthropic; equivalent key for OpenAI/Gemini. AI is enabled by default — no need to set `SWEBASH_AI_ENABLED=true`. See [Manual Testing Hub](manual_testing.md) for full prerequisites.
 
 ---
 
 ## Table of Contents
 
+- [Authentication](#6b-authentication)
 - [AI Status](#7-ai-status)
 - [AI Ask](#8-ai-ask-nl-to-command)
 - [AI Explain](#9-ai-explain)
@@ -37,11 +38,30 @@
 
 ---
 
+## 6b. Authentication
+
+For the `anthropic` provider, the shell tries credentials in this order:
+
+1. **Claude Code OAuth** — `~/.claude/.credentials.json` (set by Claude Code IDE/CLI)
+2. **API key** — `ANTHROPIC_API_KEY` environment variable
+
+Either source is sufficient. Both sources absent → `NotConfigured` error on startup; AI commands will not respond.
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| OAuth primary (Anthropic) | Ensure `~/.claude/.credentials.json` exists (Claude Code installed); unset `ANTHROPIC_API_KEY`; run `export LLM_PROVIDER=anthropic && ./sbh run` | Shell starts; `ai status` shows `Enabled: yes, Ready: yes` |
+| API key fallback (Anthropic) | Remove/rename `~/.claude/.credentials.json`; set `ANTHROPIC_API_KEY`; run shell | Shell starts; `ai status` shows `Enabled: yes, Ready: yes` |
+| No credentials error | Remove both OAuth file and `ANTHROPIC_API_KEY`; start shell | Shell starts but AI service unavailable; `ai status` prints error: _"No credentials found for provider 'anthropic'. Configure Claude Code OAuth or set ANTHROPIC_API_KEY."_ |
+| OpenAI unaffected | `LLM_PROVIDER=openai` with `OPENAI_API_KEY` set | OAuth file is irrelevant; API key used as normal |
+| Disabled explicitly | `SWEBASH_AI_ENABLED=false ./sbh run` then `ai status` | `ai status` returns error: _"AI features disabled (SWEBASH_AI_ENABLED=false)"_ |
+| Enabled by default | Start shell with valid credentials; do not set `SWEBASH_AI_ENABLED` | AI is active without any extra flag |
+
 ## 7. AI Status
 
 | Test | Command | Expected |
 |------|---------|----------|
-| Status | `ai status` | Shows provider, model, enabled=yes, ready=yes |
+| Status | `ai status` | Shows `Enabled: yes`, `Provider: <name>`, `Model: <name>`, `Ready: yes` |
+| Status — no credentials | Start shell without any credential source (see §6b) | `ai status` returns an error; no status table printed |
 
 ## 8. AI Ask (NL to Command)
 

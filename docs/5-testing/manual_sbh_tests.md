@@ -54,6 +54,7 @@ The project depends on a local Cargo registry for rustratify crates. The test sc
 | Registry set | `./sbh test engine` | First line prints `==> Registry: file:///...index (ok)` |
 | Registry missing | `CARGO_REGISTRIES_LOCAL_INDEX=file:///nonexistent ./sbh test engine` | Prints `ERROR: Local registry index not found`, exits 1 |
 | Registry unset | Unset `CARGO_REGISTRIES_LOCAL_INDEX` and remove from `.bashrc`, run `./sbh test engine` | `preflight` sets fallback path; verify it resolves |
+| Env var overrides .env | `CARGO_REGISTRIES_LOCAL_INDEX=file:///override ./sbh test engine` | Command-line value used; `.env` value for the same key is ignored |
 
 ## 24. sbh build & run
 

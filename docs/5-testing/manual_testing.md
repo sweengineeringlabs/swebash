@@ -22,9 +22,14 @@
 ## Prerequisites
 
 1. Rust toolchain with `wasm32-unknown-unknown` target installed
-2. An LLM API key for AI feature testing (Anthropic, OpenAI, or Gemini)
-3. `.env` file with credentials (see `.env.example`)
+2. Credentials for AI feature testing:
+   - **Anthropic**: Claude Code OAuth credentials (`~/.claude/.credentials.json`) are used automatically when present, or set `ANTHROPIC_API_KEY` as a fallback. Either is sufficient.
+   - **OpenAI**: Set `OPENAI_API_KEY`
+   - **Gemini**: Set `GEMINI_API_KEY`
+3. `.env` file with credentials (see `.env.example`). Command-line env vars pre-set before `sbh` is invoked take priority over `.env` values.
 4. (Optional) `SWEBASH_AI_DOCS_BASE_DIR` — base directory for resolving agent `docs` source paths and project-local config (defaults to cwd)
+
+> **`SWEBASH_AI_ENABLED`**: AI features are **enabled by default**. Set `SWEBASH_AI_ENABLED=false` (or `0`) to disable. The env var only needs to be set explicitly to turn AI off.
 
 ## Running the Shell
 
@@ -32,9 +37,12 @@
 # Without AI features
 ./sbh run
 
-# With AI features (Anthropic)
-set -a && source .env && set +a
+# With AI features — Anthropic via OAuth (auto-detected from ~/.claude/.credentials.json)
 export LLM_PROVIDER=anthropic
+./sbh run
+
+# With AI features — Anthropic via API key
+set -a && source .env && set +a   # .env must contain ANTHROPIC_API_KEY and LLM_PROVIDER
 ./sbh run
 ```
 
@@ -49,9 +57,15 @@ Most manual tests can be scripted by piping commands into the shell binary. This
 # Pipe commands — shell basics (no AI key needed)
 printf 'echo hello world\npwd\nls\nexit\n' | /tmp/swebash-target/release/swebash 2>/dev/null
 
-# Pipe commands — AI features (requires .env)
-set -a && source .env && set +a
-export LLM_PROVIDER=anthropic SWEBASH_AI_ENABLED=true
+# Pipe commands — AI features (Anthropic via API key from .env)
+set -a && source .env && set +a   # exports LLM_PROVIDER and ANTHROPIC_API_KEY
+{
+  echo 'ai status'
+  echo 'exit'
+} | /tmp/swebash-target/release/swebash 2>/dev/null
+
+# Pipe commands — AI features (Anthropic via OAuth, no .env needed)
+export LLM_PROVIDER=anthropic
 {
   echo 'ai status'
   echo 'exit'
