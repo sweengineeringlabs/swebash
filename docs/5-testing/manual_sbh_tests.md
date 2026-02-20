@@ -57,11 +57,16 @@ The project depends on a local Cargo registry for rustratify crates. The test sc
 
 ## 24. sbh build & run
 
+Both `sbh build` and `sbh run` resolve binaries via `TARGET_DIR` (default `/tmp/swebash-target`), which is also exported as `CARGO_TARGET_DIR` so that Cargo writes output to the same location the scripts read from. A custom target directory can be set with `TARGET_DIR=/path ./sbh build`.
+
 | Test | Command | Expected |
 |------|---------|----------|
-| Release build | `./sbh build` | Builds engine WASM (release) and host (release) without errors |
-| Debug build | `./sbh build --debug` | Builds engine WASM (release) and host (debug) without errors |
-| Run | `./sbh run` | Launches shell, shows banner and prompt |
+| Release build | `./sbh build` | Builds engine WASM (release) and host (release) to `/tmp/swebash-target/release/` without errors |
+| Debug build | `./sbh build --debug` | Builds engine WASM and host (debug) to `/tmp/swebash-target/debug/` without errors |
+| Run release | `./sbh run --release` | Finds binary at `/tmp/swebash-target/release/swebash`; launches shell, shows banner and prompt. No rebuild if `./sbh build` (release) was already run. |
+| Run debug | `./sbh run` | Finds binary at `/tmp/swebash-target/debug/swebash`; launches shell. Builds debug if not present. |
+| Target dir override | `TARGET_DIR=/tmp/mydir ./sbh build && TARGET_DIR=/tmp/mydir ./sbh run --release` | Builds and runs from `/tmp/mydir/`; `CARGO_TARGET_DIR` is set automatically to match |
+| Run without prior build | `rm -rf /tmp/swebash-target && ./sbh run --release` | Detects missing binary, builds release automatically, then launches shell |
 
 ## 24b. gen-aws-docs
 

@@ -271,3 +271,42 @@ test_load_env_noops_when_file_missing() {
   rm -rf "$tmpdir"
   assert_exit_code 0 "$ec" "load_env should no-op when .env is missing"
 }
+
+# -- TARGET_DIR / CARGO_TARGET_DIR -----------------------------------------
+
+test_target_dir_default_is_tmp_swebash_target() {
+  local result
+  result=$(
+    unset TARGET_DIR
+    set +euo pipefail
+    source "$REPO_ROOT/lib/common.sh"
+    echo "$TARGET_DIR"
+  )
+  assert_eq "/tmp/swebash-target" "$result" \
+    "TARGET_DIR default should be /tmp/swebash-target"
+}
+
+test_cargo_target_dir_exported_and_equals_target_dir_default() {
+  local result
+  result=$(
+    unset TARGET_DIR CARGO_TARGET_DIR
+    set +euo pipefail
+    source "$REPO_ROOT/lib/common.sh"
+    echo "$CARGO_TARGET_DIR"
+  )
+  assert_eq "/tmp/swebash-target" "$result" \
+    "CARGO_TARGET_DIR should be exported and equal the TARGET_DIR default"
+}
+
+test_cargo_target_dir_tracks_custom_target_dir() {
+  local result
+  result=$(
+    export TARGET_DIR="/custom/build/dir"
+    unset CARGO_TARGET_DIR
+    set +euo pipefail
+    source "$REPO_ROOT/lib/common.sh"
+    echo "$CARGO_TARGET_DIR"
+  )
+  assert_eq "/custom/build/dir" "$result" \
+    "CARGO_TARGET_DIR should match a caller-supplied TARGET_DIR"
+}

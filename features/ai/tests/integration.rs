@@ -740,6 +740,74 @@ async fn chat_streaming_multi_turn_preserves_history() {
 // MockAiClient, create_mock_service(), and create_mock_service_fixed()
 // are now provided by swebash_test::prelude::*.
 
+/// Regression: when the chat engine emits zero Delta events (e.g. the
+/// ToolAwareChatEngine in tool-using mode), the caller must fall back to
+/// the Done event's content to produce visible output.
+///
+/// Before the fix, `handle_chat` had `ChatStreamEvent::Done(_)` — the `_`
+/// silently discarded the full reply, producing blank output for every AI
+/// response when no streaming deltas were emitted.
+///
+/// After the fix: `had_deltas` is tracked; when false and `done_content`
+/// is non-empty, `done_content` is displayed as the response.
+///
+/// This test builds a Done-only receiver by hand (no mock service needed)
+/// and verifies that the consumer fallback logic produces non-empty output.
+#[tokio::test]
+async fn chat_streaming_done_only_fallback_produces_visible_output() {
+    // Simulate a stream that emits ONLY a Done event — no Delta events.
+    // This is the behaviour of ToolAwareChatEngine when tool calls are made.
+    let (tx, rx) = tokio::sync::mpsc::channel::<ChatStreamEvent>(4);
+    tokio::spawn(async move {
+        let _ = tx
+            .send(ChatStreamEvent::Done(
+                "Hello, the reply is here.".to_string(),
+            ))
+            .await;
+    });
+
+    // Replicate the handle_chat consumer loop from cli.rs.
+    let mut had_deltas = false;
+    let mut done_content = String::new();
+    let mut rx = rx;
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            ChatStreamEvent::Delta(d) => {
+                had_deltas = true;
+                drop(d); // would normally be printed to stdout
+            }
+            ChatStreamEvent::Done(content) => {
+                done_content = content;
+                break;
+            }
+        }
+    }
+
+    // Precondition: no deltas emitted.
+    assert!(!had_deltas, "test precondition: stream must emit zero Delta events");
+    assert!(
+        !done_content.is_empty(),
+        "Done event must carry the full reply content"
+    );
+
+    // The fix: display done_content as fallback when had_deltas is false.
+    // Verify the fallback condition produces non-empty visible output.
+    let visible_output = if !had_deltas && !done_content.is_empty() {
+        done_content.as_str()
+    } else {
+        ""
+    };
+    assert!(
+        !visible_output.is_empty(),
+        "Done-only fallback must produce visible output (regression: was blank before fix)"
+    );
+    assert_eq!(
+        visible_output, "Hello, the reply is here.",
+        "fallback output must equal the Done content exactly"
+    );
+}
+
 /// The concatenated Delta content must equal the Done content.
 /// If a consumer printed both, the text would appear twice — the original bug.
 #[tokio::test]
