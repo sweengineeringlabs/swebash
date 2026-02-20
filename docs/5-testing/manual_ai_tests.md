@@ -306,4 +306,4 @@ For the full list of automated agent tests (60+ tests), see the [Automated Test 
 - [Manual Shell Tests](manual_shell_tests.md) — shell feature tests
 - [Agent Architecture](../3-design/agent_architecture.md) — agent framework design
 - [AI Integration](../3-design/ai_integration.md) — LLM isolation and provider abstraction
-- [Creating Agents](../7-operation/creating_agents.md) — custom agent creation guide
+- [Creating Agents](../7-operations/creating_agents.md) — custom agent creation guide

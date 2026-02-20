@@ -14,9 +14,9 @@
 
 | I want to... | Go to |
 |--------------|-------|
-| **Install swebash** | [Installation Guide](7-operation/installation.md) |
-| **Configure AI providers** | [Configuration](7-operation/configuration.md) |
-| **Create a custom agent** | [Creating Agents](7-operation/creating_agents.md) |
+| **Install swebash** | [Installation Guide](7-operations/installation.md) |
+| **Configure AI providers** | [Configuration](7-operations/configuration.md) |
+| **Create a custom agent** | [Creating Agents](7-operations/creating_agents.md) |
 | **Set up a dev environment** | [Setup Guide](4-development/setup_guide.md) |
 | **Understand the architecture** | [Architecture](3-design/architecture.md) |
 | **Run tests** | [Manual Testing](5-testing/manual_testing.md) |
@@ -111,10 +111,10 @@ Installation, configuration, and user-facing guides.
 
 | Document | Description | Audience |
 |----------|-------------|----------|
-| [Installation](7-operation/installation.md) | System requirements and installation steps | Users, DevOps |
-| [Configuration](7-operation/configuration.md) | Environment variables and provider setup | Users, DevOps |
-| [Creating Agents](7-operation/creating_agents.md) | Custom agent creation via YAML | Users, DevOps |
-| [@awscli Agent](7-operation/awscli_agent.md) | AWS Cloud agent setup, docs pipeline, usage | Users, DevOps |
+| [Installation](7-operations/installation.md) | System requirements and installation steps | Users, DevOps |
+| [Configuration](7-operations/configuration.md) | Environment variables and provider setup | Users, DevOps |
+| [Creating Agents](7-operations/creating_agents.md) | Custom agent creation via YAML | Users, DevOps |
+| [@awscli Agent](7-operations/awscli_agent.md) | AWS Cloud agent setup, docs pipeline, usage | Users, DevOps |
 
 ### Reference
 

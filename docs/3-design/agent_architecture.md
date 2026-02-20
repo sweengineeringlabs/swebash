@@ -152,7 +152,7 @@ Each agent has its own `ChatEngine` instance with independent conversation histo
 
 ## Extending
 
-Agents are defined in YAML — no Rust code changes required. See [Creating Agents](../7-operation/creating_agents.md) for the full schema.
+Agents are defined in YAML — no Rust code changes required. See [Creating Agents](../7-operations/creating_agents.md) for the full schema.
 
 ```yaml
 # ~/.config/swebash/agents.yaml

@@ -131,5 +131,5 @@ Generates AWS reference docs from live CLI help output. Writes 3 markdown files 
 
 - [Manual Testing Hub](manual_testing.md) — prerequisites and setup
 - [Manual Shell Tests](manual_shell_tests.md) — shell feature tests
-- [Installation](../7-operation/installation.md) — system requirements
-- [@awscli Agent](../7-operation/awscli_agent.md) — AWS agent setup and usage
+- [Installation](../7-operations/installation.md) — system requirements
+- [@awscli Agent](../7-operations/awscli_agent.md) — AWS agent setup and usage

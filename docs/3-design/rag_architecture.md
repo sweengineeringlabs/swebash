@@ -460,5 +460,5 @@ For corpora beyond 500 chunks, consider upgrading to an ANN index (e.g., `hnswli
 
 - [ADR-001: Agent Documentation Context Strategy](ADR-001-agent-doc-context.md) — Decision that established preload as default and RAG as upgrade path
 - [Agent Architecture](agent_architecture.md) — Agent framework design: prompts, tools, memory isolation
-- [@awscli Agent](../7-operation/awscli_agent.md) — User-facing setup guide for the AWS Cloud agent
-- [Creating Agents](../7-operation/creating_agents.md) — YAML schema and examples for custom agents
+- [@awscli Agent](../7-operations/awscli_agent.md) — User-facing setup guide for the AWS Cloud agent
+- [Creating Agents](../7-operations/creating_agents.md) — YAML schema and examples for custom agents

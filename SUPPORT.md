@@ -21,17 +21,17 @@ Open an issue for:
 
 | Question | Resource |
 |----------|----------|
-| How do I install swebash? | [Installation Guide](docs/7-operation/installation.md) |
+| How do I install swebash? | [Installation Guide](docs/7-operations/installation.md) |
 | How do I set up a dev environment? | [Setup Guide](docs/4-development/setup_guide.md) |
 | How does the architecture work? | [Architecture](docs/3-design/architecture.md) |
-| How do I configure AI providers? | [Configuration](docs/7-operation/configuration.md) |
-| How do I create a custom agent? | [Creating Agents](docs/7-operation/creating_agents.md) |
+| How do I configure AI providers? | [Configuration](docs/7-operations/configuration.md) |
+| How do I create a custom agent? | [Creating Agents](docs/7-operations/creating_agents.md) |
 | What does a term mean? | [Glossary](docs/glossary.md) |
 
 ### FAQ
 
 **Q: The shell starts but AI commands don't work.**
-A: Check that `.env` contains a valid API key and that `LLM_PROVIDER` is set. See [Configuration](docs/7-operation/configuration.md).
+A: Check that `.env` contains a valid API key and that `LLM_PROVIDER` is set. See [Configuration](docs/7-operations/configuration.md).
 
 **Q: Build fails with "registry index was not found".**
 A: Run `./sbh setup && source ~/.bashrc`. See [Setup Guide](docs/4-development/setup_guide.md#local-registry-setup).

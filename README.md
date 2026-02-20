@@ -29,7 +29,7 @@
 | [Architecture](docs/3-design/architecture.md) | System design (three-crate + SEA) |
 | [Setup Guide](docs/4-development/setup_guide.md) | Dev environment setup |
 | [Developer Guide](docs/4-development/developer_guide.md) | Day-to-day workflow and conventions |
-| [Installation](docs/7-operation/installation.md) | User install instructions |
+| [Installation](docs/7-operations/installation.md) | User install instructions |
 
 ## Workspace Crates
 

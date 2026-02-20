@@ -262,5 +262,5 @@ agents:
 - [Manual Testing Hub](manual_testing.md) — prerequisites and setup
 - [Manual AI Tests](manual_ai_tests.md) — AI feature tests (non-RAG)
 - [RAG Architecture](../3-design/rag_architecture.md) — RAG subsystem design
-- [Creating Agents](../7-operation/creating_agents.md) — agent YAML schema
-- [Configuration](../7-operation/configuration.md) — environment variable reference
+- [Creating Agents](../7-operations/creating_agents.md) — agent YAML schema
+- [Configuration](../7-operations/configuration.md) — environment variable reference

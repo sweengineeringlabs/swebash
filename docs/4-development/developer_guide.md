@@ -114,7 +114,7 @@ When adding new filesystem-related host imports:
 
 ### Adding an AI Agent
 
-1. Define the agent in YAML (see [Creating Agents](../7-operation/creating_agents.md)).
+1. Define the agent in YAML (see [Creating Agents](../7-operations/creating_agents.md)).
 2. Set the `systemPrompt`, `tools`, and `maxIterations`.
 3. Optionally add a `docs` section for pre-loaded documentation context (see [ADR-001](../3-design/ADR-001-agent-doc-context.md)).
 4. Test with `./sbh test ai`.
@@ -130,7 +130,7 @@ When adding new filesystem-related host imports:
 
 1. Implement `AiClient` (L2 SPI) for the new provider.
 2. Add the provider variant to the factory in `create_ai_service()`.
-3. Document the required environment variables in [Configuration](../7-operation/configuration.md).
+3. Document the required environment variables in [Configuration](../7-operations/configuration.md).
 4. Test with `./sbh test ai`.
 
 ## See Also
