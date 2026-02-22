@@ -239,4 +239,15 @@ impl DefaultAiService {
         }
         None
     }
+
+    /// Update the sandbox's current working directory.
+    ///
+    /// Call this whenever the shell's virtual_cwd changes so that AI tools
+    /// resolve relative paths correctly. Without this, the AI would use
+    /// `std::env::current_dir()` which doesn't track the shell's `cd` commands.
+    pub fn set_sandbox_cwd(&self, cwd: std::path::PathBuf) {
+        if let Some(sandbox) = &self.config.tool_sandbox {
+            sandbox.set_cwd(cwd);
+        }
+    }
 }

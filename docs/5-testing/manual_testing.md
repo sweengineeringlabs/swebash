@@ -22,12 +22,30 @@
 ## Prerequisites
 
 1. Rust toolchain with `wasm32-unknown-unknown` target installed
-2. Credentials for AI feature testing:
+2. Credentials for AI feature testing (choose one method):
+
+   **Option A: XDG Config File** (recommended for persistent setup)
+   ```toml
+   # ~/.config/swebash/config.toml
+   [ai]
+   provider = "anthropic"
+   anthropic_api_key = "sk-ant-..."
+   # Or for OpenAI:
+   # provider = "openai"
+   # openai_api_key = "sk-..."
+   ```
+
+   **Option B: Environment Variables** (takes precedence over config file)
    - **Anthropic**: Claude Code OAuth credentials (`~/.claude/.credentials.json`) are used automatically when present, or set `ANTHROPIC_API_KEY` as a fallback. Either is sufficient.
    - **OpenAI**: Set `OPENAI_API_KEY`
    - **Gemini**: Set `GEMINI_API_KEY`
-3. `.env` file with credentials (see `.env.example`). Command-line env vars pre-set before `sbh` is invoked take priority over `.env` values.
-4. (Optional) `SWEBASH_AI_DOCS_BASE_DIR` — base directory for resolving agent `docs` source paths and project-local config (defaults to cwd)
+
+   **Option C: `.env` file** (see `.env.example`)
+   Command-line env vars pre-set before `sbh` is invoked take priority over `.env` values.
+
+3. (Optional) `SWEBASH_AI_DOCS_BASE_DIR` — base directory for resolving agent `docs` source paths and project-local config (defaults to cwd)
+
+> **Priority Order**: Environment variables > XDG config file > defaults
 
 > **`SWEBASH_AI_ENABLED`**: AI features are **enabled by default**. Set `SWEBASH_AI_ENABLED=false` (or `0`) to disable. The env var only needs to be set explicitly to turn AI off.
 
@@ -119,11 +137,11 @@ cargo test -p swebash-ai -p swebash
 | Engine unit tests | `features/shell/engine/src/` | 20 |
 | Readline unit tests | `features/shell/readline/src/` | 54 |
 | Host unit tests | `features/shell/host/src/spi/{git_config,git_gates,config}.rs` | 112 |
-| Host integration | `features/shell/host/tests/integration.rs` | 107 |
+| Host integration | `features/shell/host/tests/integration.rs` | 112 |
 | Host readline tests | `features/shell/host/tests/readline_tests.rs` | 19 |
-| AI unit tests | `features/ai/src/` | 164 |
+| AI unit tests | `features/ai/src/` | 167 |
 | AI integration | `features/ai/tests/integration.rs` | 201 |
-| **Total** | | **677** |
+| **Total** | | **685** |
 
 ### Agent-Specific Automated Tests
 
@@ -364,4 +382,17 @@ Tests verifying that paths use forward slashes for cross-platform copy-paste com
 | `sandbox_error_message_includes_path` | AI unit | Error messages include the blocked path |
 | `sandboxed_tool_check_args_extracts_path` | AI unit | Tool arguments are checked for paths |
 | `sandboxed_tool_needs_write_detection` | AI unit | Write operations detected from tool name |
+| `sandbox_set_cwd_updates_path_resolution` | AI unit | Sandbox cwd updates affect relative paths |
+| `sandbox_relative_path_resolution` | AI unit | Relative paths resolved against sandbox cwd |
+| `sandbox_cwd_defaults_to_workspace_root` | AI unit | New sandbox defaults cwd to workspace root |
 | `ai_sandbox_respects_workspace_policy` | Host integration | AI sandbox inherits workspace restrictions |
+
+### AI XDG Config and Directory Exploration Tests
+
+| Test | Suite | Verifies |
+|------|-------|----------|
+| `ai_config_loads_from_xdg_config_file` | Host integration | AI config loads provider/model from config file |
+| `ai_config_api_keys_in_xdg_config` | Host integration | API keys can be stored in config file |
+| `ai_sandbox_cwd_tracks_shell_cd` | Host integration | Sandbox cwd updates when shell cd's |
+| `ai_sandbox_allows_relative_paths_from_cwd` | Host integration | Relative paths work after cd |
+| `ai_config_env_overrides_config_file` | Host integration | Environment variables override config file |

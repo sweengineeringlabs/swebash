@@ -146,6 +146,36 @@ async fn main() -> Result<()> {
     let git_enforcer_opt = Some(git_enforcer.clone());
 
     // Initialize AI service (None if disabled or unconfigured — shell continues without AI)
+    // XDG config file provides fallback values; env vars always take precedence
+    // Set env vars from config file if not already set
+    if std::env::var("LLM_PROVIDER").is_err() {
+        if let Some(ref provider) = config.ai.provider {
+            std::env::set_var("LLM_PROVIDER", provider);
+        }
+    }
+    if std::env::var("LLM_DEFAULT_MODEL").is_err() {
+        if let Some(ref model) = config.ai.model {
+            std::env::set_var("LLM_DEFAULT_MODEL", model);
+        }
+    }
+    // Set API keys from config if not in env (XDG config file is less secure than env vars,
+    // but more convenient for users who don't want to set env vars every session)
+    if std::env::var("OPENAI_API_KEY").is_err() {
+        if let Some(ref key) = config.ai.openai_api_key {
+            std::env::set_var("OPENAI_API_KEY", key);
+        }
+    }
+    if std::env::var("ANTHROPIC_API_KEY").is_err() {
+        if let Some(ref key) = config.ai.anthropic_api_key {
+            std::env::set_var("ANTHROPIC_API_KEY", key);
+        }
+    }
+    if std::env::var("GEMINI_API_KEY").is_err() {
+        if let Some(ref key) = config.ai.gemini_api_key {
+            std::env::set_var("GEMINI_API_KEY", key);
+        }
+    }
+
     // Env var SWEBASH_AI_ENABLED takes precedence over config file
     let ai_enabled = std::env::var("SWEBASH_AI_ENABLED")
         .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
@@ -164,10 +194,12 @@ async fn main() -> Result<()> {
                     mode,
                 });
             }
-            Some(Arc::new(swebash_ai::ToolSandbox {
+            // Initialize sandbox with initial_cwd for correct relative path resolution
+            Some(Arc::new(swebash_ai::ToolSandbox::with_rules_and_cwd(
                 rules,
-                enabled: true,
-            }))
+                true,
+                initial_cwd.clone(),
+            )))
         } else {
             None
         };
@@ -554,6 +586,13 @@ async fn process_ai_mode(
             println!("Exited AI mode.");
         }
         _ => {
+            // Update sandbox cwd to match shell's virtual_cwd before AI processes input
+            // This ensures relative paths in AI tool args are resolved correctly
+            if let Some(svc) = ai_service {
+                let cwd = tab_mgr.active_tab().virtual_cwd();
+                svc.set_sandbox_cwd(cwd);
+            }
+
             // Auto-detect agent from input keywords before dispatch
             if let Some(svc) = ai_service {
                 if let Some(new_agent) = svc.auto_detect_and_switch(cmd).await {

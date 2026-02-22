@@ -6,8 +6,8 @@
 
 This SRS defines requirements for swebash, a WASM-based Unix-like shell with integrated AI assistance. The shell compiles its command engine to WebAssembly for isolation, runs a native host runtime with multi-tab support and a workspace sandbox, and provides LLM-powered features (translation, explanation, chat, autocomplete) through a pluggable agent system with 11 built-in agents. It covers stakeholder needs, functional requirements for shell operations, AI integration, tab management, and readline editing, non-functional requirements for security and performance, and traceability from stakeholder goals to implementation modules.
 
-**Version**: 1.0
-**Date**: 2026-02-10
+**Version**: 1.1
+**Date**: 2026-02-22
 **Standard**: ISO/IEC/IEEE 29148:2018
 
 ---
@@ -381,8 +381,17 @@ The `workspace` built-in command shall support runtime sandbox modification:
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-04 → `host/src/spi/sandbox.rs` |
-| **Acceptance** | Relative paths are resolved against the tab's virtual CWD; `~` is expanded to the home directory; symlinks are resolved before checking |
+| **Traces to** | STK-04 → `host/src/spi/sandbox.rs`, `ai/src/core/tools/sandboxed.rs` |
+| **Acceptance** | Relative paths are resolved against the tab's virtual CWD; `~` is expanded to the home directory; symlinks are resolved before checking; AI tool sandbox tracks shell's virtual_cwd via `set_cwd()` |
+
+The sandbox path resolution applies to both the host filesystem sandbox and the AI tool sandbox:
+
+| Component | CWD Source | Resolution |
+|-----------|-----------|------------|
+| Host sandbox | Tab's `virtual_cwd` from `HostState` | Direct access to tab state |
+| AI tool sandbox | `ToolSandbox::cwd` field | Updated via `set_sandbox_cwd()` before each AI operation |
+
+The AI sandbox rewriting ensures that when the user `cd features/shell`, AI tools receive absolute paths resolved against that directory, not `std::env::current_dir()`.
 
 #### FR-304: Workspace-repository binding
 
@@ -835,6 +844,18 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 | **Traces to** | STK-02 → `ai/src/core/tools/` |
 | **Acceptance** | When `SWEBASH_AI_TOOL_CACHE=true` (default), identical tool calls within the TTL (default 300s) return cached results; max entries default to 200 |
 
+#### FR-806: Tool path resolution using shell CWD
+
+| Attribute | Value |
+|-----------|-------|
+| **Priority** | Must |
+| **State** | Implemented |
+| **Verification** | Test |
+| **Traces to** | STK-02, STK-04 → `ai/src/core/tools/sandboxed.rs` |
+| **Acceptance** | AI filesystem tools resolve relative paths against the shell's virtual CWD, not `std::env::current_dir()`; after `cd features/shell`, AI `list_directory` shows contents of `features/shell` |
+
+The `SandboxedTool` decorator rewrites relative path arguments to absolute paths using the sandbox's tracked CWD before delegating to the inner tool. This ensures that AI operations respect the shell's `cd` commands even though the underlying tool implementations may use the process's current directory.
+
 ### 4.9 Agent Document Context
 
 #### FR-900: Preload document strategy
@@ -963,11 +984,51 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 
 | File | Format | Purpose |
 |------|--------|---------|
-| `~/.config/swebash/config.toml` | TOML | Workspace sandbox configuration |
+| `~/.config/swebash/config.toml` | TOML | Workspace sandbox and AI configuration |
 | `~/.swebashrc` | TOML | Readline configuration |
 | `~/.local/state/swebash/history` | Text | Persistent command history (XDG-compliant) |
 | `~/.config/swebash/agents.yaml` | YAML | User-defined agent overrides |
 | `~/.config/swebash/docs/` | Directory | Agent reference documentation |
+
+#### FR-1202: XDG config file AI settings
+
+| Attribute | Value |
+|-----------|-------|
+| **Priority** | Should |
+| **State** | Implemented |
+| **Verification** | Test |
+| **Traces to** | STK-05 → `host/src/spi/config.rs` |
+| **Acceptance** | AI provider and API keys can be configured in `~/.config/swebash/config.toml` under the `[ai]` section; environment variables override config file values |
+
+The `[ai]` section in `config.toml` supports the following fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `enabled` | bool | Enable/disable AI features |
+| `provider` | string | LLM provider: openai, anthropic, gemini |
+| `model` | string | Model ID override |
+| `openai_api_key` | string | OpenAI API key |
+| `anthropic_api_key` | string | Anthropic API key |
+| `gemini_api_key` | string | Google Gemini API key |
+
+Configuration precedence: Environment variables > config.toml values. This allows the shell to run from any directory without requiring environment setup, while still allowing per-session overrides.
+
+#### FR-1203: OAuth authentication priority
+
+| Attribute | Value |
+|-----------|-------|
+| **Priority** | Should |
+| **State** | Implemented |
+| **Verification** | Test |
+| **Traces to** | STK-05 → rustratify `llm-provider` |
+| **Acceptance** | Anthropic provider uses OAuth token from `~/.claude.json` when present, before falling back to API key from config file or environment variable |
+
+Authentication precedence for Anthropic provider:
+1. OAuth token from `~/.claude.json` (if present and valid)
+2. `ANTHROPIC_API_KEY` environment variable
+3. `anthropic_api_key` from config.toml
+
+This enables seamless authentication via `gh auth` or Claude CLI without manual API key management.
 
 ---
 
@@ -1172,7 +1233,7 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 | STK-02 | FR-600-606, FR-700-706, FR-800-805, FR-1000-1001, NFR-101 |
 | STK-03 | FR-400-407 |
 | STK-04 | FR-300-303, FR-803, NFR-200, NFR-201, NFR-202 |
-| STK-05 | FR-606, FR-1000, NFR-401 |
+| STK-05 | FR-606, FR-1000, FR-1202, FR-1203, NFR-401 |
 | STK-06 | FR-701, FR-704, FR-705, FR-706 |
 | STK-07 | FR-500-505, NFR-102 |
 | STK-08 | FR-500, FR-407 |
@@ -1190,11 +1251,11 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 | FR-500-505 | `readline/src/core/` |
 | FR-600-606 | `ai/src/api/commands.rs`, `ai/src/core/chat.rs`, `ai/src/core/explain.rs`, `ai/src/core/translate.rs`, `ai/src/core/complete.rs`, `host/src/ai/` |
 | FR-700-706 | `ai/src/core/agents/config.rs`, `ai/src/core/agents/builtins.rs`, `ai/src/core/agents/mod.rs` |
-| FR-800-805 | `ai/src/core/tools/` |
+| FR-800-806 | `ai/src/core/tools/`, `ai/src/core/tools/sandboxed.rs` |
 | FR-900-902 | `ai/src/core/rag/` |
 | FR-1000-1001 | `ai/src/spi/chat_provider.rs` |
 | FR-1100 | `sbh`, `bin/` |
-| FR-1200-1201 | `ai/src/spi/config.rs`, `host/src/spi/config.rs` |
+| FR-1200-1203 | `ai/src/spi/config.rs`, `host/src/spi/config.rs`, rustratify `llm-provider` |
 | NFR-100 | `engine/Cargo.toml` |
 | NFR-101-102 | `ai/src/` module structure |
 | NFR-200-202 | `host/src/spi/sandbox.rs`, `ai/src/core/tools/` |
@@ -1220,7 +1281,7 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 |-------------------|----------|-----------|
 | Shell tests | `docs/5-testing/manual_shell_tests.md` | 32 |
 | Tab tests | `docs/5-testing/manual_tab_tests.md` | 68 |
-| AI tests | `docs/5-testing/manual_ai_tests.md` | 97 |
+| AI tests | `docs/5-testing/manual_ai_tests.md` | 105 |
 | RAG tests | `docs/5-testing/manual_rag_tests.md` | 53 |
 | sbh launcher tests | `docs/5-testing/manual_sbh_tests.md` | 42 |
-| **Total manual** | | **292** |
+| **Total manual** | | **300** |

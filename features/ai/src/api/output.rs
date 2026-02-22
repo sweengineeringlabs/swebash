@@ -137,14 +137,19 @@ pub fn ai_status(
 /// Print a "not configured" friendly message.
 pub fn ai_not_configured() {
     ai_warn("AI is not configured.");
-    let _ = writeln!(io::stdout(), "  Set an API key to enable AI features:");
+    let _ = writeln!(io::stdout(), "  Option 1: Set environment variables:");
     let _ = writeln!(io::stdout(), "    export OPENAI_API_KEY=sk-...");
     let _ = writeln!(io::stdout(), "    export ANTHROPIC_API_KEY=sk-ant-...");
     let _ = writeln!(io::stdout(), "    export GEMINI_API_KEY=...");
     let _ = writeln!(
         io::stdout(),
-        "  Then configure the provider: export LLM_PROVIDER=openai"
+        "    export LLM_PROVIDER=openai  # or anthropic, gemini"
     );
+    let _ = writeln!(io::stdout());
+    let _ = writeln!(io::stdout(), "  Option 2: Add to ~/.config/swebash/config.toml:");
+    let _ = writeln!(io::stdout(), "    [ai]");
+    let _ = writeln!(io::stdout(), "    provider = \"anthropic\"");
+    let _ = writeln!(io::stdout(), "    anthropic_api_key = \"sk-ant-...\"");
     let _ = writeln!(io::stdout());
 }
 

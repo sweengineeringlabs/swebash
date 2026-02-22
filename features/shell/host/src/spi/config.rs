@@ -130,6 +130,17 @@ impl SwebashConfig {
 }
 
 /// `[ai]` section of the config.
+///
+/// API keys can be stored here instead of environment variables.
+/// Environment variables always take precedence over config file values.
+///
+/// Example config:
+/// ```toml
+/// [ai]
+/// enabled = true
+/// provider = "anthropic"
+/// anthropic_api_key = "sk-ant-..."
+/// ```
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AiConfig {
     /// Master switch to enable/disable AI features. Default: `true`.
@@ -137,13 +148,74 @@ pub struct AiConfig {
     /// Can also be controlled via `SWEBASH_AI_ENABLED` env var (env takes precedence).
     #[serde(default = "default_ai_enabled")]
     pub enabled: bool,
+    /// LLM provider: "openai", "anthropic", or "gemini". Default: "openai".
+    /// Can be overridden via `LLM_PROVIDER` env var.
+    #[serde(default)]
+    pub provider: Option<String>,
+    /// Model to use (e.g. "gpt-4o", "claude-sonnet-4-20250514").
+    /// Can be overridden via `LLM_DEFAULT_MODEL` env var.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// OpenAI API key. Can be overridden via `OPENAI_API_KEY` env var.
+    #[serde(default)]
+    pub openai_api_key: Option<String>,
+    /// Anthropic API key. Can be overridden via `ANTHROPIC_API_KEY` env var.
+    #[serde(default)]
+    pub anthropic_api_key: Option<String>,
+    /// Google Gemini API key. Can be overridden via `GEMINI_API_KEY` env var.
+    #[serde(default)]
+    pub gemini_api_key: Option<String>,
 }
 
 impl Default for AiConfig {
     fn default() -> Self {
         Self {
             enabled: default_ai_enabled(),
+            provider: None,
+            model: None,
+            openai_api_key: None,
+            anthropic_api_key: None,
+            gemini_api_key: None,
         }
+    }
+}
+
+impl AiConfig {
+    /// Get the API key for the given provider, checking env var first, then config file.
+    pub fn api_key_for_provider(&self, provider: &str) -> Option<String> {
+        match provider {
+            "openai" => std::env::var("OPENAI_API_KEY")
+                .ok()
+                .or_else(|| self.openai_api_key.clone()),
+            "anthropic" => std::env::var("ANTHROPIC_API_KEY")
+                .ok()
+                .or_else(|| self.anthropic_api_key.clone()),
+            "gemini" => std::env::var("GEMINI_API_KEY")
+                .ok()
+                .or_else(|| self.gemini_api_key.clone()),
+            _ => None,
+        }
+    }
+
+    /// Get the effective provider (env var overrides config file).
+    pub fn effective_provider(&self) -> String {
+        std::env::var("LLM_PROVIDER")
+            .ok()
+            .or_else(|| self.provider.clone())
+            .unwrap_or_else(|| "openai".to_string())
+    }
+
+    /// Get the effective model (env var overrides config file).
+    pub fn effective_model(&self) -> Option<String> {
+        std::env::var("LLM_DEFAULT_MODEL")
+            .ok()
+            .or_else(|| self.model.clone())
+    }
+
+    /// Check if an API key is available for the effective provider.
+    pub fn has_api_key(&self) -> bool {
+        let provider = self.effective_provider();
+        self.api_key_for_provider(&provider).is_some()
     }
 }
 
@@ -495,7 +567,7 @@ root = "~/workspace"
     #[test]
     fn ai_config_serde_roundtrip() {
         let config = SwebashConfig {
-            ai: AiConfig { enabled: false },
+            ai: AiConfig { enabled: false, ..Default::default() },
             ..Default::default()
         };
         let serialized = toml::to_string_pretty(&config).unwrap();

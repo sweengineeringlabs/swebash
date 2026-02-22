@@ -44,30 +44,45 @@
 For the `anthropic` provider, the shell tries credentials in this order:
 
 1. **Claude Code OAuth** — `~/.claude/.credentials.json` (set by Claude Code IDE/CLI)
-2. **API key** — `ANTHROPIC_API_KEY` environment variable
+2. **API key** — environment variable OR XDG config file
+3. **XDG config file** — `~/.config/swebash/config.toml`
 
-Either source is sufficient. Both sources absent → `NotConfigured` error on startup; AI commands will not respond.
+Priority: OAuth > Env vars > XDG config file. Either source is sufficient.
 
 | Test | Steps | Expected |
 |------|-------|----------|
 | OAuth primary (Anthropic) | Ensure `~/.claude/.credentials.json` exists (Claude Code installed); unset `ANTHROPIC_API_KEY`; run `export LLM_PROVIDER=anthropic && ./sbh run` | Shell starts; `ai status` shows `Enabled: yes, Ready: yes` |
+| **XDG config + OAuth (no env vars)** | 1. Ensure `~/.claude/.credentials.json` exists<br>2. Unset ALL env vars (`unset LLM_PROVIDER ANTHROPIC_API_KEY`)<br>3. Create `~/.config/swebash/config.toml` with `[ai]` and `provider = "anthropic"`<br>4. Run `./sbh run` from any directory | Shell starts; `ai status` shows `Enabled: yes, Ready: yes`. **No env vars needed!** |
+| **XDG config API key (no env vars)** | 1. Remove `~/.claude/.credentials.json`<br>2. Unset ALL env vars<br>3. Add to config.toml: `provider = "anthropic"` and `anthropic_api_key = "sk-ant-..."`<br>4. Run from any directory | Shell starts with API key from config file |
 | API key fallback (Anthropic) | Remove/rename `~/.claude/.credentials.json`; set `ANTHROPIC_API_KEY`; run shell | Shell starts; `ai status` shows `Enabled: yes, Ready: yes` |
 | No credentials error | Remove both OAuth file and `ANTHROPIC_API_KEY`; start shell | Shell starts but AI service unavailable; `ai status` prints error: _"No credentials found for provider 'anthropic'. Configure Claude Code OAuth or set ANTHROPIC_API_KEY."_ |
 | OpenAI unaffected | `LLM_PROVIDER=openai` with `OPENAI_API_KEY` set | OAuth file is irrelevant; API key used as normal |
 | Disabled explicitly | `SWEBASH_AI_ENABLED=false ./sbh run` then `ai status` | `ai status` returns error: _"AI features disabled (SWEBASH_AI_ENABLED=false)"_ |
 | Enabled by default | Start shell with valid credentials; do not set `SWEBASH_AI_ENABLED` | AI is active without any extra flag |
+| Env var overrides config | Config has `provider = "openai"`, but `export LLM_PROVIDER=anthropic` | Anthropic provider used (env wins) |
 
-## 6c. AI Toggle (Config)
+## 6c. AI Toggle and XDG Config
 
-AI can be toggled via config file (`~/.config/swebash/config.toml`) or environment variable. The env var takes precedence.
+AI can be configured via config file (`~/.config/swebash/config.toml`) or environment variables. Env vars always take precedence.
 
-**Config file format:**
+**Full XDG config file format:**
 ```toml
 [ai]
-enabled = false  # Disable AI features
+enabled = true              # Master switch (default: true)
+provider = "anthropic"      # LLM provider: openai, anthropic, gemini
+model = "claude-sonnet-4-20250514"  # Optional: override default model
+
+# API keys (optional — OAuth is preferred for Anthropic)
+# anthropic_api_key = "sk-ant-..."
+# openai_api_key = "sk-..."
+# gemini_api_key = "..."
 ```
 
-**Precedence:** `SWEBASH_AI_ENABLED` env var > config file `[ai].enabled` > default (`true`)
+**Precedence (for each setting):**
+- `SWEBASH_AI_ENABLED` env var > config `[ai].enabled` > default (`true`)
+- `LLM_PROVIDER` env var > config `[ai].provider` > default (`openai`)
+- `ANTHROPIC_API_KEY` env var > config `[ai].anthropic_api_key`
+- OAuth credentials (`~/.claude/.credentials.json`) > API keys (for Anthropic)
 
 | Test | Steps | Expected |
 |------|-------|----------|
@@ -105,6 +120,77 @@ enabled = false  # Disable AI features
 | Explain via subcommand | `ai explain ls -la` | Natural language explanation of the command |
 | Explain via shorthand | `?? ps aux \| grep rust` | Explains the pipeline |
 | Explain simple | `ai explain echo test` | Short explanation, no leading/trailing whitespace |
+
+## 9b. AI Directory Exploration
+
+Tests that AI can explore files within the workspace using filesystem tools.
+
+**Prerequisites:**
+- Workspace enabled with `mode = "rw"` (or `mode = "ro"` for read-only tests)
+- AI configured with valid credentials
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| AI lists workspace root | 1. Start shell in workspace<br>2. Enter AI mode: `ai`<br>3. Ask: `list the files here` | AI uses `list_directory` tool and shows files in workspace root |
+| AI reads file (absolute) | 1. Enter AI mode<br>2. Ask: `read features/shell/host/Cargo.toml` | AI shows Cargo.toml content |
+| AI reads file (relative to root) | 1. Enter AI mode<br>2. Ask: `what's in README.md?` | AI shows README.md content from workspace root |
+| AI respects cd for listing | 1. Run `cd features/shell`<br>2. Enter AI mode: `ai`<br>3. Ask: `list the files here` | AI shows contents of `features/shell/` (host/, engine/, Cargo.toml, etc.), not workspace root |
+| AI respects cd for reading | 1. Run `cd features/shell`<br>2. Enter AI mode: `ai`<br>3. Ask: `what's in Cargo.toml?` | AI reads `features/shell/Cargo.toml`, not workspace root `Cargo.toml` |
+| AI sandbox blocks outside | 1. Workspace root is configured<br>2. Enter AI mode<br>3. Ask: `read /etc/passwd` | AI tool returns "Access denied: /etc/passwd is outside the workspace sandbox" |
+| RO mode blocks write | 1. Set workspace `mode = "ro"`<br>2. Enter AI mode<br>3. Ask: `create a file called test.txt` | AI tool returns "Write access denied" |
+| RW mode allows write | 1. Set workspace `mode = "rw"`<br>2. Enter AI mode<br>3. Ask: `create a file called hello.txt with "hello world"` | File is created successfully |
+
+### Quick verification script
+
+```bash
+# Setup
+cd /tmp && mkdir -p ai_test && cd ai_test
+echo "Hello from test file" > test.txt
+echo "fn main() { println!(\"Hello\"); }" > main.rs
+
+# Test (interactive)
+./sbh run
+# Then in shell:
+ai
+# Ask: "what files are in the current directory?"
+# Ask: "what's in test.txt?"
+# Ask: "show me the main.rs file"
+exit
+exit
+```
+
+### CD + AI exploration test
+
+This test verifies that AI tools respect the shell's `cd` command.
+
+```bash
+# Setup - create nested directories with different files
+cd /tmp && mkdir -p ai_explore_test/subdir
+echo "Root content" > ai_explore_test/root.txt
+echo "Sub content" > ai_explore_test/subdir/sub.txt
+
+# Test (interactive)
+./sbh run
+cd /tmp/ai_explore_test
+ai
+# Ask: "what files are in the current directory?"
+# Expected: AI lists root.txt and subdir/ (NOT workspace root files)
+exit
+
+cd subdir
+ai
+# Ask: "what files are here?"
+# Expected: AI lists sub.txt (NOT root.txt or workspace files)
+# Ask: "what's in sub.txt?"
+# Expected: AI shows "Sub content"
+exit
+exit
+
+# Cleanup
+rm -rf /tmp/ai_explore_test
+```
+
+**Pass criteria**: AI tools operate on the directory set by `cd`, not the workspace root or process cwd.
 
 ## 10. AI Chat Mode
 
