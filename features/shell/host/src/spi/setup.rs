@@ -5,13 +5,66 @@ use std::process::Command;
 use super::config::SwebashConfig;
 use super::git_config::{BranchGate, BranchPipeline, GateAction, GitConfig};
 
+// ── Table formatting ────────────────────────────────────────────────────────
+
+/// Column definition for table formatting.
+struct TableColumn {
+    header: &'static str,
+    width: usize,
+}
+
+/// Print a formatted table with headers, separator, and alternating row colors.
+fn print_table(columns: &[TableColumn], rows: &[Vec<String>]) {
+
+    // Print header
+    print!("  ");
+    for col in columns {
+        print!("{:<width$}  ", col.header, width = col.width);
+    }
+    println!();
+
+    // Print separator
+    print!("  ");
+    for col in columns {
+        print!("{}  ", "─".repeat(col.width));
+    }
+    println!();
+
+    // Print rows with alternating colors
+    for (i, row) in rows.iter().enumerate() {
+        // Odd rows get dim background - use full-width background
+        let (bg_start, bg_end) = if i % 2 == 1 {
+            ("\x1b[48;5;236m", "\x1b[0m")
+        } else {
+            ("", "")
+        };
+
+        print!("{bg_start}  ");
+        for (j, col) in columns.iter().enumerate() {
+            let cell = row.get(j).map(|s| s.as_str()).unwrap_or("");
+            print!("{:<width$}  ", cell, width = col.width);
+        }
+        // Pad to total width for consistent background
+        println!("{bg_end}");
+    }
+}
+
+/// Format a GateAction as a colored string.
+fn format_gate_action(action: GateAction) -> String {
+    match action {
+        GateAction::Allow => "\x1b[32mallow\x1b[0m".to_string(),
+        GateAction::BlockWithOverride => "\x1b[33mblock_with_override\x1b[0m".to_string(),
+        GateAction::Deny => "\x1b[31mdeny\x1b[0m".to_string(),
+    }
+}
+
 // ── Prompt helpers ──────────────────────────────────────────────────────────
 
 /// Print a yes/no prompt and return the boolean answer.
 /// Defaults to `default` when the user presses Enter with no input.
 fn prompt_yn(msg: &str, default: bool) -> Result<bool, ()> {
     let hint = if default { "[Y/n]" } else { "[y/N]" };
-    print!("\x1b[1;36m?\x1b[0m {msg} {hint} ");
+    print!("{msg} {hint} ");
     io::stdout().flush().unwrap_or(());
 
     let answer = read_line_or_skip()?;
@@ -25,31 +78,53 @@ fn prompt_yn(msg: &str, default: bool) -> Result<bool, ()> {
 
 /// Print a prompt and read a single line of text.
 /// Returns `Err(())` if the user types "skip" or sends EOF.
+/// Supports "help" or "?" to show help text if provided.
 fn prompt_line(msg: &str, default: &str) -> Result<String, ()> {
-    if default.is_empty() {
-        print!("\x1b[1;36m?\x1b[0m {msg}: ");
-    } else {
-        print!("\x1b[1;36m?\x1b[0m {msg} [\x1b[90m{default}\x1b[0m]: ");
-    }
-    io::stdout().flush().unwrap_or(());
+    prompt_line_with_help(msg, default, None)
+}
 
-    let answer = read_line_or_skip()?;
-    let trimmed = answer.trim().to_string();
-    if trimmed.is_empty() {
-        Ok(default.to_string())
-    } else {
-        Ok(trimmed)
+/// Print a prompt with optional help text.
+fn prompt_line_with_help(msg: &str, default: &str, help: Option<&str>) -> Result<String, ()> {
+    loop {
+        if default.is_empty() {
+            print!("  {msg}: ");
+        } else {
+            print!("  {msg} [\x1b[90m{default}\x1b[0m]: ");
+        }
+        io::stdout().flush().unwrap_or(());
+
+        let answer = read_line_or_skip()?;
+        let trimmed = answer.trim();
+
+        // Handle help request
+        if trimmed.eq_ignore_ascii_case("help") || trimmed == "?" {
+            if let Some(help_text) = help {
+                println!();
+                println!("\x1b[36m  ℹ {help_text}\x1b[0m");
+                println!();
+                continue;
+            } else {
+                println!("  \x1b[90mNo help available for this prompt.\x1b[0m");
+                continue;
+            }
+        }
+
+        if trimmed.is_empty() {
+            return Ok(default.to_string());
+        } else {
+            return Ok(trimmed.to_string());
+        }
     }
 }
 
 /// Print a numbered list of choices and return the selected index (0-based).
 fn prompt_choice(msg: &str, choices: &[&str], default: usize) -> Result<usize, ()> {
-    println!("\x1b[1;36m?\x1b[0m {msg}");
+    println!("  {msg}");
     for (i, choice) in choices.iter().enumerate() {
         let marker = if i == default { ">" } else { " " };
-        println!("  {marker} {}: {choice}", i + 1);
+        println!("    {marker} {}: {choice}", i + 1);
     }
-    print!("  Choice [{}]: ", default + 1);
+    print!("    Choice [{}]: ", default + 1);
     io::stdout().flush().unwrap_or(());
 
     let answer = read_line_or_skip()?;
@@ -60,7 +135,7 @@ fn prompt_choice(msg: &str, choices: &[&str], default: usize) -> Result<usize, (
     match trimmed.parse::<usize>() {
         Ok(n) if n >= 1 && n <= choices.len() => Ok(n - 1),
         _ => {
-            println!("  Invalid choice, using default.");
+            println!("    Invalid choice, using default.");
             Ok(default)
         }
     }
@@ -104,9 +179,27 @@ fn step_git_repo() -> Result<(), ()> {
                 .and_then(|o| String::from_utf8(o.stdout).ok())
                 .unwrap_or_default();
             println!(
-                "  \x1b[32m✓\x1b[0m Git repository detected at: {}",
+                "  \x1b[32m✓\x1b[0m Local:  {}",
                 root.trim()
             );
+
+            // Show remote URL if available
+            let remote = Command::new("git")
+                .args(["remote", "get-url", "origin"])
+                .output()
+                .ok()
+                .and_then(|o| {
+                    if o.status.success() {
+                        String::from_utf8(o.stdout).ok().map(|s| s.trim().to_string())
+                    } else {
+                        None
+                    }
+                });
+            if let Some(url) = remote {
+                println!("  \x1b[32m✓\x1b[0m Remote: {}", url);
+            } else {
+                println!("  \x1b[33m!\x1b[0m Remote: (none configured)");
+            }
             Ok(())
         }
         _ => {
@@ -159,7 +252,12 @@ fn step_user_id() -> Result<String, ()> {
         );
     }
 
-    let user_id = prompt_line("User ID for branch naming", &default_id)?;
+    println!("  \x1b[90mType 'help' or '?' for more info\x1b[0m");
+    let user_id = prompt_line_with_help(
+        "User ID for branch naming",
+        &default_id,
+        Some("This ID is used as a prefix for your feature branches (e.g., 'alice/feature-xyz').\n  It helps identify branch ownership in team repos. Typically your name or username.")
+    )?;
     if user_id.is_empty() {
         eprintln!("  \x1b[31m✗\x1b[0m User ID cannot be empty.");
         return Err(());
@@ -245,23 +343,36 @@ fn step_pipeline(user_id: &str) -> Result<BranchPipeline, ()> {
 fn step_gates(pipeline: &BranchPipeline) -> Result<Vec<BranchGate>, ()> {
     println!();
     println!("\x1b[1;33m── Step 4/5: Safety Gates ──\x1b[0m");
+    println!("  \x1b[90mGates control what operations are allowed on each branch.\x1b[0m");
+    println!();
 
     let default_gates = GitConfig::default_gates(pipeline);
 
-    println!(
-        "  {:20} {:20} {:20} {:20} {:20}",
-        "Branch", "Commit", "Push", "Merge", "Force-Push"
-    );
-    println!("  {}", "─".repeat(100));
-    for gate in &default_gates {
-        println!(
-            "  {:20} {:20} {:20} {:20} {:20}",
-            gate.branch, gate.can_commit, gate.can_push, gate.can_merge, gate.can_force_push
-        );
-    }
+    let columns = [
+        TableColumn { header: "BRANCH", width: 18 },
+        TableColumn { header: "COMMIT", width: 20 },
+        TableColumn { header: "PUSH", width: 20 },
+        TableColumn { header: "MERGE", width: 20 },
+        TableColumn { header: "FORCE-PUSH", width: 20 },
+    ];
+
+    let rows: Vec<Vec<String>> = default_gates
+        .iter()
+        .map(|gate| {
+            vec![
+                gate.branch.clone(),
+                format_gate_action(gate.can_commit),
+                format_gate_action(gate.can_push),
+                format_gate_action(gate.can_merge),
+                format_gate_action(gate.can_force_push),
+            ]
+        })
+        .collect();
+
+    print_table(&columns, &rows);
     println!();
 
-    if prompt_yn("Accept these gate rules?", true)? {
+    if prompt_yn("  Accept these gate rules?", true)? {
         return Ok(default_gates);
     }
 
@@ -321,10 +432,39 @@ fn index_to_gate_action(idx: usize) -> GateAction {
     }
 }
 
+/// Check if a branch exists locally.
+fn branch_exists_local(name: &str) -> bool {
+    Command::new("git")
+        .args(["show-ref", "--verify", "--quiet", &format!("refs/heads/{name}")])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Check if a branch exists on remote (origin).
+fn branch_exists_remote(name: &str) -> bool {
+    Command::new("git")
+        .args(["ls-remote", "--exit-code", "--heads", "origin", name])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Format branch existence status as colored string.
+fn format_exists(exists: bool) -> String {
+    if exists {
+        "\x1b[32m✓ exists\x1b[0m".to_string()
+    } else {
+        "\x1b[33m✗ missing\x1b[0m".to_string()
+    }
+}
+
 /// Step 5: List existing vs missing branches and offer to create missing ones.
 fn step_branches(pipeline: &BranchPipeline) -> Result<(), ()> {
     println!();
     println!("\x1b[1;33m── Step 5/5: Create Branches ──\x1b[0m");
+    println!("  \x1b[90mThese branches are defined in your pipeline configuration.\x1b[0m");
+    println!();
 
     // Check if we are inside a git repo
     let in_git = Command::new("git")
@@ -338,63 +478,77 @@ fn step_branches(pipeline: &BranchPipeline) -> Result<(), ()> {
         return Ok(());
     }
 
-    // Get list of existing branches
-    let existing_output = Command::new("git")
-        .args(["branch", "--list", "--format=%(refname:short)"])
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                String::from_utf8(o.stdout).ok()
-            } else {
-                None
-            }
-        })
-        .unwrap_or_default();
-
-    let existing: Vec<&str> = existing_output.lines().map(|l| l.trim()).collect();
-
-    let mut missing: Vec<&str> = Vec::new();
-    for branch in &pipeline.branches {
-        if existing.iter().any(|&e| e == branch.name) {
-            println!(
-                "  \x1b[32m✓\x1b[0m {} \x1b[90m(exists)\x1b[0m",
-                branch.name
-            );
-        } else {
-            println!("  \x1b[33m!\x1b[0m {} \x1b[90m(missing)\x1b[0m", branch.name);
-            missing.push(&branch.name);
-        }
+    struct BranchStatus<'a> {
+        name: &'a str,
+        local: bool,
+        remote: bool,
     }
 
-    if missing.is_empty() {
-        println!("  All pipeline branches exist.");
+    // Collect branch statuses first
+    let mut statuses: Vec<BranchStatus> = Vec::new();
+    for branch in &pipeline.branches {
+        let local = branch_exists_local(&branch.name);
+        let remote = branch_exists_remote(&branch.name);
+        statuses.push(BranchStatus {
+            name: &branch.name,
+            local,
+            remote,
+        });
+    }
+
+    // Print table using common formatter
+    let columns = [
+        TableColumn { header: "BRANCH", width: 18 },
+        TableColumn { header: "LOCAL", width: 12 },
+        TableColumn { header: "REMOTE", width: 12 },
+    ];
+
+    let rows: Vec<Vec<String>> = statuses
+        .iter()
+        .map(|s| {
+            vec![
+                s.name.to_string(),
+                format_exists(s.local),
+                format_exists(s.remote),
+            ]
+        })
+        .collect();
+
+    print_table(&columns, &rows);
+
+    // Collect branches missing locally
+    let missing_local: Vec<&str> = statuses
+        .iter()
+        .filter(|s| !s.local)
+        .map(|s| s.name)
+        .collect();
+
+    if missing_local.is_empty() {
+        println!();
+        println!("  \x1b[32m✓\x1b[0m All pipeline branches exist locally.");
         return Ok(());
     }
 
     println!();
-    if !prompt_yn(
-        &format!(
-            "Create {} missing branch(es) from current HEAD?",
-            missing.len()
-        ),
-        true,
-    )? {
-        println!("  Skipping branch creation.");
-        return Ok(());
-    }
+    println!(
+        "  {} branch(es) missing locally. Create them individually:",
+        missing_local.len()
+    );
+    println!();
 
-    for name in &missing {
-        let status = Command::new("git")
-            .args(["branch", name])
-            .status();
-        match status {
-            Ok(s) if s.success() => {
-                println!("  \x1b[32m✓\x1b[0m Created branch: {name}");
+    for name in &missing_local {
+        if prompt_yn(&format!("  Create '{name}' from current HEAD?"), true)? {
+            let status = Command::new("git").args(["branch", name]).status();
+            match status {
+                Ok(s) if s.success() => {
+                    println!("    \x1b[32m✓\x1b[0m Created branch: {name}");
+                }
+                _ => {
+                    eprintln!("    \x1b[31m✗\x1b[0m Failed to create branch: {name}");
+                }
             }
-            _ => {
-                eprintln!("  \x1b[31m✗\x1b[0m Failed to create branch: {name}");
-            }
+        } else {
+            println!("    \x1b[90mSkipped: {name}\x1b[0m");
         }
     }
 
@@ -510,4 +664,147 @@ pub fn run_setup_wizard(config: &mut SwebashConfig) -> Result<(), ()> {
     println!();
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Table formatting tests ──────────────────────────────────────────────
+
+    #[test]
+    fn table_column_has_header_and_width() {
+        let col = TableColumn {
+            header: "NAME",
+            width: 20,
+        };
+        assert_eq!(col.header, "NAME");
+        assert_eq!(col.width, 20);
+    }
+
+    #[test]
+    fn format_gate_action_allow_is_green() {
+        let result = format_gate_action(GateAction::Allow);
+        assert!(result.contains("allow"));
+        assert!(result.contains("\x1b[32m")); // green
+    }
+
+    #[test]
+    fn format_gate_action_block_is_yellow() {
+        let result = format_gate_action(GateAction::BlockWithOverride);
+        assert!(result.contains("block_with_override"));
+        assert!(result.contains("\x1b[33m")); // yellow
+    }
+
+    #[test]
+    fn format_gate_action_deny_is_red() {
+        let result = format_gate_action(GateAction::Deny);
+        assert!(result.contains("deny"));
+        assert!(result.contains("\x1b[31m")); // red
+    }
+
+    #[test]
+    fn format_exists_true_shows_checkmark() {
+        let result = format_exists(true);
+        assert!(result.contains("✓"));
+        assert!(result.contains("exists"));
+        assert!(result.contains("\x1b[32m")); // green
+    }
+
+    #[test]
+    fn format_exists_false_shows_x() {
+        let result = format_exists(false);
+        assert!(result.contains("✗"));
+        assert!(result.contains("missing"));
+        assert!(result.contains("\x1b[33m")); // yellow
+    }
+
+    // ── Gate action index conversion tests ──────────────────────────────────
+
+    #[test]
+    fn gate_action_index_allow_is_0() {
+        assert_eq!(gate_action_index(GateAction::Allow), 0);
+    }
+
+    #[test]
+    fn gate_action_index_block_is_1() {
+        assert_eq!(gate_action_index(GateAction::BlockWithOverride), 1);
+    }
+
+    #[test]
+    fn gate_action_index_deny_is_2() {
+        assert_eq!(gate_action_index(GateAction::Deny), 2);
+    }
+
+    #[test]
+    fn index_to_gate_action_0_is_allow() {
+        assert_eq!(index_to_gate_action(0), GateAction::Allow);
+    }
+
+    #[test]
+    fn index_to_gate_action_1_is_block() {
+        assert_eq!(index_to_gate_action(1), GateAction::BlockWithOverride);
+    }
+
+    #[test]
+    fn index_to_gate_action_2_is_deny() {
+        assert_eq!(index_to_gate_action(2), GateAction::Deny);
+    }
+
+    #[test]
+    fn index_to_gate_action_invalid_defaults_to_deny() {
+        assert_eq!(index_to_gate_action(99), GateAction::Deny);
+    }
+
+    // ── Print table output tests ────────────────────────────────────────────
+
+    #[test]
+    fn print_table_does_not_panic_with_empty_rows() {
+        let columns = [
+            TableColumn { header: "A", width: 5 },
+            TableColumn { header: "B", width: 5 },
+        ];
+        let rows: Vec<Vec<String>> = vec![];
+        // Should not panic
+        print_table(&columns, &rows);
+    }
+
+    #[test]
+    fn print_table_does_not_panic_with_single_row() {
+        let columns = [
+            TableColumn { header: "COL1", width: 10 },
+            TableColumn { header: "COL2", width: 10 },
+        ];
+        let rows = vec![vec!["val1".to_string(), "val2".to_string()]];
+        // Should not panic
+        print_table(&columns, &rows);
+    }
+
+    #[test]
+    fn print_table_handles_multiple_rows() {
+        let columns = [
+            TableColumn { header: "NAME", width: 15 },
+            TableColumn { header: "STATUS", width: 10 },
+        ];
+        let rows = vec![
+            vec!["alpha".to_string(), "ok".to_string()],
+            vec!["beta".to_string(), "fail".to_string()],
+            vec!["gamma".to_string(), "ok".to_string()],
+        ];
+        // Should not panic, rows 1 and 3 should have different background
+        print_table(&columns, &rows);
+    }
+
+    #[test]
+    fn print_table_handles_missing_cells() {
+        let columns = [
+            TableColumn { header: "A", width: 5 },
+            TableColumn { header: "B", width: 5 },
+            TableColumn { header: "C", width: 5 },
+        ];
+        // Row has fewer cells than columns
+        let rows = vec![vec!["x".to_string()]];
+        // Should not panic, missing cells should be empty
+        print_table(&columns, &rows);
+    }
 }
