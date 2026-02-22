@@ -15,6 +15,7 @@
 ## Table of Contents
 
 - [Authentication](#6b-authentication)
+- [AI Toggle (Config)](#6c-ai-toggle-config)
 - [AI Status](#7-ai-status)
 - [AI Ask](#8-ai-ask-nl-to-command)
 - [AI Explain](#9-ai-explain)
@@ -55,6 +56,32 @@ Either source is sufficient. Both sources absent → `NotConfigured` error on st
 | OpenAI unaffected | `LLM_PROVIDER=openai` with `OPENAI_API_KEY` set | OAuth file is irrelevant; API key used as normal |
 | Disabled explicitly | `SWEBASH_AI_ENABLED=false ./sbh run` then `ai status` | `ai status` returns error: _"AI features disabled (SWEBASH_AI_ENABLED=false)"_ |
 | Enabled by default | Start shell with valid credentials; do not set `SWEBASH_AI_ENABLED` | AI is active without any extra flag |
+
+## 6c. AI Toggle (Config)
+
+AI can be toggled via config file (`~/.config/swebash/config.toml`) or environment variable. The env var takes precedence.
+
+**Config file format:**
+```toml
+[ai]
+enabled = false  # Disable AI features
+```
+
+**Precedence:** `SWEBASH_AI_ENABLED` env var > config file `[ai].enabled` > default (`true`)
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| Config disabled | Add `[ai]` section with `enabled = false` to config file, restart shell | AI service not initialized; `ai status` shows error |
+| Config enabled | Add `[ai]` section with `enabled = true` to config file, restart shell | AI works normally (assuming credentials present) |
+| Config default | Remove `[ai]` section entirely from config file, restart shell | AI enabled by default (assuming credentials present) |
+| Env var overrides config (enable) | Set `enabled = false` in config, then `SWEBASH_AI_ENABLED=true ./sbh run` | AI is enabled (env var wins) |
+| Env var overrides config (disable) | Set `enabled = true` in config, then `SWEBASH_AI_ENABLED=false ./sbh run` | AI is disabled (env var wins) |
+| Legacy config compatible | Use config file without `[ai]` section (old format) | Shell starts normally with AI enabled |
+| Env var value parsing | `SWEBASH_AI_ENABLED=1 ./sbh run` | AI enabled (`1` treated as true) |
+| Env var value parsing | `SWEBASH_AI_ENABLED=TRUE ./sbh run` | AI enabled (case-insensitive) |
+| Env var value parsing | `SWEBASH_AI_ENABLED=0 ./sbh run` | AI disabled |
+| Env var value parsing | `SWEBASH_AI_ENABLED=anything ./sbh run` | AI disabled (only `true`/`1` enables) |
+| Config persists | Run setup wizard, check config file | `[ai]` section present with `enabled = true` |
 
 ## 7. AI Status
 

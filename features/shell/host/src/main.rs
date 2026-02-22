@@ -60,7 +60,13 @@ async fn main() -> Result<()> {
         .init();
 
     // Load workspace config from ~/.config/swebash/config.toml
-    let config = spi::config::load_config();
+    let mut config = spi::config::load_config();
+
+    // Run first-run setup wizard if not yet completed
+    if !config.setup_completed {
+        // Wizard may fail (user abort / Ctrl+C) — that's fine, we continue
+        let _ = spi::setup::run_setup_wizard(&mut config);
+    }
 
     // Check for SWEBASH_WORKSPACE env var override
     let env_workspace = std::env::var("SWEBASH_WORKSPACE")
@@ -97,7 +103,7 @@ async fn main() -> Result<()> {
     }
 
     // Build sandbox policy from config
-    let mut policy = config.into_policy();
+    let mut policy = config.to_policy();
 
     // If SWEBASH_WORKSPACE env var was set, override the root and default to
     // RW mode (explicit user choice). This ensures existing tests that set
@@ -127,8 +133,20 @@ async fn main() -> Result<()> {
         dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
     };
 
-    // Initialize AI service (None if unconfigured — shell continues without AI)
-    let ai_service = swebash_ai::create_ai_service().await.ok();
+    // Build git safety gate enforcer from merged config
+    let git_enforcer = Arc::new(spi::git_gates::load_gates(&initial_cwd));
+    let git_enforcer_opt = Some(git_enforcer.clone());
+
+    // Initialize AI service (None if disabled or unconfigured — shell continues without AI)
+    // Env var SWEBASH_AI_ENABLED takes precedence over config file
+    let ai_enabled = std::env::var("SWEBASH_AI_ENABLED")
+        .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+        .unwrap_or(config.ai.enabled);
+    let ai_service = if ai_enabled {
+        swebash_ai::create_ai_service().await.ok()
+    } else {
+        None
+    };
 
     // Load readline configuration
     let rl_config = ReadlineConfig::load("swebash");
@@ -151,7 +169,7 @@ async fn main() -> Result<()> {
 
     // Create tab manager with one initial shell tab
     let mut tab_mgr = TabManager::new(history.clone());
-    tab_mgr.create_shell_tab(initial_cwd, policy.clone())?;
+    tab_mgr.create_shell_tab(initial_cwd, policy.clone(), git_enforcer_opt.clone())?;
     tab_mgr.switch_to(0);
 
     let home_dir = dirs::home_dir();
@@ -214,7 +232,7 @@ async fn main() -> Result<()> {
         match action {
             EditorAction::TabNew => {
                 let cwd = tab_mgr.active_tab().virtual_cwd();
-                match tab_mgr.create_shell_tab(cwd, policy.clone()) {
+                match tab_mgr.create_shell_tab(cwd, policy.clone(), git_enforcer_opt.clone()) {
                     Ok(idx) => {
                         tab_mgr.switch_to(idx);
                         println!("Switched to tab {}.", idx + 1);
@@ -349,6 +367,12 @@ async fn main() -> Result<()> {
             }
         }
 
+        // Re-run setup wizard on demand
+        if cmd == "setup" {
+            let _ = spi::setup::run_setup_wizard(&mut config);
+            continue;
+        }
+
         // For HistoryView tabs: 'q' also closes the tab
         if cmd == "q" && tab_mgr.active_tab().kind() == TabKind::HistoryView {
             if tab_mgr.close_active() {
@@ -366,7 +390,7 @@ async fn main() -> Result<()> {
 
         // --- Tab commands (intercepted before AI/WASM dispatch) ---
         if let Some(action) = parse_tab_command(&cmd) {
-            handle_tab_command(&mut tab_mgr, action, &policy, &ai_service).await;
+            handle_tab_command(&mut tab_mgr, action, &policy, &ai_service, &git_enforcer_opt).await;
             continue;
         }
 
@@ -599,6 +623,7 @@ async fn handle_tab_command(
     action: TabAction,
     policy: &spi::state::SandboxPolicy,
     ai_service: &Option<DefaultAiService>,
+    git_enforcer: &Option<Arc<spi::git_gates::GitGateEnforcer>>,
 ) {
     let home_dir = dirs::home_dir();
     match action {
@@ -626,7 +651,7 @@ async fn handle_tab_command(
                 }
                 None => tab_mgr.active_tab().virtual_cwd(),
             };
-            match tab_mgr.create_shell_tab(cwd, policy.clone()) {
+            match tab_mgr.create_shell_tab(cwd, policy.clone(), git_enforcer.clone()) {
                 Ok(idx) => {
                     tab_mgr.switch_to(idx);
                     println!("Switched to tab {}.", idx + 1);

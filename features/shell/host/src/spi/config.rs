@@ -1,18 +1,50 @@
 use std::path::PathBuf;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
+use super::git_config::GitConfig;
 use super::state::{AccessMode, PathRule, SandboxPolicy};
 
 /// Top-level config file structure (`~/.config/swebash/config.toml`).
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SwebashConfig {
     #[serde(default)]
     pub workspace: WorkspaceConfig,
+    /// AI assistant configuration.
+    #[serde(default)]
+    pub ai: AiConfig,
+    /// Git branch pipeline and safety gate configuration.
+    #[serde(default)]
+    pub git: Option<GitConfig>,
+    /// Whether the first-run setup wizard has been completed.
+    #[serde(default)]
+    pub setup_completed: bool,
+}
+
+/// `[ai]` section of the config.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AiConfig {
+    /// Master switch to enable/disable AI features. Default: `true`.
+    /// When `false`, AI mode is completely disabled regardless of other settings.
+    /// Can also be controlled via `SWEBASH_AI_ENABLED` env var (env takes precedence).
+    #[serde(default = "default_ai_enabled")]
+    pub enabled: bool,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_ai_enabled(),
+        }
+    }
+}
+
+fn default_ai_enabled() -> bool {
+    true
 }
 
 /// `[workspace]` section of the config.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WorkspaceConfig {
     /// Workspace root path (supports `~` expansion). Default: `~/workspace`.
     #[serde(default = "default_workspace_root")]
@@ -40,7 +72,7 @@ impl Default for WorkspaceConfig {
 }
 
 /// A single `[[workspace.allow]]` entry.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AllowEntry {
     pub path: String,
     #[serde(default = "default_mode_str")]
@@ -81,8 +113,8 @@ fn expand_tilde(raw: &str) -> PathBuf {
 }
 
 impl SwebashConfig {
-    /// Convert the deserialized config into a `SandboxPolicy`.
-    pub fn into_policy(self) -> SandboxPolicy {
+    /// Build a `SandboxPolicy` from this config.
+    pub fn to_policy(&self) -> SandboxPolicy {
         let ws = &self.workspace;
         let workspace_root = expand_tilde(&ws.root);
         let workspace_root = workspace_root
@@ -130,5 +162,215 @@ pub fn load_config() -> SwebashConfig {
             }
         },
         Err(_) => SwebashConfig::default(),
+    }
+}
+
+/// Save the config to `~/.config/swebash/config.toml`.
+/// Creates the parent directory if it does not exist.
+pub fn save_config(config: &SwebashConfig) -> Result<(), String> {
+    let config_dir = dirs::home_dir()
+        .map(|h| h.join(".config").join("swebash"))
+        .ok_or_else(|| "could not determine home directory".to_string())?;
+
+    std::fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("could not create config directory {}: {e}", config_dir.display()))?;
+
+    let config_path = config_dir.join("config.toml");
+    let content = toml::to_string_pretty(config)
+        .map_err(|e| format!("failed to serialize config: {e}"))?;
+
+    std::fs::write(&config_path, content)
+        .map_err(|e| format!("failed to write {}: {e}", config_path.display()))?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::git_config::{
+        BranchPipeline, GateAction, GitConfig,
+    };
+
+    #[test]
+    fn default_config_setup_completed_false() {
+        let config = SwebashConfig::default();
+        assert!(!config.setup_completed);
+        assert!(config.git.is_none());
+    }
+
+    #[test]
+    fn default_config_workspace_defaults() {
+        let config = SwebashConfig::default();
+        assert_eq!(config.workspace.root, "~/workspace");
+        assert_eq!(config.workspace.mode, "ro");
+        assert!(config.workspace.enabled);
+        assert!(config.workspace.allow.is_empty());
+    }
+
+    #[test]
+    fn serde_roundtrip_default_config() {
+        let config = SwebashConfig::default();
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        let deserialized: SwebashConfig = toml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.workspace.root, config.workspace.root);
+        assert_eq!(deserialized.setup_completed, config.setup_completed);
+        assert!(deserialized.git.is_none());
+    }
+
+    #[test]
+    fn serde_roundtrip_with_git_config() {
+        let pipeline = BranchPipeline::default_for_user("tester");
+        let gates = GitConfig::default_gates(&pipeline);
+        let git_config = GitConfig {
+            user_id: "tester".to_string(),
+            pipeline,
+            gates,
+        };
+        let config = SwebashConfig {
+            workspace: WorkspaceConfig::default(),
+            ai: AiConfig::default(),
+            git: Some(git_config),
+            setup_completed: true,
+        };
+
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        let deserialized: SwebashConfig = toml::from_str(&serialized).unwrap();
+
+        assert!(deserialized.setup_completed);
+        let git = deserialized.git.unwrap();
+        assert_eq!(git.user_id, "tester");
+        assert_eq!(git.pipeline.branches.len(), 6);
+        assert_eq!(git.gates.len(), 6);
+        assert_eq!(git.gates[0].can_force_push, GateAction::Deny);
+    }
+
+    #[test]
+    fn deserialize_legacy_config_without_git_fields() {
+        // Simulate a config.toml from before git gates were added
+        let toml_str = r#"
+[workspace]
+root = "~/myproject"
+mode = "rw"
+enabled = true
+"#;
+        let config: SwebashConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.workspace.root, "~/myproject");
+        assert_eq!(config.workspace.mode, "rw");
+        assert!(!config.setup_completed); // defaults to false
+        assert!(config.git.is_none()); // defaults to None
+    }
+
+    #[test]
+    fn deserialize_with_setup_completed_true() {
+        let toml_str = r#"
+setup_completed = true
+
+[workspace]
+root = "~/workspace"
+"#;
+        let config: SwebashConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.setup_completed);
+    }
+
+    #[test]
+    fn to_policy_preserves_enabled_flag() {
+        let mut config = SwebashConfig::default();
+        config.workspace.enabled = false;
+        let policy = config.to_policy();
+        assert!(!policy.enabled);
+    }
+
+    #[test]
+    fn to_policy_sets_rw_mode() {
+        let mut config = SwebashConfig::default();
+        config.workspace.mode = "rw".to_string();
+        let policy = config.to_policy();
+        assert_eq!(policy.allowed_paths[0].mode, AccessMode::ReadWrite);
+    }
+
+    #[test]
+    fn parse_mode_variants() {
+        assert_eq!(parse_mode("ro"), AccessMode::ReadOnly);
+        assert_eq!(parse_mode("rw"), AccessMode::ReadWrite);
+        assert_eq!(parse_mode("readwrite"), AccessMode::ReadWrite);
+        assert_eq!(parse_mode("read-write"), AccessMode::ReadWrite);
+        assert_eq!(parse_mode("RW"), AccessMode::ReadWrite);
+        assert_eq!(parse_mode("anything_else"), AccessMode::ReadOnly);
+    }
+
+    #[test]
+    fn save_config_serializes_git_section() {
+        let pipeline = BranchPipeline::default_for_user("u");
+        let gates = GitConfig::default_gates(&pipeline);
+        let config = SwebashConfig {
+            workspace: WorkspaceConfig::default(),
+            ai: AiConfig::default(),
+            git: Some(GitConfig {
+                user_id: "u".to_string(),
+                pipeline,
+                gates,
+            }),
+            setup_completed: true,
+        };
+
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        assert!(serialized.contains("setup_completed = true"));
+        assert!(serialized.contains("[git]"));
+        assert!(serialized.contains("user_id = \"u\""));
+        assert!(serialized.contains("[[git.gates]]"));
+        assert!(serialized.contains("can_force_push = \"deny\""));
+    }
+
+    // ── AI config tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn default_ai_config_enabled() {
+        let config = AiConfig::default();
+        assert!(config.enabled);
+    }
+
+    #[test]
+    fn default_config_ai_enabled() {
+        let config = SwebashConfig::default();
+        assert!(config.ai.enabled);
+    }
+
+    #[test]
+    fn deserialize_config_with_ai_disabled() {
+        let toml_str = r#"
+[ai]
+enabled = false
+
+[workspace]
+root = "~/workspace"
+"#;
+        let config: SwebashConfig = toml::from_str(toml_str).unwrap();
+        assert!(!config.ai.enabled);
+    }
+
+    #[test]
+    fn deserialize_legacy_config_without_ai_section() {
+        // Old configs without [ai] section should default to enabled
+        let toml_str = r#"
+[workspace]
+root = "~/workspace"
+"#;
+        let config: SwebashConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.ai.enabled);
+    }
+
+    #[test]
+    fn ai_config_serde_roundtrip() {
+        let config = SwebashConfig {
+            ai: AiConfig { enabled: false },
+            ..Default::default()
+        };
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        assert!(serialized.contains("[ai]"));
+        assert!(serialized.contains("enabled = false"));
+
+        let deserialized: SwebashConfig = toml::from_str(&serialized).unwrap();
+        assert!(!deserialized.ai.enabled);
     }
 }
