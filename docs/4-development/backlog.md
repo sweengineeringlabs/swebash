@@ -21,6 +21,7 @@
 - [Phase 13: Agent Infrastructure — Delegate to Rustratify (SRP)](#phase-13-agent-infrastructure-delegate-to-rustratify-srp)
 - [Backlog: Migrate bash tests from Git Bash to WSL/Linux](#backlog-migrate-bash-tests-from-git-bash-to-wsllinux)
 - [Backlog: Agent documentation context injection](#backlog-agent-documentation-context-injection)
+- [Backlog: Agent Behavior Testing](#backlog-agent-behavior-testing)
 - [Backlog: Autotest Framework Enhancements](#backlog-autotest-framework-enhancements)
 - [Future Work](#future-work)
 
@@ -241,6 +242,32 @@ decide to read a file before answering — adding latency and consuming tool ite
 - [x] Migrate `@rscagent` to use `docs` field instead of inline path list
 - [x] Migrate `@seaaudit` to reference SEA architecture docs if available
 - [x] Document the feature in agent architecture docs
+
+## Backlog: Agent Behavior Testing
+
+**Problem**: Current autotest suite (`ai_features.yaml`) only tests command plumbing (entering AI mode, switching agents, prompt display). It doesn't verify that agents actually behave correctly or use their capabilities appropriately.
+
+**Current Gaps**:
+1. Tests accept `"not configured"` as valid — pass without an actual LLM
+2. No verification of agent-specific behavior (does `@review` review differently than `@shell`?)
+3. No tool usage validation (do agents call fs/git/exec tools correctly?)
+4. No system prompt verification (are agent personas applied?)
+5. No RAG/docs injection testing (does context get injected?)
+
+**Enhancements**:
+
+- [ ] **AB-1**: Add mock LLM provider for deterministic agent testing (no API key needed)
+- [ ] **AB-2**: Test agent-specific responses (review agent gives code review, git agent suggests git commands)
+- [ ] **AB-3**: Test tool invocation (`tool_called` / `tool_params` validation in spec schema)
+- [ ] **AB-4**: Test tool filtering (verify `fs: false` blocks filesystem tools)
+- [ ] **AB-5**: Test system prompt injection (verify agent persona affects responses)
+- [ ] **AB-6**: Test RAG/docs context injection for agents with `docs` field
+- [ ] **AB-7**: Test agent memory/conversation continuity across turns
+- [ ] **AB-8**: Test custom user agents loaded from `~/.config/swebash/agents/`
+- [ ] **AB-9**: Test agent detection/suggestion based on working directory context
+- [ ] **AB-10**: Remove `"not configured"` fallbacks from smoke tests (require mock provider)
+
+**Files**: `tests/suites/ai_features.yaml`, `features/autotest/src/validation.rs`
 
 ## Backlog: Autotest Framework Enhancements
 
