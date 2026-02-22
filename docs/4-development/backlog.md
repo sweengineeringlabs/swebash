@@ -21,6 +21,7 @@
 - [Phase 13: Agent Infrastructure — Delegate to Rustratify (SRP)](#phase-13-agent-infrastructure-delegate-to-rustratify-srp)
 - [Backlog: Migrate bash tests from Git Bash to WSL/Linux](#backlog-migrate-bash-tests-from-git-bash-to-wsllinux)
 - [Backlog: Agent documentation context injection](#backlog-agent-documentation-context-injection)
+- [Backlog: Autotest Framework Enhancements](#backlog-autotest-framework-enhancements)
 - [Future Work](#future-work)
 
 
@@ -240,6 +241,30 @@ decide to read a file before answering — adding latency and consuming tool ite
 - [x] Migrate `@rscagent` to use `docs` field instead of inline path list
 - [x] Migrate `@seaaudit` to reference SEA architecture docs if available
 - [x] Document the feature in agent architecture docs
+
+## Backlog: Autotest Framework Enhancements
+
+**Problem**: `swebash-autotest` has several limitations that reduce its effectiveness for comprehensive interactive shell testing.
+
+**Current Limitations**:
+1. Timeout parameter is accepted but ignored (`driver.rs:220-228`) — tests can hang forever
+2. Per-step output not tracked — validation runs against combined output, not per-command
+3. No true interactive mode — commands sent all at once, no prompt waiting or mid-session reactions
+
+**Enhancements**:
+
+- [ ] **AT-1**: Enforce timeouts using async/threads in `wait_with_timeout()`
+- [ ] **AT-2**: Implement PTY-based driver for true interactive testing (wait for prompts, react to output)
+- [ ] **AT-3**: Track output per-step instead of combined session output
+- [ ] **AT-4**: Add retry logic for flaky tests (retry N times before failing)
+- [ ] **AT-5**: Add watch mode (re-run tests on file changes during development)
+- [ ] **AT-6**: Add snapshot/golden file testing for output validation
+- [ ] **AT-7**: Integrate with code coverage tools
+- [ ] **AT-8**: Add GitHub Actions integration (PR comments, status checks)
+- [ ] **AT-9**: Add historical trend analysis in reports
+- [ ] **AT-10**: Investigate parallelism isolation issues with shared state
+
+**Files**: `features/autotest/src/driver.rs`, `features/autotest/src/executor.rs`
 
 ## Future Work
 - Evaluate Loom (tokio-rs/loom) for exhaustive concurrency testing of async task coordination
