@@ -78,14 +78,14 @@
 
 | Test | Steps | Expected |
 |------|-------|----------|
-| History file | Run a few commands, then exit | `~/.swebash_history` file exists |
+| History file | Run a few commands, then exit | `~/.local/state/swebash/history` file exists (XDG-compliant) |
 | History persistence | Restart shell | Previous commands available via arrow keys |
 
 ## 6b. Workspace Sandbox
 
 | Test | Command | Expected |
 |------|---------|----------|
-| Default workspace | `./sbh run` then `pwd` | Shows `~/workspace/` (auto-created if missing) |
+| Default workspace | `./sbh run` then `pwd` | Shows `~/.local/share/swebash/workspace/` (XDG-compliant, auto-created if missing) |
 | Sandbox status | `workspace` | Shows enabled, root path, allowed paths with modes |
 | Read-only default | `touch foo` | Denied: `sandbox: write access denied for '...'` |
 | Switch to RW | `workspace rw` then `touch foo` | File created successfully |

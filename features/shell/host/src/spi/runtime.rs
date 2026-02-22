@@ -1,9 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use wasmtime::*;
 
+use super::git_gates::GitGateEnforcer;
 use super::state::{HostState, SandboxPolicy};
 
 /// Engine WASM bytes embedded at compile time by build.rs.
@@ -15,7 +17,11 @@ const EMBEDDED_ENGINE_WASM: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/en
 /// If the `ENGINE_WASM` environment variable is set at runtime, the module is
 /// loaded from that file path (useful during development).  Otherwise the
 /// compile-time embedded bytes are used.
-pub fn setup(sandbox: SandboxPolicy, initial_cwd: PathBuf) -> Result<(Store<HostState>, Instance)> {
+pub fn setup(
+    sandbox: SandboxPolicy,
+    initial_cwd: PathBuf,
+    git_enforcer: Option<Arc<GitGateEnforcer>>,
+) -> Result<(Store<HostState>, Instance)> {
     let engine = Engine::default();
 
     let module = if let Ok(path) = std::env::var("ENGINE_WASM") {
@@ -32,6 +38,7 @@ pub fn setup(sandbox: SandboxPolicy, initial_cwd: PathBuf) -> Result<(Store<Host
         virtual_cwd: initial_cwd,
         virtual_env: HashMap::new(),
         removed_env: HashSet::new(),
+        git_enforcer,
     };
     let mut store = Store::new(&engine, state);
     let mut linker = Linker::new(&engine);

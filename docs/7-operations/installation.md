@@ -410,9 +410,11 @@ hint = "gray"
 
 ### Command History
 
-History is saved automatically:
-- **Linux / WSL2**: `~/.swebash_history`
-- **Windows**: `%USERPROFILE%\.swebash_history`
+History is saved automatically (XDG-compliant):
+- **Linux / WSL2**: `~/.local/state/swebash/history`
+- **Windows**: `%USERPROFILE%\.local\state\swebash\history`
+
+Legacy `~/.swebash_history` files are automatically migrated on first run.
 
 ---
 
@@ -646,14 +648,26 @@ Remove-Item "C:\Windows\System32\swebash.exe"
 
 **Linux / WSL2**
 ```bash
-rm ~/.swebash_history
+# XDG-compliant locations
+rm -rf ~/.config/swebash
+rm -rf ~/.local/share/swebash
+rm -rf ~/.local/state/swebash
 rm ~/.swebashrc
+
+# Legacy locations (if present)
+rm -f ~/.swebash_history
 ```
 
 **Windows (PowerShell)**
 ```powershell
-Remove-Item "$env:USERPROFILE\.swebash_history"
+# XDG-compliant locations
+Remove-Item -Recurse "$env:USERPROFILE\.config\swebash"
+Remove-Item -Recurse "$env:USERPROFILE\.local\share\swebash"
+Remove-Item -Recurse "$env:USERPROFILE\.local\state\swebash"
 Remove-Item "$env:USERPROFILE\.swebashrc"
+
+# Legacy locations (if present)
+Remove-Item -ErrorAction SilentlyContinue "$env:USERPROFILE\.swebash_history"
 ```
 
 ### Remove Build Artifacts
@@ -747,13 +761,17 @@ $env:RUST_LOG = "swebash_ai=debug"
 
 **Linux / WSL2**
 ```bash
-ls -la ~/.swebash_history
-chmod 644 ~/.swebash_history
+# Check XDG-compliant location
+ls -la ~/.local/state/swebash/history
+chmod 644 ~/.local/state/swebash/history
+
+# Check if legacy file exists (should be auto-migrated)
+ls -la ~/.swebash_history 2>/dev/null
 ```
 
 **Windows (PowerShell)**
 ```powershell
-Get-Acl "$env:USERPROFILE\.swebash_history"
+Get-Acl "$env:USERPROFILE\.local\state\swebash\history"
 ```
 
 ---

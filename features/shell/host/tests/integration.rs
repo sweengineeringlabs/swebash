@@ -11,6 +11,12 @@ fn host_exe() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_swebash"))
 }
 
+/// Returns the XDG-compliant history file path for a given HOME directory.
+/// Path: $HOME/.local/state/swebash/history
+fn xdg_history_path(home: &Path) -> PathBuf {
+    home.join(".local").join("state").join("swebash").join("history")
+}
+
 /// Run shell commands and return (stdout, stderr).
 fn run(commands: &[&str]) -> (String, String) {
     run_in(&std::env::current_dir().unwrap(), commands)
@@ -444,8 +450,8 @@ fn history_file_created() {
         Some(dir.path()),
     );
 
-    // Check that .swebash_history file was created
-    let history_file = dir.path().join(".swebash_history");
+    // Check that XDG-compliant history file was created (~/.local/state/swebash/history)
+    let history_file = xdg_history_path(dir.path());
     assert!(
         history_file.exists(),
         "history file should be created at {:?}",
@@ -464,7 +470,7 @@ fn history_persists_commands() {
         Some(dir.path()),
     );
 
-    let history_file = dir.path().join(".swebash_history");
+    let history_file = xdg_history_path(dir.path());
     assert!(history_file.exists(), "history file should exist");
 
     // Read history file and verify commands were saved
@@ -496,7 +502,7 @@ fn history_ignores_empty_lines() {
         Some(dir.path()),
     );
 
-    let history_file = dir.path().join(".swebash_history");
+    let history_file = xdg_history_path(dir.path());
     let history_content = std::fs::read_to_string(&history_file)
         .expect("should be able to read history file");
 
@@ -523,7 +529,7 @@ fn history_ignores_space_prefix() {
         Some(dir.path()),
     );
 
-    let history_file = dir.path().join(".swebash_history");
+    let history_file = xdg_history_path(dir.path());
     let history_content = std::fs::read_to_string(&history_file)
         .expect("should be able to read history file");
 
@@ -620,7 +626,7 @@ fn ai_mode_preserves_history() {
         Some(dir.path()),
     );
 
-    let history_file = dir.path().join(".swebash_history");
+    let history_file = xdg_history_path(dir.path());
     let history_content = std::fs::read_to_string(&history_file)
         .expect("should be able to read history file");
 
@@ -1051,5 +1057,349 @@ fn dotenv_exe_dir_takes_precedence_over_cwd() {
         out.contains("SWEBASH_TEST_PREC=exe_dir"),
         "exe-dir .env should take precedence over cwd .env. stdout length: {}",
         out.len()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tests — setup command
+// ---------------------------------------------------------------------------
+
+#[test]
+fn setup_command_recognized() {
+    // The "setup" command should be recognized by the REPL and not produce
+    // an "unknown command" error or be dispatched to the WASM engine.
+    // Because setup reads stdin interactively, it will hit EOF immediately
+    // and either skip or abort — the key thing is it doesn't error as an
+    // unknown command.
+    let dir = TestDir::new("setup_cmd");
+    let (out, err) = run_in(dir.path(), &["setup"]);
+    // "setup" should NOT produce a "No such file or directory" error
+    // (which would indicate it was dispatched as an external command).
+    assert!(
+        !err.contains("No such file or directory"),
+        "setup should be handled as a built-in, not an external command. stderr: {err}"
+    );
+    // It should also NOT go through wasm eval (which would try to run it as
+    // a shell builtin and fail with "unknown command").
+    assert!(
+        !out.contains("unknown command"),
+        "setup should be intercepted before WASM dispatch. stdout: {out}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tests — git gate enforcement
+// ---------------------------------------------------------------------------
+
+#[test]
+fn git_gate_blocks_commit_on_protected_branch() {
+    // Set up a git repo with a .swebash/git.toml that blocks commits on main
+    let dir = TestDir::new("git_gate_commit");
+
+    // Initialize a git repo
+    Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output()
+        .expect("git init failed");
+    Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    // Create initial commit so HEAD exists
+    std::fs::write(dir.path().join("README.md"), "init\n").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    // Write a .swebash/git.toml that denies commits on main
+    let swebash_dir = dir.path().join(".swebash");
+    std::fs::create_dir_all(&swebash_dir).unwrap();
+    std::fs::write(
+        swebash_dir.join("git.toml"),
+        r#"
+user_id = "test"
+
+[[gates]]
+branch = "main"
+can_commit = "deny"
+can_push = "allow"
+can_merge = "allow"
+can_force_push = "deny"
+"#,
+    )
+    .unwrap();
+
+    // Stage a file and try to commit via the shell
+    std::fs::write(dir.path().join("test.txt"), "content\n").unwrap();
+    let (out, err) = run_in(dir.path(), &["git add test.txt", "git commit -m test_commit"]);
+
+    // The commit should be blocked
+    let combined = format!("{out}{err}");
+    assert!(
+        combined.contains("denied") || combined.contains("safety gates"),
+        "git commit on main should be denied by gate rules. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn git_gate_allows_commit_on_open_branch() {
+    // Set up a git repo with a .swebash/git.toml that allows commits on dev
+    let dir = TestDir::new("git_gate_allow");
+
+    // Initialize a git repo
+    Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output()
+        .expect("git init failed");
+    Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    // Create initial commit so HEAD exists
+    std::fs::write(dir.path().join("README.md"), "init\n").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    // Create and switch to dev branch
+    Command::new("git")
+        .args(["checkout", "-b", "dev_test"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    // Write a .swebash/git.toml that allows everything on dev_test
+    let swebash_dir = dir.path().join(".swebash");
+    std::fs::create_dir_all(&swebash_dir).unwrap();
+    std::fs::write(
+        swebash_dir.join("git.toml"),
+        r#"
+user_id = "test"
+
+[[gates]]
+branch = "main"
+can_commit = "deny"
+can_push = "deny"
+can_merge = "deny"
+can_force_push = "deny"
+
+[[gates]]
+branch = "dev_test"
+can_commit = "allow"
+can_push = "allow"
+can_merge = "allow"
+can_force_push = "allow"
+"#,
+    )
+    .unwrap();
+
+    // Stage a file and commit via the shell
+    std::fs::write(dir.path().join("test.txt"), "content\n").unwrap();
+    let (out, err) = run_in(
+        dir.path(),
+        &["git add test.txt", "git commit -m test_commit_on_dev"],
+    );
+
+    // The commit should succeed (no denial message)
+    let combined = format!("{out}{err}");
+    assert!(
+        !combined.contains("denied"),
+        "git commit on dev_test should be allowed. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn git_gate_denies_force_push_on_protected_branch() {
+    // Set up a git repo with a .swebash/git.toml that denies force-push on main
+    let dir = TestDir::new("git_gate_forcepush");
+
+    // Initialize a git repo
+    Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output()
+        .expect("git init failed");
+    Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    std::fs::write(dir.path().join("README.md"), "init\n").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    // Write a .swebash/git.toml that denies force-push on main
+    let swebash_dir = dir.path().join(".swebash");
+    std::fs::create_dir_all(&swebash_dir).unwrap();
+    std::fs::write(
+        swebash_dir.join("git.toml"),
+        r#"
+user_id = "test"
+
+[[gates]]
+branch = "main"
+can_commit = "allow"
+can_push = "allow"
+can_merge = "allow"
+can_force_push = "deny"
+"#,
+    )
+    .unwrap();
+
+    // Try to force-push (will fail anyway since no remote, but gate should
+    // catch it before git even runs)
+    let (out, err) = run_in(dir.path(), &["git push --force origin main"]);
+
+    let combined = format!("{out}{err}");
+    assert!(
+        combined.contains("denied") || combined.contains("safety gates"),
+        "git push --force on main should be denied. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn git_gate_no_config_allows_everything() {
+    // Without .swebash/git.toml, all git operations should pass through
+    let dir = TestDir::new("git_gate_noconfig");
+
+    // Initialize a git repo
+    Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output()
+        .expect("git init failed");
+    Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    std::fs::write(dir.path().join("README.md"), "init\n").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    // Stage a file and commit — should work without any gate interference
+    std::fs::write(dir.path().join("test.txt"), "content\n").unwrap();
+    let (out, err) = run_in(
+        dir.path(),
+        &["git add test.txt", "git commit -m nogate_commit"],
+    );
+
+    let combined = format!("{out}{err}");
+    assert!(
+        !combined.contains("denied") && !combined.contains("safety gates"),
+        "without git.toml, commit should not be blocked. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn git_gate_passthrough_commands_always_allowed() {
+    // Read-only git commands (status, log, diff) should never be blocked
+    let dir = TestDir::new("git_gate_passthrough");
+
+    Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output()
+        .expect("git init failed");
+    Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    std::fs::write(dir.path().join("README.md"), "init\n").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    // Set up strict gate rules — deny everything
+    let swebash_dir = dir.path().join(".swebash");
+    std::fs::create_dir_all(&swebash_dir).unwrap();
+    std::fs::write(
+        swebash_dir.join("git.toml"),
+        r#"
+user_id = "test"
+
+[[gates]]
+branch = "main"
+can_commit = "deny"
+can_push = "deny"
+can_merge = "deny"
+can_force_push = "deny"
+"#,
+    )
+    .unwrap();
+
+    // Run git status and git log — these should always work
+    let (out, err) = run_in(dir.path(), &["git status", "git log --oneline"]);
+
+    let combined = format!("{out}{err}");
+    assert!(
+        !combined.contains("denied"),
+        "git status and git log should never be blocked. stdout: {out}, stderr: {err}"
     );
 }

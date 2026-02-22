@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, Result};
 use wasmtime::*;
 
+use super::git_gates::GitGateEnforcer;
 use super::state::{HostState, SandboxPolicy};
 
 /// Unique identifier for a tab.
@@ -141,8 +142,9 @@ impl TabManager {
         &mut self,
         cwd: PathBuf,
         sandbox: SandboxPolicy,
+        git_enforcer: Option<Arc<GitGateEnforcer>>,
     ) -> Result<usize> {
-        let (mut store, instance) = super::runtime::setup(sandbox, cwd)?;
+        let (mut store, instance) = super::runtime::setup(sandbox, cwd, git_enforcer)?;
 
         let shell_init = instance
             .get_typed_func::<(), ()>(&mut store, "shell_init")

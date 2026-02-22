@@ -28,7 +28,10 @@ impl TestContext {
         let _ = std::fs::remove_dir_all(&home_dir);
         std::fs::create_dir_all(&home_dir).unwrap();
 
-        let history_file = home_dir.join(".swebash_history");
+        // XDG-compliant: ~/.local/state/swebash/history
+        let state_dir = home_dir.join(".local").join("state").join("swebash");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        let history_file = state_dir.join("history");
 
         TestContext {
             home_dir,

@@ -1,7 +1,9 @@
 use anyhow::Result;
+use std::io::{BufRead, Write};
 use std::process::Command;
 use wasmtime::*;
 
+use crate::spi::git_gates::{check_git_operation, GateResult};
 use crate::spi::sandbox::{check_path_with_cwd, AccessKind};
 use crate::spi::state::HostState;
 
@@ -55,6 +57,40 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
 
             let program = parts[0];
             let args = &parts[1..];
+
+            // Git safety gate check
+            if program == "git" {
+                if let Some(ref enforcer) = caller.data().git_enforcer {
+                    match check_git_operation(enforcer, args, &virtual_cwd) {
+                        GateResult::Allowed => {}
+                        GateResult::BlockedWithOverride(msg) => {
+                            let stderr = std::io::stderr();
+                            let mut err_handle = stderr.lock();
+                            let _ = err_handle.write_all(msg.as_bytes());
+                            let _ = err_handle.flush();
+
+                            let stdin = std::io::stdin();
+                            let mut answer = String::new();
+                            match stdin.lock().read_line(&mut answer) {
+                                Ok(_) if answer.trim().eq_ignore_ascii_case("yes") => {
+                                    // User confirmed override — proceed
+                                }
+                                _ => {
+                                    let _ = err_handle.write_all(b"Operation cancelled.\n");
+                                    return -1;
+                                }
+                            }
+                        }
+                        GateResult::Denied(msg) => {
+                            let stderr = std::io::stderr();
+                            let mut err_handle = stderr.lock();
+                            let _ = err_handle.write_all(msg.as_bytes());
+                            let _ = err_handle.write_all(b"\n");
+                            return -1;
+                        }
+                    }
+                }
+            }
 
             // Build the child command with virtual CWD and env overlays
             let build_cmd = |cmd: &mut Command| {

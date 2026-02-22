@@ -349,7 +349,7 @@ The sandbox shall intercept all filesystem operations at the host import boundar
 | **State** | Implemented |
 | **Verification** | Test |
 | **Traces to** | STK-04 → `host/src/spi/config.rs` |
-| **Acceptance** | Config loaded from `~/.config/swebash/config.toml` with `[workspace]` section; `SWEBASH_WORKSPACE` env var overrides config root; default workspace is `~/workspace/` in read-only mode |
+| **Acceptance** | Config loaded from `~/.config/swebash/config.toml` with `[workspace]` section; `SWEBASH_WORKSPACE` env var overrides config root; default workspace is `~/.local/share/swebash/workspace/` in read-only mode (XDG-compliant) |
 
 Configuration precedence: `SWEBASH_WORKSPACE` env var > `config.toml` > `~/workspace/` default. When the env var is set, the workspace defaults to read-write (backward compatible).
 
@@ -496,7 +496,7 @@ Tab bar format: `[N:icon:label]` where icon is `>` (Shell), `AI` (AI), or `H` (H
 | **State** | Implemented |
 | **Verification** | Test |
 | **Traces to** | STK-08 → `readline/src/core/history.rs` |
-| **Acceptance** | Commands saved to `~/.swebash_history`; max 1000 entries with automatic rotation; ignores empty lines, duplicates, and space-prefixed commands; persists across sessions via Drop trait |
+| **Acceptance** | Commands saved to `~/.local/state/swebash/history` (XDG-compliant); max 1000 entries with automatic rotation; ignores empty lines, duplicates, and space-prefixed commands; persists across sessions via Drop trait; auto-migrates legacy `~/.swebash_history` |
 
 #### FR-501: Tab completion
 
@@ -944,7 +944,7 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 |------|--------|---------|
 | `~/.config/swebash/config.toml` | TOML | Workspace sandbox configuration |
 | `~/.swebashrc` | TOML | Readline configuration |
-| `~/.swebash_history` | Text | Persistent command history |
+| `~/.local/state/swebash/history` | Text | Persistent command history (XDG-compliant) |
 | `~/.config/swebash/agents.yaml` | YAML | User-defined agent overrides |
 | `~/.config/swebash/docs/` | Directory | Agent reference documentation |
 
@@ -1107,7 +1107,7 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 | Input | `~/.config/swebash/config.toml` | TOML workspace configuration |
 | Input | `~/.swebashrc` | TOML readline configuration |
 | Input | `~/.config/swebash/agents.yaml` | YAML agent definitions |
-| Input/Output | `~/.swebash_history` | Newline-delimited command history |
+| Input/Output | `~/.local/state/swebash/history` | Newline-delimited command history (XDG-compliant) |
 | Input | `~/.config/swebash/docs/` | Markdown reference documents for agents |
 
 ---

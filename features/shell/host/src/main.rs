@@ -152,10 +152,33 @@ async fn main() -> Result<()> {
     let rl_config = ReadlineConfig::load("swebash");
 
     // Initialize history with file persistence (shared across all tabs)
+    // XDG-compliant: ~/.local/state/swebash/history
     let history_path = std::env::var_os("HOME")
         .map(PathBuf::from)
         .or_else(dirs::home_dir)
-        .map(|h| h.join(".swebash_history"))
+        .map(|h| {
+            let xdg_state_dir = h.join(".local").join("state").join("swebash");
+            let xdg_history_path = xdg_state_dir.join("history");
+            let legacy_path = h.join(".swebash_history");
+
+            // Ensure XDG state directory exists
+            if let Err(e) = std::fs::create_dir_all(&xdg_state_dir) {
+                eprintln!("warning: could not create {}: {e}", xdg_state_dir.display());
+            }
+
+            // Migrate legacy history file to XDG location if needed
+            if legacy_path.exists() && !xdg_history_path.exists() {
+                if let Err(e) = std::fs::rename(&legacy_path, &xdg_history_path) {
+                    eprintln!(
+                        "warning: could not migrate {} to {}: {e}",
+                        legacy_path.display(),
+                        xdg_history_path.display()
+                    );
+                }
+            }
+
+            xdg_history_path
+        })
         .unwrap_or_else(|| PathBuf::from(".swebash_history"));
     let history = Arc::new(Mutex::new(History::with_file(
         rl_config.max_history_size,

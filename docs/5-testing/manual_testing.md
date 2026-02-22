@@ -96,6 +96,7 @@ export LLM_PROVIDER=anthropic
 | [Tab Tests](manual_tab_tests.md) | Tab commands, CWD isolation, tab bar, shortcuts, mode tabs | 68 |
 | [AI Tests](manual_ai_tests.md) | AI commands, agents, config, memory, docs context | 97 |
 | [RAG Tests](manual_rag_tests.md) | RAG indexing, retrieval, staleness, vector stores, SweVecDB | 53 |
+| [Git Safety Gate Tests](manual_git_gates_tests.md) | Setup wizard, branch pipeline, safety gates, overrides | 67 |
 | [sbh Launcher Tests](manual_sbh_tests.md) | sbh/sbh.ps1 help, build, test, gen-aws-docs | 42 |
 
 ---
@@ -117,11 +118,12 @@ cargo test -p swebash-ai -p swebash
 |-------|----------|-------|
 | Engine unit tests | `features/shell/engine/src/` | 20 |
 | Readline unit tests | `features/shell/readline/src/` | 54 |
-| Host integration | `features/shell/host/tests/integration.rs` | 60 |
+| Host unit tests | `features/shell/host/src/spi/{git_config,git_gates,config}.rs` | 52 |
+| Host integration | `features/shell/host/tests/integration.rs` | 66 |
 | Host readline tests | `features/shell/host/tests/readline_tests.rs` | 19 |
 | AI unit tests | `features/ai/src/` | 123 |
 | AI integration | `features/ai/tests/integration.rs` | 189 |
-| **Total** | | **465** |
+| **Total** | | **523** |
 
 ### Agent-Specific Automated Tests
 
@@ -198,3 +200,63 @@ cargo test -p swebash-ai -p swebash
 | `test_agent_directives_override_defaults` | AI unit | Agent-level directives replace default directives |
 | `test_agent_empty_directives_suppresses_defaults` | AI unit | Agent with `directives: []` has no directives block |
 | `test_directives_ordering_with_docs_and_think_first` | AI unit | Order: `<directives>` → `<documentation>` → prompt → thinkFirst suffix |
+
+### Git Safety Gate Automated Tests
+
+| Test | Suite | Verifies |
+|------|-------|----------|
+| `default_pipeline_has_six_branches` | Host unit | Pipeline generates exactly 6 branches |
+| `default_pipeline_branch_names` | Host unit | Branch names: main, dev_{user}, test, integration, uat, staging-prod |
+| `default_pipeline_dev_branch_uses_user_id` | Host unit | Dev branch name uses user ID |
+| `default_pipeline_roles` | Host unit | Correct BranchRole for each pipeline position |
+| `default_pipeline_protection_flags` | Host unit | main=protected, dev=open, rest=protected |
+| `default_gates_protected_branch_blocks_commit_push_merge` | Host unit | Protected → BlockWithOverride for commit/push/merge, Deny for force-push |
+| `default_gates_open_branch_allows_everything` | Host unit | Open → Allow for all operations |
+| `default_gates_count_matches_pipeline` | Host unit | One gate rule per pipeline branch |
+| `gate_action_serde_roundtrip` | Host unit | GateAction serializes/deserializes correctly |
+| `git_config_serde_roundtrip` | Host unit | Full GitConfig survives TOML roundtrip |
+| `gate_action_display` | Host unit | Display trait outputs snake_case strings |
+| `branch_role_display` | Host unit | Display trait for all 7 roles |
+| `empty_pipeline_produces_no_gates` | Host unit | Empty pipeline → empty gates |
+| `gate_action_deserialized_from_snake_case` | Host unit | TOML snake_case → GateAction enum |
+| `empty_args_allowed` | Host unit | No git args → Allowed |
+| `unknown_subcommand_allowed` | Host unit | `git status` → Allowed (passthrough) |
+| `unknown_branch_allowed` | Host unit | Branch not in gates → Allowed |
+| `commit_on_protected_branch_blocked_with_override` | Host unit | `git commit` on main → BlockedWithOverride |
+| `commit_on_open_branch_allowed` | Host unit | `git commit` on dev → Allowed |
+| `push_on_protected_branch_blocked_with_override` | Host unit | `git push` on main → BlockedWithOverride |
+| `push_on_open_branch_allowed` | Host unit | `git push` on dev → Allowed |
+| `force_push_on_protected_branch_denied` | Host unit | `git push --force` on main → Denied |
+| `force_push_short_flag_on_protected_branch_denied` | Host unit | `git push -f` on main → Denied |
+| `force_with_lease_on_protected_branch_denied` | Host unit | `git push --force-with-lease` → Denied |
+| `force_push_on_open_branch_allowed` | Host unit | `git push --force` on dev → Allowed |
+| `merge_on_protected_branch_blocked_with_override` | Host unit | `git merge` on main → BlockedWithOverride |
+| `rebase_on_protected_branch_blocked_with_override` | Host unit | `git rebase` on main → BlockedWithOverride |
+| `merge_on_open_branch_allowed` | Host unit | `git merge` on dev → Allowed |
+| `all_protected_branches_block_commit` | Host unit | All 5 protected branches block commit |
+| `all_protected_branches_deny_force_push` | Host unit | All 5 protected branches deny force-push |
+| `git_log_always_allowed` | Host unit | `git log` → Allowed on any branch |
+| `git_diff_always_allowed` | Host unit | `git diff` → Allowed on any branch |
+| `git_branch_always_allowed` | Host unit | `git branch` → Allowed on any branch |
+| `enforcer_with_no_gates_allows_everything` | Host unit | Empty enforcer → all operations Allowed |
+| `enforcer_gate_lookup` | Host unit | gate_for() finds correct branch or None |
+| `blocked_message_contains_branch_name` | Host unit | Override message includes branch name and operation |
+| `denied_message_contains_branch_name` | Host unit | Deny message includes branch name, operation, "denied" |
+| `custom_deny_commit_on_branch` | Host unit | Custom Deny gate → Denied result |
+| `custom_allow_force_push` | Host unit | Custom Allow gate for force-push → Allowed |
+| `default_config_setup_completed_false` | Host unit | Default config: setup_completed=false, git=None |
+| `default_config_workspace_defaults` | Host unit | Default workspace: root=~/.local/share/swebash/workspace, mode=ro, enabled=true (XDG-compliant) |
+| `serde_roundtrip_default_config` | Host unit | Default SwebashConfig survives TOML roundtrip |
+| `serde_roundtrip_with_git_config` | Host unit | Config with git section survives roundtrip |
+| `deserialize_legacy_config_without_git_fields` | Host unit | Pre-git-gates config.toml loads with defaults |
+| `deserialize_with_setup_completed_true` | Host unit | setup_completed parsed from TOML |
+| `to_policy_preserves_enabled_flag` | Host unit | Disabled sandbox → policy.enabled=false |
+| `to_policy_sets_rw_mode` | Host unit | mode="rw" → ReadWrite in policy |
+| `parse_mode_variants` | Host unit | All mode string variants parsed correctly |
+| `save_config_serializes_git_section` | Host unit | Serialized output contains [git], gates, setup_completed |
+| `setup_command_recognized` | Host integration | `setup` not treated as external command |
+| `git_gate_blocks_commit_on_protected_branch` | Host integration | .swebash/git.toml deny → commit blocked |
+| `git_gate_allows_commit_on_open_branch` | Host integration | Allow gate → commit succeeds |
+| `git_gate_denies_force_push_on_protected_branch` | Host integration | Force-push on main → denied |
+| `git_gate_no_config_allows_everything` | Host integration | No .swebash/git.toml → all operations pass |
+| `git_gate_passthrough_commands_always_allowed` | Host integration | git status/log always allowed even with deny gates |

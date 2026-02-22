@@ -1,5 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use super::git_gates::GitGateEnforcer;
 
 /// Whether a path rule grants read-only or read-write access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,4 +73,6 @@ pub struct HostState {
     /// Keys explicitly removed via `unset`. These suppress fallback to the
     /// process environment in `host_get_env` / `host_list_env`.
     pub removed_env: HashSet<String>,
+    /// Git safety gate enforcer (shared across tabs via `Arc`).
+    pub git_enforcer: Option<Arc<GitGateEnforcer>>,
 }

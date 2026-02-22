@@ -6,15 +6,33 @@
 
 ## Table of Contents
 
+- [XDG Base Directory Specification](#xdg-base-directory-specification)
 - [Workspace Sandbox](#workspace-sandbox)
 - [Environment Variables](#environment-variables)
 - [Quick Start](#quick-start)
 - [Graceful Degradation](#graceful-degradation)
 
+---
+
+## XDG Base Directory Specification
+
+swebash follows the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html), a Linux/Unix standard for where applications store files:
+
+| Variable | Default | Purpose | swebash Usage |
+|----------|---------|---------|---------------|
+| `XDG_CONFIG_HOME` | `~/.config` | Configuration files | `~/.config/swebash/config.toml`, `agents.yaml` |
+| `XDG_DATA_HOME` | `~/.local/share` | Application data | `~/.local/share/swebash/workspace/` (default workspace) |
+| `XDG_STATE_HOME` | `~/.local/state` | Logs, history | `~/.local/state/swebash/history` |
+| `XDG_CACHE_HOME` | `~/.cache` | Cache (disposable) | *(not currently used)* |
+
+This separation ensures:
+- **Config** (`~/.config/swebash/`) — settings you might want to version control or sync
+- **Data** (`~/.local/share/swebash/`) — workspace files, agent docs
+- **State** — history files that are machine-specific
 
 ## Workspace Sandbox
 
-The workspace sandbox controls which filesystem paths the shell can access. It defaults to `~/workspace/` in read-only mode.
+The workspace sandbox controls which filesystem paths the shell can access. It defaults to `~/.local/share/swebash/workspace/` in read-only mode (XDG Base Directory compliant).
 
 ### Config File
 
@@ -22,9 +40,9 @@ Persistent workspace settings are stored in `~/.config/swebash/config.toml`:
 
 ```toml
 [workspace]
-root = "~/workspace"    # Workspace root directory (supports ~ expansion)
-mode = "ro"             # Default access mode: "ro" or "rw"
-enabled = true          # Whether sandbox enforcement is active
+root = "~/.local/share/swebash/workspace"  # Workspace root directory (XDG-compliant, supports ~ expansion)
+mode = "ro"                                 # Default access mode: "ro" or "rw"
+enabled = true                              # Whether sandbox enforcement is active
 
 [[workspace.allow]]     # Additional allowed paths (repeatable)
 path = "~/projects"
@@ -50,7 +68,7 @@ Workspace root is resolved in this order (first match wins):
 
 1. `SWEBASH_WORKSPACE` environment variable
 2. `root` in `~/.config/swebash/config.toml`
-3. `~/workspace/` (default)
+3. `~/.local/share/swebash/workspace/` (XDG-compliant default)
 
 When `SWEBASH_WORKSPACE` is set via environment variable, the workspace defaults to **read-write** mode (the user explicitly chose the workspace).
 

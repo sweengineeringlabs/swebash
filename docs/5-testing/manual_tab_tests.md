@@ -30,7 +30,7 @@
 
 | Test | Command | Expected |
 |------|---------|----------|
-| List default | `tab` | Shows one tab: `*1  [>:~/workspace]` (active marker, shell icon, CWD) |
+| List default | `tab` | Shows one tab: `*1  [>:~/.local/share/swebash/workspace]` (active marker, shell icon, XDG-compliant CWD) |
 | List alias | `tab list` | Same output as `tab` |
 | Unknown subcommand | `tab foo` | Prints `tab: unknown subcommand 'foo'` |
 | Tab zero | `tab 0` | Prints `tab: invalid tab number` |
