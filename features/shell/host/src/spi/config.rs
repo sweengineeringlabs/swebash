@@ -80,7 +80,8 @@ pub struct AllowEntry {
 }
 
 fn default_workspace_root() -> String {
-    "~/.config/swebash/workspace".to_string()
+    std::env::var("SWEBASH_WORKSPACE")
+        .unwrap_or_else(|_| "~/.config/swebash/workspace".to_string())
 }
 
 fn default_mode_str() -> String {
@@ -201,6 +202,8 @@ mod tests {
 
     #[test]
     fn default_config_workspace_defaults() {
+        // Clear env var to test the true default
+        std::env::remove_var("SWEBASH_WORKSPACE");
         let config = SwebashConfig::default();
         assert_eq!(config.workspace.root, "~/.config/swebash/workspace");
         assert_eq!(config.workspace.mode, "ro");
@@ -210,10 +213,21 @@ mod tests {
 
     #[test]
     fn default_workspace_follows_xdg_spec() {
+        // Clear env var to test the true default
+        std::env::remove_var("SWEBASH_WORKSPACE");
         // XDG Base Directory Specification: config goes in ~/.config/<app>
         let root = default_workspace_root();
         assert!(root.starts_with("~/.config/swebash"));
         assert!(root.contains("workspace"));
+    }
+
+    #[test]
+    fn env_var_overrides_default_workspace() {
+        let test_path = "/custom/workspace/path";
+        std::env::set_var("SWEBASH_WORKSPACE", test_path);
+        let root = default_workspace_root();
+        assert_eq!(root, test_path);
+        std::env::remove_var("SWEBASH_WORKSPACE");
     }
 
     #[test]
