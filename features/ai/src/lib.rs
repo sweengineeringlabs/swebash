@@ -52,6 +52,16 @@ pub async fn create_ai_service() -> AiResult<DefaultAiService> {
 /// When `sandbox` is provided, filesystem and command executor tools are
 /// wrapped to enforce path restrictions, preventing AI tools from accessing
 /// files outside the allowed workspace.
+///
+/// ## Mock Provider
+///
+/// When `LLM_PROVIDER=mock`, creates a mock service that doesn't require
+/// API keys. This enables deterministic agent behavior testing in autotest.
+///
+/// Mock behaviour is configured via environment variables:
+/// - `SWEBASH_MOCK_RESPONSE`: Fixed response text
+/// - `SWEBASH_MOCK_RESPONSE_FILE`: Path to file containing response
+/// - `SWEBASH_MOCK_ERROR`: Force error mode
 pub async fn create_ai_service_with_sandbox(
     sandbox: Option<std::sync::Arc<ToolSandbox>>,
 ) -> AiResult<DefaultAiService> {
@@ -61,6 +71,12 @@ pub async fn create_ai_service_with_sandbox(
         return Err(AiError::NotConfigured(
             "AI features disabled (SWEBASH_AI_ENABLED=false)".into(),
         ));
+    }
+
+    // Mock provider path: no API key required
+    if config.provider == "mock" {
+        config.tool_sandbox = sandbox;
+        return create_mock_ai_service(config).await;
     }
 
     if !config.has_api_key() && !config.has_oauth_credentials() {
@@ -85,6 +101,31 @@ pub async fn create_ai_service_with_sandbox(
 
     // Build the agent registry with built-in agents
     let agents = core::agents::builtins::create_default_registry(llm, config.clone());
+
+    Ok(DefaultAiService::new(client, agents, config))
+}
+
+/// Create a mock AI service for testing.
+///
+/// Uses `MockAiClient` which delegates to `MockLlmService`. Behaviour
+/// is determined by environment variables (see `mock_client` module).
+async fn create_mock_ai_service(config: AiConfig) -> AiResult<DefaultAiService> {
+    use spi::mock_client::MockAiClient;
+
+    let mock_client = MockAiClient::new();
+    let llm = mock_client.llm_service();
+
+    // Wrap with logging if configured
+    let client = spi::logging::LoggingAiClient::wrap(Box::new(mock_client), config.log_dir.clone());
+
+    // Build the agent registry with built-in agents
+    let agents = core::agents::builtins::create_default_registry(llm, config.clone());
+
+    tracing::info!(
+        provider = "mock",
+        model = "mock-model",
+        "Mock AI service initialized for testing"
+    );
 
     Ok(DefaultAiService::new(client, agents, config))
 }

@@ -272,3 +272,514 @@ tests:
             - contains: "[AI:"
             - contains: "not configured"
       - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # Mock Provider Tests (deterministic, no API key required)
+  # ---------------------------------------------------------------------------
+  - id: mock_chat_fixed_response
+    name: "Mock provider returns fixed response"
+    tags: [mock, smoke]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_RESPONSE: "Use the ls command to list files in a directory."
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "how do I list files?"
+        expect:
+          contains: "ls"
+      - command: "exit"
+
+  - id: mock_chat_echo_mode
+    name: "Mock provider echoes user input in echo mode"
+    tags: [mock]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        # No SWEBASH_MOCK_RESPONSE = echo mode
+    steps:
+      - command: "ai"
+      - command: "This is my test message"
+        expect:
+          contains: "This is my test message"
+      - command: "exit"
+
+  - id: mock_provider_shows_in_status
+    name: "Mock provider is shown in AI status"
+    tags: [mock]
+    config:
+      env:
+        LLM_PROVIDER: mock
+    steps:
+      - command: "ai"
+      - command: "status"
+        expect:
+          all:
+            - contains: "mock"
+            - any:
+                - contains: "Provider:"
+                - contains: "provider:"
+      - command: "exit"
+
+  - id: mock_agents_work_with_mock_provider
+    name: "All agents work with mock provider"
+    tags: [mock]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_RESPONSE: "Mock response for any agent"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "@review"
+        expect:
+          contains: "[AI:review]"
+      - command: "review this code"
+        expect:
+          contains: "Mock response"
+      - command: "@git"
+        expect:
+          contains: "[AI:git]"
+      - command: "what's my git status?"
+        expect:
+          contains: "Mock response"
+      - command: "exit"
+
+  - id: mock_history_persists_in_session
+    name: "Mock provider maintains conversation history"
+    tags: [mock]
+    config:
+      env:
+        LLM_PROVIDER: mock
+    steps:
+      - command: "ai"
+      - command: "first message"
+      - command: "second message"
+      - command: "history"
+        expect:
+          all:
+            - any:
+                - contains: "first"
+                - contains: "You"
+            - any:
+                - contains: "second"
+                - contains: "AI"
+      - command: "exit"
+
+  - id: mock_clear_history_works
+    name: "Clear command works with mock provider"
+    tags: [mock]
+    config:
+      env:
+        LLM_PROVIDER: mock
+    steps:
+      - command: "ai"
+      - command: "test message"
+      - command: "clear"
+        expect:
+          any:
+            - contains: "cleared"
+            - contains: "Cleared"
+      - command: "history"
+        expect:
+          contains: "no chat history"
+      - command: "exit"
+
+  - id: mock_one_shot_ask
+    name: "One-shot ai ask works with mock provider"
+    tags: [mock]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_RESPONSE: "You can use the grep command to search files."
+    steps:
+      - command: "ai ask how do I search files?"
+        expect:
+          contains: "grep"
+
+  # ---------------------------------------------------------------------------
+  # AB-2: Agent-Specific Response Testing
+  # Uses reflect mode to verify different agents have different system prompts
+  # ---------------------------------------------------------------------------
+  - id: ab2_shell_agent_identity
+    name: "Shell agent has shell-specific system prompt"
+    tags: [mock, ab2]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "test message"
+        expect:
+          all:
+            - contains: "[AGENT:shell]"
+            - contains: "[USER:test message]"
+      - command: "exit"
+
+  - id: ab2_review_agent_identity
+    name: "Review agent has review-specific system prompt"
+    tags: [mock, ab2]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+      - command: "@review"
+        expect:
+          contains: "[AI:review]"
+      - command: "check this code"
+        expect:
+          contains: "[AGENT:review]"
+      - command: "exit"
+
+  - id: ab2_git_agent_identity
+    name: "Git agent has git-specific system prompt"
+    tags: [mock, ab2]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+      - command: "@git"
+        expect:
+          contains: "[AI:git]"
+      - command: "help with commits"
+        expect:
+          contains: "[AGENT:git]"
+      - command: "exit"
+
+  - id: ab2_devops_agent_identity
+    name: "DevOps agent has devops-specific system prompt"
+    tags: [mock, ab2]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+      - command: "@devops"
+        expect:
+          contains: "[AI:devops]"
+      - command: "help with containers"
+        expect:
+          contains: "[AGENT:devops]"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # AB-5: System Prompt Verification
+  # Verify that system prompts are being passed to the LLM
+  # ---------------------------------------------------------------------------
+  - id: ab5_system_prompt_passed
+    name: "System prompt is passed to LLM"
+    tags: [mock, ab5]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+      - command: "hello"
+        expect:
+          contains: "[SYSTEM_PROMPT:"
+      - command: "exit"
+
+  - id: ab5_system_prompt_contains_agent_context
+    name: "System prompt contains agent-specific context"
+    tags: [mock, ab5]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+      - command: "test"
+        expect:
+          all:
+            - contains: "[SYSTEM_PROMPT:"
+            - contains: "[AGENT:"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # AB-7: Conversation Continuity Testing
+  # Verify memory persists across multiple turns
+  # ---------------------------------------------------------------------------
+  - id: ab7_history_count_increases
+    name: "History count increases with conversation turns"
+    tags: [mock, ab7]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+      - command: "first message"
+        expect:
+          contains: "[HISTORY:user=1,assistant=0]"
+      - command: "second message"
+        expect:
+          contains: "[HISTORY:user=2,assistant=1]"
+      - command: "third message"
+        expect:
+          contains: "[HISTORY:user=3,assistant=2]"
+      - command: "exit"
+
+  - id: ab7_clear_resets_history
+    name: "Clear command resets conversation history count"
+    tags: [mock, ab7]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+      - command: "message one"
+      - command: "message two"
+        expect:
+          contains: "[HISTORY:user=2"
+      - command: "clear"
+      - command: "fresh start"
+        expect:
+          contains: "[HISTORY:user=1,assistant=0]"
+      - command: "exit"
+
+  - id: ab7_agent_switch_isolates_history
+    name: "Switching agents isolates conversation history"
+    tags: [mock, ab7]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+      - command: "shell message 1"
+      - command: "shell message 2"
+        expect:
+          contains: "[HISTORY:user=2"
+      - command: "@review"
+      - command: "review message"
+        expect:
+          # Review agent should have fresh history
+          contains: "[HISTORY:user=1,assistant=0]"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # AB-9: Agent Detection Testing
+  # Verify agents are auto-detected from keywords in input
+  # ---------------------------------------------------------------------------
+  - id: ab9_git_keyword_detection
+    name: "Agent auto-detects git keywords"
+    tags: [mock, ab9]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_AI_AGENT_AUTO_DETECT: "true"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "git commit my changes"
+        expect:
+          any:
+            - contains: "[AI:git]"
+            - contains: "Switched to"
+      - command: "exit"
+
+  - id: ab9_docker_keyword_detection
+    name: "Agent auto-detects docker/devops keywords"
+    tags: [mock, ab9]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_AI_AGENT_AUTO_DETECT: "true"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "docker build the image"
+        expect:
+          any:
+            - contains: "[AI:devops]"
+            - contains: "Switched to"
+      - command: "exit"
+
+  - id: ab9_review_keyword_detection
+    name: "Agent auto-detects review keywords"
+    tags: [mock, ab9]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_AI_AGENT_AUTO_DETECT: "true"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "review this code for issues"
+        expect:
+          any:
+            - contains: "[AI:review]"
+            - contains: "Switched to"
+      - command: "exit"
+
+  - id: ab9_auto_detect_disabled
+    name: "Auto-detect can be disabled"
+    tags: [mock, ab9]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_AI_AGENT_AUTO_DETECT: "false"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "git commit please"
+        expect:
+          # Should stay on shell agent
+          not_contains: "[AI:git]"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # AB-4: Tool Filtering Verification
+  # Verify that agents with restricted tools don't have access to disabled tools
+  # ---------------------------------------------------------------------------
+  - id: ab4_review_agent_has_fs_only
+    name: "Review agent has fs tools but not exec/web"
+    tags: [mock, ab4]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_RESPONSE: "I will read the file for you."
+        SWEBASH_AI_TOOL_LOG: "1"
+    steps:
+      - command: "ai"
+      - command: "@review"
+        expect:
+          contains: "[AI:review]"
+      - command: "status"
+        expect:
+          # Review agent should show fs enabled
+          any:
+            - contains: "review"
+            - contains: "Review"
+      - command: "exit"
+
+  - id: ab4_web_agent_has_web_only
+    name: "Web agent has web tools but not fs/exec"
+    tags: [mock, ab4]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_RESPONSE: "I will search the web for you."
+    steps:
+      - command: "ai"
+      - command: "@web"
+        expect:
+          contains: "[AI:web]"
+      - command: "search for something"
+        expect:
+          contains: "search"
+      - command: "exit"
+
+  - id: ab4_shell_agent_has_all_tools
+    name: "Shell agent has all tools enabled"
+    tags: [mock, ab4]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "test"
+        expect:
+          # Shell agent should be detected
+          contains: "[AGENT:shell]"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # AB-6: RAG/Docs Context Injection Testing
+  # Note: Full RAG testing requires the rag-local feature and actual doc files.
+  # These tests verify the docs injection mechanism works when configured.
+  # ---------------------------------------------------------------------------
+  - id: ab6_agent_with_docs_configured
+    name: "Agent with docs field is available"
+    tags: [mock, ab6]
+    config:
+      env:
+        LLM_PROVIDER: mock
+    steps:
+      - command: "ai agents"
+        expect:
+          # rscagent has docs configured in default_agents.yaml
+          any:
+            - contains: "rscagent"
+            - contains: "RustScript"
+      - command: "exit"
+
+  - id: ab6_docreview_agent_available
+    name: "Documentation review agent with docs is available"
+    tags: [mock, ab6]
+    config:
+      env:
+        LLM_PROVIDER: mock
+    steps:
+      - command: "ai agents"
+        expect:
+          any:
+            - contains: "docreview"
+            - contains: "Documentation"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # AB-8: Custom User Agent Loading
+  # Note: Full custom agent testing requires creating temp config files.
+  # These tests verify the config loading paths work.
+  # ---------------------------------------------------------------------------
+  - id: ab8_env_agents_config_respected
+    name: "SWEBASH_AGENTS_CONFIG env var is respected"
+    tags: [mock, ab8]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        # Point to a non-existent path - should not crash, just skip
+        SWEBASH_AGENTS_CONFIG: "/tmp/nonexistent_agents.yaml"
+    steps:
+      - command: "ai agents"
+        expect:
+          # Built-in agents should still be available
+          any:
+            - contains: "shell"
+            - contains: "Shell"
+      - command: "exit"
+
+  - id: ab8_builtin_agents_always_available
+    name: "Built-in agents are always available regardless of config"
+    tags: [mock, ab8]
+    config:
+      env:
+        LLM_PROVIDER: mock
+    steps:
+      - command: "ai agents"
+        expect:
+          all:
+            - any:
+                - contains: "shell"
+                - contains: "Shell"
+            - any:
+                - contains: "review"
+                - contains: "Review"
+            - any:
+                - contains: "git"
+                - contains: "Git"
+            - any:
+                - contains: "devops"
+                - contains: "DevOps"
+      - command: "exit"

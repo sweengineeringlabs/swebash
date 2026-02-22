@@ -12,6 +12,32 @@ use crate::api::types::{AiEvent, ChatRequest, ChatResponse};
 use chat_engine::{ChatEngine, ChatMessage};
 use react::AgentEvent;
 
+/// Check if tool call logging is enabled via `SWEBASH_AI_TOOL_LOG` env var.
+fn tool_log_enabled() -> bool {
+    std::env::var("SWEBASH_AI_TOOL_LOG")
+        .map(|v| v == "1" || v.to_lowercase() == "true")
+        .unwrap_or(false)
+}
+
+/// Emit a structured tool call log to stderr.
+///
+/// Format: `SWEBASH_TOOL:{"tool":"name","params":{}}`
+///
+/// This enables autotest to parse tool calls without relying on stdout format.
+/// Note: Tool parameters are not currently available from AgentEvent::ToolStart,
+/// so we emit an empty params object. Future versions may include parameters
+/// if the react crate exposes them.
+fn log_tool_call(tool: &str) {
+    if !tool_log_enabled() {
+        return;
+    }
+    let log_entry = serde_json::json!({
+        "tool": tool,
+        "params": {}
+    });
+    eprintln!("SWEBASH_TOOL:{}", log_entry);
+}
+
 /// Process a chat message using the chat engine.
 ///
 /// The engine manages conversation history internally, including
@@ -70,6 +96,9 @@ pub async fn chat_streaming(
                     }
                 }
                 AgentEvent::ToolStart { tool, .. } => {
+                    // Log tool call for autotest when SWEBASH_AI_TOOL_LOG=1
+                    log_tool_call(&tool);
+
                     if tx.send(AiEvent::ToolCall { name: tool }).await.is_err() {
                         break;
                     }

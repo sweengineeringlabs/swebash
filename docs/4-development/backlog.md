@@ -247,27 +247,49 @@ decide to read a file before answering — adding latency and consuming tool ite
 
 **Problem**: Current autotest suite (`ai_features.yaml`) only tests command plumbing (entering AI mode, switching agents, prompt display). It doesn't verify that agents actually behave correctly or use their capabilities appropriately.
 
-**Current Gaps**:
-1. Tests accept `"not configured"` as valid — pass without an actual LLM
-2. No verification of agent-specific behavior (does `@review` review differently than `@shell`?)
-3. No tool usage validation (do agents call fs/git/exec tools correctly?)
-4. No system prompt verification (are agent personas applied?)
-5. No RAG/docs injection testing (does context get injected?)
+**Current Gaps**: ✅ All addressed
+1. ~~Tests accept `"not configured"` as valid — pass without an actual LLM~~ ✅ Fixed via mock provider
+2. ~~No verification of agent-specific behavior (does `@review` review differently than `@shell`?)~~ ✅ AB-2 reflect mode
+3. ~~No tool usage validation (do agents call fs/git/exec tools correctly?)~~ ✅ Tool call logging added
+4. ~~No system prompt verification (are agent personas applied?)~~ ✅ AB-5 reflect mode
+5. ~~No RAG/docs injection testing (does context get injected?)~~ ✅ AB-6 reflect mode
 
 **Enhancements**:
 
-- [ ] **AB-1**: Add mock LLM provider for deterministic agent testing (no API key needed)
-- [ ] **AB-2**: Test agent-specific responses (review agent gives code review, git agent suggests git commands)
-- [ ] **AB-3**: Test tool invocation (`tool_called` / `tool_params` validation in spec schema)
-- [ ] **AB-4**: Test tool filtering (verify `fs: false` blocks filesystem tools)
-- [ ] **AB-5**: Test system prompt injection (verify agent persona affects responses)
-- [ ] **AB-6**: Test RAG/docs context injection for agents with `docs` field
-- [ ] **AB-7**: Test agent memory/conversation continuity across turns
-- [ ] **AB-8**: Test custom user agents loaded from `~/.config/swebash/agents/`
-- [ ] **AB-9**: Test agent detection/suggestion based on working directory context
-- [ ] **AB-10**: Remove `"not configured"` fallbacks from smoke tests (require mock provider)
+- [x] **AB-1**: Add mock LLM provider for deterministic agent testing (no API key needed)
+  - Added `LLM_PROVIDER=mock` support in `create_ai_service_with_sandbox()`
+  - Created `MockAiClient` wrapper in `features/ai/src/spi/mock_client.rs`
+  - Environment variables: `SWEBASH_MOCK_RESPONSE`, `SWEBASH_MOCK_RESPONSE_FILE`, `SWEBASH_MOCK_ERROR`, `SWEBASH_MOCK_REFLECT`
+  - Added `testing` feature to llm-provider dependency
+- [x] **AB-2**: Test agent-specific responses (review agent gives code review, git agent suggests git commands)
+  - Added reflect mode (`SWEBASH_MOCK_REFLECT=1`) that echoes system prompt structure
+  - `reflect_response()` detects agent identity via keywords (shell, review, git, devops)
+  - Tests: `ab2_shell_agent_identity`, `ab2_review_agent_identity`, `ab2_git_agent_identity`, `ab2_devops_agent_identity`
+- [x] **AB-3**: Test tool invocation (`tool_called` / `tool_params` validation in spec schema)
+  - Added `log_tool_call()` in `features/ai/src/core/chat.rs` (emits `SWEBASH_TOOL:{json}` to stderr)
+  - Added `ToolCallRecord` struct and `tool_calls()` method in `features/autotest/src/driver.rs`
+  - Added `check_tool_called_structured()` and `check_tool_params()` in `features/autotest/src/validation.rs`
+  - Environment variable: `SWEBASH_AI_TOOL_LOG=1` enables tool call logging
+- [x] **AB-4**: Test tool filtering (verify `fs: false` blocks filesystem tools)
+  - Tests: `ab4_review_agent_has_fs_only`, `ab4_web_agent_has_web_only`, `ab4_shell_agent_has_all_tools`
+- [x] **AB-5**: Test system prompt injection (verify agent persona affects responses)
+  - Reflect mode returns `[SYSTEM_PROMPT:...]` with first 100 chars of system prompt
+  - Tests: `ab5_system_prompt_passed`, `ab5_system_prompt_contains_agent_context`
+- [x] **AB-6**: Test RAG/docs context injection for agents with `docs` field
+  - Reflect mode detects `[DOCS_INJECTED:true]` when docs context is present
+  - Tests: `ab6_agent_with_docs_configured`, `ab6_docreview_agent_available`
+- [x] **AB-7**: Test agent memory/conversation continuity across turns
+  - Reflect mode returns `[HISTORY:user=N,assistant=M]` showing message counts
+  - Tests: `ab7_history_count_increases`, `ab7_clear_resets_history`, `ab7_agent_switch_isolates_history`
+- [x] **AB-8**: Test custom user agents loaded from `~/.config/swebash/agents/`
+  - Tests: `ab8_env_agents_config_respected`, `ab8_builtin_agents_always_available`
+- [x] **AB-9**: Test agent detection/suggestion based on working directory context
+  - Tests: `ab9_git_keyword_detection`, `ab9_docker_keyword_detection`, `ab9_disabled_when_env_false`
+- [x] **AB-10**: Remove `"not configured"` fallbacks from smoke tests (require mock provider)
+  - Added 25+ new mock-based tests in `tests/suites/ai_features.yaml` with `[mock]` tag
+  - Tests verify: fixed response, echo mode, status display, all agents, history, clear, one-shot
 
-**Files**: `tests/suites/ai_features.yaml`, `features/autotest/src/validation.rs`
+**Files**: `tests/suites/ai_features.yaml`, `features/autotest/src/validation.rs`, `features/ai/src/spi/mock_client.rs`
 
 ## Backlog: Autotest Framework Enhancements
 

@@ -7,6 +7,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Errors that can occur during shell driving.
@@ -90,6 +92,20 @@ pub struct DriverOutput {
     pub duration: Duration,
 }
 
+/// A tool call record parsed from structured logging.
+///
+/// Emitted when `SWEBASH_AI_TOOL_LOG=1` via stderr in format:
+/// `SWEBASH_TOOL:{"tool":"name","params":{...}}`
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ToolCallRecord {
+    /// Tool name (e.g., "read_file", "execute_command").
+    pub tool: String,
+
+    /// Tool parameters as JSON.
+    #[serde(default)]
+    pub params: serde_json::Value,
+}
+
 impl DriverOutput {
     /// Check if stdout contains a string.
     pub fn stdout_contains(&self, s: &str) -> bool {
@@ -109,6 +125,33 @@ impl DriverOutput {
     /// Check if the process exited successfully.
     pub fn success(&self) -> bool {
         self.exit_status.map(|s| s.success()).unwrap_or(false)
+    }
+
+    /// Parse tool call records from stderr.
+    ///
+    /// Looks for lines matching `SWEBASH_TOOL:{...}` and parses them as JSON.
+    /// Invalid lines are silently skipped.
+    ///
+    /// Requires `SWEBASH_AI_TOOL_LOG=1` to be set when running swebash.
+    pub fn tool_calls(&self) -> Vec<ToolCallRecord> {
+        self.stderr
+            .lines()
+            .filter_map(|line| line.strip_prefix("SWEBASH_TOOL:"))
+            .filter_map(|json| serde_json::from_str(json).ok())
+            .collect()
+    }
+
+    /// Check if a specific tool was called.
+    pub fn has_tool_call(&self, tool_name: &str) -> bool {
+        self.tool_calls().iter().any(|tc| tc.tool == tool_name)
+    }
+
+    /// Get all calls to a specific tool.
+    pub fn get_tool_calls(&self, tool_name: &str) -> Vec<ToolCallRecord> {
+        self.tool_calls()
+            .into_iter()
+            .filter(|tc| tc.tool == tool_name)
+            .collect()
     }
 }
 
@@ -401,5 +444,174 @@ mod tests {
         assert!(output.stderr_contains("warning"));
         assert!(output.combined().contains("hello"));
         assert!(output.combined().contains("warning"));
+    }
+
+    #[test]
+    fn tool_calls_parses_stderr() {
+        let stderr = r#"SWEBASH_TOOL:{"tool":"read_file","params":{"path":"/tmp/test.txt"}}
+some other output
+SWEBASH_TOOL:{"tool":"execute_command","params":{"command":"ls -la"}}
+"#;
+        let output = DriverOutput {
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+            exit_status: None,
+            duration: Duration::ZERO,
+        };
+
+        let calls = output.tool_calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].tool, "read_file");
+        assert_eq!(calls[0].params["path"], "/tmp/test.txt");
+        assert_eq!(calls[1].tool, "execute_command");
+        assert_eq!(calls[1].params["command"], "ls -la");
+    }
+
+    #[test]
+    fn tool_calls_skips_invalid_json() {
+        let stderr = r#"SWEBASH_TOOL:not valid json
+SWEBASH_TOOL:{"tool":"valid","params":{}}
+"#;
+        let output = DriverOutput {
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+            exit_status: None,
+            duration: Duration::ZERO,
+        };
+
+        let calls = output.tool_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].tool, "valid");
+    }
+
+    #[test]
+    fn has_tool_call_checks_name() {
+        let stderr = r#"SWEBASH_TOOL:{"tool":"read_file","params":{}}
+SWEBASH_TOOL:{"tool":"write_file","params":{}}
+"#;
+        let output = DriverOutput {
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+            exit_status: None,
+            duration: Duration::ZERO,
+        };
+
+        assert!(output.has_tool_call("read_file"));
+        assert!(output.has_tool_call("write_file"));
+        assert!(!output.has_tool_call("execute_command"));
+    }
+
+    #[test]
+    fn get_tool_calls_filters_by_name() {
+        let stderr = r#"SWEBASH_TOOL:{"tool":"read_file","params":{"path":"a.txt"}}
+SWEBASH_TOOL:{"tool":"write_file","params":{}}
+SWEBASH_TOOL:{"tool":"read_file","params":{"path":"b.txt"}}
+"#;
+        let output = DriverOutput {
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+            exit_status: None,
+            duration: Duration::ZERO,
+        };
+
+        let reads = output.get_tool_calls("read_file");
+        assert_eq!(reads.len(), 2);
+        assert_eq!(reads[0].params["path"], "a.txt");
+        assert_eq!(reads[1].params["path"], "b.txt");
+    }
+
+    #[test]
+    fn tool_calls_handles_null_params() {
+        let stderr = r#"SWEBASH_TOOL:{"tool":"some_tool","params":null}
+SWEBASH_TOOL:{"tool":"another"}
+"#;
+        let output = DriverOutput {
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+            exit_status: None,
+            duration: Duration::ZERO,
+        };
+
+        let calls = output.tool_calls();
+        assert_eq!(calls.len(), 2);
+        assert!(calls[0].params.is_null());
+        assert!(calls[1].params.is_null()); // default
+    }
+
+    /// Integration test: verify that env vars set via DriverBuilder::env() are
+    /// actually passed to the swebash subprocess.
+    ///
+    /// This test is marked #[ignore] because it requires the swebash binary to exist.
+    /// Run with: cargo test -p swebash-autotest env_var_passed_to_subprocess -- --ignored
+    #[test]
+    #[ignore]
+    fn env_var_passed_to_subprocess() {
+        let driver = DriverBuilder::new()
+            .env("LLM_PROVIDER", "mock")
+            .env("SWEBASH_MOCK_RESPONSE", "Test response from mock")
+            .build()
+            .expect("driver should build");
+
+        let output = driver.run(&["printenv LLM_PROVIDER"]).expect("should run");
+
+        // The printenv command should output "mock", not the config file value
+        assert!(
+            output.stdout_contains("mock"),
+            "Expected LLM_PROVIDER=mock in output, got: {}",
+            output.stdout
+        );
+    }
+
+    /// Integration test: verify that mock provider chat works.
+    ///
+    /// This test is marked #[ignore] because it requires the swebash binary to exist.
+    /// Run with: cargo test -p swebash-autotest mock_provider_chat -- --ignored
+    #[test]
+    #[ignore]
+    fn mock_provider_chat() {
+        let driver = DriverBuilder::new()
+            .env("LLM_PROVIDER", "mock")
+            .env("SWEBASH_AI_ENABLED", "true")
+            .env("SWEBASH_MOCK_RESPONSE", "Hello from mock!")
+            .build()
+            .expect("driver should build");
+
+        let output = driver.run(&["ai", "test message"]).expect("should run");
+
+        // Should get the mock response
+        assert!(
+            output.stdout_contains("Hello from mock!"),
+            "Expected 'Hello from mock!' in chat output, got: {}",
+            output.stdout
+        );
+    }
+
+    /// Integration test: verify reflect mode works.
+    ///
+    /// This test is marked #[ignore] because it requires the swebash binary to exist.
+    /// Run with: cargo test -p swebash-autotest mock_provider_reflect -- --ignored
+    #[test]
+    #[ignore]
+    fn mock_provider_reflect() {
+        let driver = DriverBuilder::new()
+            .env("LLM_PROVIDER", "mock")
+            .env("SWEBASH_AI_ENABLED", "true")
+            .env("SWEBASH_MOCK_REFLECT", "1")
+            .build()
+            .expect("driver should build");
+
+        let output = driver.run(&["ai", "test reflect"]).expect("should run");
+
+        // Should get reflect mode output with AGENT and HISTORY tags
+        assert!(
+            output.stdout_contains("[AGENT:shell]"),
+            "Expected '[AGENT:shell]' in reflect output, got: {}",
+            output.stdout
+        );
+        assert!(
+            output.stdout_contains("[HISTORY:"),
+            "Expected '[HISTORY:' in reflect output, got: {}",
+            output.stdout
+        );
     }
 }

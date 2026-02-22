@@ -6,6 +6,7 @@
 pub mod chat_provider;
 pub mod config;
 pub mod logging;
+pub mod mock_client;
 pub mod rag;
 
 use async_trait::async_trait;

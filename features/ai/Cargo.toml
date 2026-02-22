@@ -16,7 +16,7 @@ rag-swevecdb = ["llmrag/rag-swevecdb"] # Remote SweVecDB vector store
 chat-engine = { package = "chat", version = "0.1.0", registry = "local" }
 
 # LLM provider (from rustratify) — used for CompletionBuilder and service creation
-llm-provider = { version = "0.1.0", registry = "local", features = ["oauth"] }
+llm-provider = { version = "0.1.0", registry = "local", features = ["oauth", "testing"] }
 
 # OAuth credentials (from rustratify) — Claude Code ~/.claude/.credentials.json support
 llm-oauth = { version = "0.1.0", registry = "local" }
