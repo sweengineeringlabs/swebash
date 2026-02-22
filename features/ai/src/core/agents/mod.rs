@@ -156,8 +156,20 @@ impl EngineFactory<ConfigAgent> for SwebashEngineFactory {
                         };
 
                         // Build the index eagerly (blocking in the factory).
-                        if let Some(ref base_dir) = self.config.docs_base_dir {
+                        // Prefer the per-agent base_dir (directory of the defining YAML)
+                        // over the global docs_base_dir from AiConfig.
+                        let effective_base_dir = descriptor
+                            .docs_base_dir()
+                            .map(|p| p.to_path_buf())
+                            .or_else(|| self.config.docs_base_dir.clone());
+                        if let Some(ref base_dir) = effective_base_dir {
                             let sources = descriptor.docs_sources();
+                            tracing::debug!(
+                                agent = %descriptor.id(),
+                                base_dir = %base_dir.display(),
+                                sources = ?sources,
+                                "RAG index build: resolved base_dir and sources"
+                            );
                             if !sources.is_empty() {
                                 if let Ok(handle) = tokio::runtime::Handle::try_current() {
                                     let svc = index_svc.clone();

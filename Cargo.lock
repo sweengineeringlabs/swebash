@@ -397,14 +397,16 @@ dependencies = [
 [[package]]
 name = "client-rust"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e05a7adcb40b12fb9a939f9df7606227d6db273d43cb3340f84ba012ee9ee78f"
 dependencies = [
- "reqwest",
+ "bytes",
+ "parking_lot",
  "serde",
  "serde_json",
- "serde_yaml",
+ "thiserror 2.0.18",
  "tokio",
+ "tracing",
+ "url",
+ "uuid",
 ]
 
 [[package]]

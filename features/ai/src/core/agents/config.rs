@@ -308,6 +308,11 @@ pub struct ConfigAgent {
     docs_strategy: DocsStrategy,
     /// Source glob patterns for RAG indexing (only used when `docs_strategy == Rag`).
     docs_sources: Vec<String>,
+    /// Base directory for resolving `docs_sources` glob patterns.
+    ///
+    /// Set to the directory containing the YAML file that defined this agent.
+    /// Falls back to the global `AiConfig::docs_base_dir` in the factory when `None`.
+    docs_base_dir: Option<PathBuf>,
     /// Number of RAG results per query (only used when `docs_strategy == Rag`).
     docs_top_k: usize,
     /// Per-agent override for score display in rag_search output.
@@ -466,6 +471,7 @@ impl ConfigAgent {
             max_iterations,
             docs_strategy,
             docs_sources,
+            docs_base_dir: base_dir.map(|p| p.to_path_buf()),
             docs_top_k,
             docs_show_scores,
             docs_min_score,
@@ -491,6 +497,15 @@ impl ConfigAgent {
     /// Source glob patterns for RAG indexing.
     pub fn docs_sources(&self) -> &[String] {
         &self.docs_sources
+    }
+
+    /// Base directory for resolving `docs_sources` glob patterns.
+    ///
+    /// Returns the directory of the YAML file that defined this agent, or `None`
+    /// if the agent was created without a base directory (e.g. from embedded YAML).
+    /// The factory falls back to the global `AiConfig::docs_base_dir` when `None`.
+    pub fn docs_base_dir(&self) -> Option<&Path> {
+        self.docs_base_dir.as_deref()
     }
 
     /// Number of search results per RAG query.

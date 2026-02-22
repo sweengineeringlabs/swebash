@@ -22,3 +22,8 @@ strip = true
 # adds the `oauth` feature while preserving API compatibility with `react`.
 [patch."file:///mnt/c/Users/elvis/.cargo/registry.local/index"]
 llm-provider = { path = "vendor/llm-provider" }
+
+# Redirect the optional `client-rust` dep in llmrag-core (rag-swevecdb feature)
+# to the local SweVecDB workspace instead of crates.io (where it is not published).
+[patch.crates-io]
+client-rust = { path = "../swevecdb/swevecdb/client/client-rust" }
