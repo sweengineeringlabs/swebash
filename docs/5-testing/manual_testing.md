@@ -94,7 +94,7 @@ export LLM_PROVIDER=anthropic
 |----------|--------|-------|
 | [Shell Tests](manual_shell_tests.md) | Shell basics, file ops, history, workspace sandbox | 32 |
 | [Tab Tests](manual_tab_tests.md) | Tab commands, CWD isolation, tab bar, shortcuts, mode tabs | 68 |
-| [AI Tests](manual_ai_tests.md) | AI commands, agents, config, memory, docs context | 97 |
+| [AI Tests](manual_ai_tests.md) | AI commands, agents, config, memory, docs context | 98 |
 | [RAG Tests](manual_rag_tests.md) | RAG indexing, retrieval, staleness, vector stores, SweVecDB | 53 |
 | [Git Safety Gate Tests](manual_git_gates_tests.md) | Setup wizard, branch pipeline, safety gates, overrides | 67 |
 | [sbh Launcher Tests](manual_sbh_tests.md) | sbh/sbh.ps1 help, build, test, gen-aws-docs | 46 |

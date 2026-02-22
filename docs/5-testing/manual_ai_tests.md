@@ -294,7 +294,8 @@ Agents can declare a `docs` section in their YAML with a `budget` (max character
 | docreview has docs | Switch to `@docreview`, inspect system prompt | System prompt contains `<documentation>` block with content from its 4 source files |
 | awscli has docs | Switch to `@awscli` (requires user config + `SWEBASH_AI_DOCS_BASE_DIR=~/.config/swebash`), inspect system prompt | System prompt contains `<documentation>` block with content from 3 AWS doc files (services_reference.md, iac_patterns.md, troubleshooting.md) |
 | Docs before prompt | Inspect `@rscagent` system prompt | `<directives>` block appears first, then `<documentation>` block, then agent's own prompt text |
-| Missing sources skipped | Set `SWEBASH_AI_DOCS_BASE_DIR` to a directory without doc files, restart | Agents start normally; missing doc sources are silently skipped |
+| Missing sources skipped | Set `SWEBASH_AI_DOCS_BASE_DIR` to a directory without doc files, restart | Agents start normally; no warnings shown (logged at DEBUG level) |
+| Debug shows missing docs | Run with `RUST_LOG=debug`, observe startup | DEBUG log shows `agent docs sources not found` with agent ID for agents with unresolved sources |
 | Budget truncation | Create an agent YAML with `docs: { budget: 100, sources: [large-file.md] }`, restart | Documentation is truncated to approximately 100 characters |
 
 ## 19d. Agent maxIterations
