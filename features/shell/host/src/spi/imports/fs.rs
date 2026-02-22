@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::fs;
 use wasmtime::*;
 
+use crate::spi::path::display_path;
 use crate::spi::sandbox::{self, check_path_with_cwd, AccessKind};
 use crate::spi::state::HostState;
 
@@ -422,11 +423,12 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
     )?;
 
     // host_get_cwd() -> i32
+    // Returns path with forward slashes for copy-paste compatibility
     linker.func_wrap(
         "env",
         "host_get_cwd",
         |mut caller: Caller<'_, HostState>| -> i32 {
-            let s = caller.data().virtual_cwd.to_string_lossy().into_owned();
+            let s = display_path(&caller.data().virtual_cwd);
             write_response(&mut caller, s.as_bytes())
         },
     )?;

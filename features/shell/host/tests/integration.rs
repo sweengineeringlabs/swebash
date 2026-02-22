@@ -29,6 +29,20 @@ fn run_in(dir: &Path, commands: &[&str]) -> (String, String) {
 
 /// Run shell commands with a specific working directory and optionally override HOME.
 fn run_in_with_home(dir: &Path, commands: &[&str], home: Option<&Path>) -> (String, String) {
+    run_in_with_workspace(dir, commands, home, Some(dir))
+}
+
+/// Run shell commands with explicit workspace control.
+/// - `dir`: working directory for the process
+/// - `commands`: shell commands to execute
+/// - `home`: optional HOME override
+/// - `workspace`: workspace root (None = use default, Some(path) = set SWEBASH_WORKSPACE)
+fn run_in_with_workspace(
+    dir: &Path,
+    commands: &[&str],
+    home: Option<&Path>,
+    workspace: Option<&Path>,
+) -> (String, String) {
     let mut input = String::new();
     for cmd in commands {
         input.push_str(cmd);
@@ -43,9 +57,10 @@ fn run_in_with_home(dir: &Path, commands: &[&str], home: Option<&Path>) -> (Stri
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    // Pin workspace to the test's working directory so the shell doesn't
-    // cd to ~ on startup (SWEBASH_WORKSPACE overrides the default).
-    command.env("SWEBASH_WORKSPACE", dir);
+    // Set workspace if provided
+    if let Some(ws_path) = workspace {
+        command.env("SWEBASH_WORKSPACE", ws_path);
+    }
 
     // Override HOME directory if provided (for testing history file location)
     if let Some(home_path) = home {
@@ -136,9 +151,10 @@ fn pwd_outputs_path() {
 fn cd_then_pwd() {
     let dir = TestDir::new("cd_pwd");
     let (out, _) = run_in(dir.path(), &["pwd"]);
-    let dir_str = dir.path().to_string_lossy();
+    // Path output uses forward slashes for copy-paste compatibility
+    let dir_str = dir.path().to_string_lossy().replace('\\', "/");
     assert!(
-        out.contains(dir_str.as_ref()),
+        out.contains(&dir_str),
         "pwd should show temp dir. stdout: {out}"
     );
 }
@@ -149,6 +165,164 @@ fn cd_nonexistent() {
     assert!(
         err.contains("no such directory"),
         "cd to missing dir should error. stderr: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tests — Path normalization (forward slashes for copy-paste compatibility)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn path_pwd_uses_forward_slashes() {
+    let dir = TestDir::new("path_pwd_fwd");
+    let (out, _) = run_in(dir.path(), &["pwd"]);
+
+    // Output should not contain backslashes (Windows path separators)
+    let pwd_line = out.lines().find(|l| l.contains("path_pwd_fwd")).unwrap_or("");
+    assert!(
+        !pwd_line.contains('\\'),
+        "pwd output should use forward slashes, not backslashes. got: {pwd_line}"
+    );
+    assert!(
+        pwd_line.contains('/'),
+        "pwd output should contain forward slashes. got: {pwd_line}"
+    );
+}
+
+#[test]
+fn path_prompt_uses_forward_slashes() {
+    let dir = TestDir::new("path_prompt_fwd");
+    let (out, _) = run_in(dir.path(), &["echo test"]);
+
+    // The prompt line contains the path followed by "/>
+    // Find a line with the ANSI color code pattern for the prompt
+    let prompt_line = out.lines().find(|l| l.contains("/>")).unwrap_or("");
+    assert!(
+        !prompt_line.contains("\\"),
+        "prompt should use forward slashes, not backslashes. got: {prompt_line}"
+    );
+}
+
+#[test]
+fn path_workspace_status_uses_forward_slashes() {
+    let dir = TestDir::new("path_ws_status");
+    let (out, _) = run_in(dir.path(), &["workspace"]);
+
+    // Check the "Root:" line
+    let root_line = out.lines().find(|l| l.starts_with("Root:")).unwrap_or("");
+    assert!(
+        !root_line.contains('\\'),
+        "workspace status Root should use forward slashes. got: {root_line}"
+    );
+
+    // Check allowed paths lines
+    for line in out.lines().filter(|l| l.trim_start().starts_with('/') || l.contains("[rw]") || l.contains("[ro]")) {
+        assert!(
+            !line.contains('\\'),
+            "workspace allowed path should use forward slashes. got: {line}"
+        );
+    }
+}
+
+#[test]
+fn path_workspace_allow_uses_forward_slashes() {
+    let workspace_dir = TestDir::new("path_ws_allow");
+    let extra_dir = TestDir::new("path_ws_allow_extra");
+
+    let (out, _) = run_in_with_workspace(
+        workspace_dir.path(),
+        &[&format!("workspace allow '{}' rw", extra_dir.path().display())],
+        None,
+        Some(workspace_dir.path()),
+    );
+
+    // The "Allowed path added:" message should use forward slashes
+    let added_line = out.lines().find(|l| l.contains("Allowed path added")).unwrap_or("");
+    assert!(
+        !added_line.contains('\\'),
+        "workspace allow output should use forward slashes. got: {added_line}"
+    );
+    assert!(
+        added_line.contains('/'),
+        "workspace allow output should contain forward slashes. got: {added_line}"
+    );
+}
+
+#[test]
+fn path_sandbox_error_uses_forward_slashes() {
+    let workspace_dir = TestDir::new("path_sandbox_err");
+    let outside_dir = TestDir::new("path_sandbox_err_outside");
+
+    let (_, err) = run_in_with_workspace(
+        workspace_dir.path(),
+        &[&format!("touch '{}/forbidden.txt'", outside_dir.path().display())],
+        None,
+        Some(workspace_dir.path()),
+    );
+
+    // The sandbox error message should use forward slashes
+    let error_line = err.lines().find(|l| l.contains("sandbox:")).unwrap_or("");
+    assert!(
+        !error_line.contains('\\'),
+        "sandbox error should use forward slashes. got: {error_line}"
+    );
+}
+
+#[test]
+fn path_copy_paste_roundtrip() {
+    // Verify that a path displayed by pwd can be used directly in cd
+    let dir = TestDir::new("path_roundtrip");
+    std::fs::create_dir_all(dir.path().join("subdir")).unwrap();
+
+    let (out, err) = run_in_with_workspace(
+        dir.path(),
+        &[
+            "workspace disable",  // Disable sandbox for this test
+            "cd subdir",
+            "pwd",
+        ],
+        None,
+        Some(dir.path()),
+    );
+
+    // The pwd output appears after "/> " on a line containing "subdir"
+    // Format: "[prompt]/> /path/to/subdir"
+    // Extract the path after "/> "
+    let pwd_output = out.lines()
+        .filter(|l| l.contains("subdir") && l.contains("/> "))
+        .filter_map(|l| l.split("/> ").last())
+        .find(|s| s.contains("subdir"))
+        .unwrap_or("");
+
+    assert!(
+        !pwd_output.is_empty() && pwd_output.contains("subdir"),
+        "pwd should show subdir path. stdout: {out}, stderr: {err}"
+    );
+    assert!(
+        !pwd_output.contains('\\'),
+        "pwd output should not contain backslashes. got: {pwd_output}"
+    );
+    assert!(
+        pwd_output.contains('/'),
+        "pwd output should contain forward slashes. got: {pwd_output}"
+    );
+
+    // Now use that path to cd back (simulating copy-paste)
+    // The path from pwd should work directly without quoting
+    let (out2, err2) = run_in_with_workspace(
+        dir.path(),
+        &[
+            "workspace disable",
+            &format!("cd {}", pwd_output.trim()),
+            "pwd",
+        ],
+        None,
+        Some(dir.path()),
+    );
+
+    assert!(
+        out2.contains("subdir"),
+        "cd with copy-pasted path should work. stdout: {out2}, stderr: {err2}"
     );
 }
 
@@ -1401,5 +1575,446 @@ can_force_push = "deny"
     assert!(
         !combined.contains("denied"),
         "git status and git log should never be blocked. stdout: {out}, stderr: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tests — workspace sandbox
+// ---------------------------------------------------------------------------
+
+#[test]
+fn workspace_status_shows_info() {
+    let dir = TestDir::new("workspace_status");
+    let (out, _) = run_in(dir.path(), &["workspace"]);
+
+    assert!(
+        out.contains("Workspace sandbox:"),
+        "workspace command should show status. stdout: {out}"
+    );
+    assert!(
+        out.contains("Root:"),
+        "workspace status should show root path. stdout: {out}"
+    );
+}
+
+#[test]
+fn workspace_write_allowed_in_workspace() {
+    let dir = TestDir::new("workspace_write_allowed");
+    let (out, err) = run_in(dir.path(), &["touch testfile.txt", "ls"]);
+
+    assert!(
+        out.contains("testfile.txt"),
+        "touch should create file in workspace. stdout: {out}, stderr: {err}"
+    );
+    assert!(
+        !err.contains("denied"),
+        "write in workspace should be allowed. stderr: {err}"
+    );
+}
+
+#[test]
+fn workspace_write_denied_outside_workspace() {
+    let workspace_dir = TestDir::new("workspace_write_denied_ws");
+    let outside_dir = TestDir::new("workspace_write_denied_outside");
+
+    // Run with workspace set to workspace_dir, try to write to outside_dir
+    let (out, err) = run_in_with_workspace(
+        workspace_dir.path(),
+        &[&format!("touch {}/forbidden.txt", outside_dir.path().display())],
+        None,
+        Some(workspace_dir.path()),
+    );
+
+    let combined = format!("{out}{err}");
+    assert!(
+        combined.contains("denied") || combined.contains("outside workspace"),
+        "write outside workspace should be denied. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn workspace_cd_denied_outside_workspace() {
+    let workspace_dir = TestDir::new("workspace_cd_denied_ws");
+    let outside_dir = TestDir::new("workspace_cd_denied_outside");
+
+    let (out, err) = run_in_with_workspace(
+        workspace_dir.path(),
+        &[&format!("cd {}", outside_dir.path().display())],
+        None,
+        Some(workspace_dir.path()),
+    );
+
+    let combined = format!("{out}{err}");
+    assert!(
+        combined.contains("denied") || combined.contains("outside workspace"),
+        "cd outside workspace should be denied. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn workspace_rw_mode_allows_write() {
+    let dir = TestDir::new("workspace_rw_mode");
+
+    // Create a config that sets the workspace to read-only, then switch to rw
+    let (out, err) = run_in(dir.path(), &[
+        "workspace ro",
+        "workspace rw",
+        "touch rw_test.txt",
+        "ls",
+    ]);
+
+    assert!(
+        out.contains("rw_test.txt"),
+        "workspace rw should allow writes. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn workspace_ro_mode_denies_write() {
+    let dir = TestDir::new("workspace_ro_mode");
+
+    let (out, err) = run_in(dir.path(), &[
+        "workspace ro",
+        "touch ro_test.txt",
+    ]);
+
+    let combined = format!("{out}{err}");
+    assert!(
+        combined.contains("denied") || combined.contains("read-only"),
+        "workspace ro should deny writes. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn workspace_allow_adds_path() {
+    let workspace_dir = TestDir::new("workspace_allow_ws");
+    let extra_dir = TestDir::new("workspace_allow_extra");
+
+    // Allow the extra directory, then write to it
+    // Note: paths must be quoted to preserve backslashes on Windows
+    let (out, err) = run_in_with_workspace(
+        workspace_dir.path(),
+        &[
+            &format!("workspace allow '{}' rw", extra_dir.path().display()),
+            &format!("cd '{}'", extra_dir.path().display()),
+            "touch allowed_file.txt",
+            "ls",
+        ],
+        None,
+        Some(workspace_dir.path()),
+    );
+
+    assert!(
+        out.contains("allowed_file.txt"),
+        "workspace allow should permit access. stdout: {out}, stderr: {err}"
+    );
+    // Verify we're actually in the extra dir, not the workspace dir
+    assert!(
+        extra_dir.path().join("allowed_file.txt").exists(),
+        "file should be created in allowed extra directory"
+    );
+}
+
+#[test]
+fn workspace_allow_ro_denies_write() {
+    let workspace_dir = TestDir::new("workspace_allow_ro_ws");
+    let extra_dir = TestDir::new("workspace_allow_ro_extra");
+
+    // Allow the extra directory as read-only, then try to write
+    // Note: paths must be quoted to preserve backslashes on Windows
+    let (out, err) = run_in_with_workspace(
+        workspace_dir.path(),
+        &[
+            &format!("workspace allow '{}' ro", extra_dir.path().display()),
+            &format!("cd '{}'", extra_dir.path().display()),
+            "touch should_fail.txt",
+        ],
+        None,
+        Some(workspace_dir.path()),
+    );
+
+    let combined = format!("{out}{err}");
+    assert!(
+        combined.contains("denied") || combined.contains("read-only"),
+        "workspace allow ro should deny writes. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn workspace_disable_allows_everything() {
+    let workspace_dir = TestDir::new("workspace_disable_ws");
+    let outside_dir = TestDir::new("workspace_disable_outside");
+
+    let (out, err) = run_in_with_workspace(
+        workspace_dir.path(),
+        &[
+            "workspace disable",
+            &format!("cd {}", outside_dir.path().display()),
+            "touch disabled_test.txt",
+            "ls",
+        ],
+        None,
+        Some(workspace_dir.path()),
+    );
+
+    assert!(
+        out.contains("disabled_test.txt"),
+        "workspace disable should allow access anywhere. stdout: {out}, stderr: {err}"
+    );
+    assert!(
+        !err.contains("denied"),
+        "workspace disable should not deny anything. stderr: {err}"
+    );
+}
+
+#[test]
+fn workspace_enable_after_disable_restricts() {
+    let workspace_dir = TestDir::new("workspace_enable_ws");
+    let outside_dir = TestDir::new("workspace_enable_outside");
+
+    let (out, err) = run_in_with_workspace(
+        workspace_dir.path(),
+        &[
+            "workspace disable",
+            "workspace enable",
+            &format!("cd {}", outside_dir.path().display()),
+        ],
+        None,
+        Some(workspace_dir.path()),
+    );
+
+    let combined = format!("{out}{err}");
+    assert!(
+        combined.contains("denied") || combined.contains("outside workspace"),
+        "workspace enable should restrict after disable. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn workspace_ls_allowed_in_workspace() {
+    let dir = TestDir::new("workspace_ls");
+    std::fs::write(dir.path().join("visible.txt"), "test").unwrap();
+
+    let (out, _) = run_in(dir.path(), &["ls"]);
+
+    assert!(
+        out.contains("visible.txt"),
+        "ls should work in workspace. stdout: {out}"
+    );
+}
+
+#[test]
+fn workspace_cat_allowed_in_workspace() {
+    let dir = TestDir::new("workspace_cat");
+    std::fs::write(dir.path().join("readable.txt"), "file contents here").unwrap();
+
+    let (out, _) = run_in(dir.path(), &["cat readable.txt"]);
+
+    assert!(
+        out.contains("file contents here"),
+        "cat should work in workspace. stdout: {out}"
+    );
+}
+
+#[test]
+fn workspace_cat_denied_outside_workspace() {
+    let workspace_dir = TestDir::new("workspace_cat_denied_ws");
+    let outside_dir = TestDir::new("workspace_cat_denied_outside");
+    std::fs::write(outside_dir.path().join("secret.txt"), "secret data").unwrap();
+
+    let (out, err) = run_in_with_workspace(
+        workspace_dir.path(),
+        &[&format!("cat {}/secret.txt", outside_dir.path().display())],
+        None,
+        Some(workspace_dir.path()),
+    );
+
+    let combined = format!("{out}{err}");
+    assert!(
+        !combined.contains("secret data"),
+        "cat should not read outside workspace. stdout: {out}"
+    );
+    assert!(
+        combined.contains("denied") || combined.contains("outside workspace"),
+        "cat outside workspace should be denied. stderr: {err}"
+    );
+}
+
+#[test]
+fn workspace_mkdir_allowed_in_workspace() {
+    let dir = TestDir::new("workspace_mkdir");
+
+    let (out, err) = run_in(dir.path(), &["mkdir subdir", "ls"]);
+
+    assert!(
+        out.contains("subdir"),
+        "mkdir should work in workspace. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn workspace_mkdir_denied_outside_workspace() {
+    let workspace_dir = TestDir::new("workspace_mkdir_denied_ws");
+    let outside_dir = TestDir::new("workspace_mkdir_denied_outside");
+
+    let (out, err) = run_in_with_workspace(
+        workspace_dir.path(),
+        &[&format!("mkdir {}/forbidden_dir", outside_dir.path().display())],
+        None,
+        Some(workspace_dir.path()),
+    );
+
+    let combined = format!("{out}{err}");
+    assert!(
+        combined.contains("denied") || combined.contains("outside workspace"),
+        "mkdir outside workspace should be denied. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn workspace_rm_allowed_in_workspace() {
+    let dir = TestDir::new("workspace_rm");
+    std::fs::write(dir.path().join("deleteme.txt"), "delete this").unwrap();
+
+    let (out, err) = run_in(dir.path(), &["rm deleteme.txt", "ls"]);
+
+    assert!(
+        !out.contains("deleteme.txt") || out.lines().filter(|l| l.contains("deleteme.txt")).count() <= 1,
+        "rm should delete file in workspace. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn workspace_rm_denied_outside_workspace() {
+    let workspace_dir = TestDir::new("workspace_rm_denied_ws");
+    let outside_dir = TestDir::new("workspace_rm_denied_outside");
+    std::fs::write(outside_dir.path().join("protected.txt"), "do not delete").unwrap();
+
+    let (out, err) = run_in_with_workspace(
+        workspace_dir.path(),
+        &[&format!("rm {}/protected.txt", outside_dir.path().display())],
+        None,
+        Some(workspace_dir.path()),
+    );
+
+    let combined = format!("{out}{err}");
+    assert!(
+        combined.contains("denied") || combined.contains("outside workspace"),
+        "rm outside workspace should be denied. stdout: {out}, stderr: {err}"
+    );
+
+    // Verify file still exists
+    assert!(
+        outside_dir.path().join("protected.txt").exists(),
+        "file outside workspace should not be deleted"
+    );
+}
+
+#[test]
+fn workspace_cp_within_workspace_allowed() {
+    let dir = TestDir::new("workspace_cp_within");
+    std::fs::write(dir.path().join("source.txt"), "copy me").unwrap();
+
+    let (out, err) = run_in(dir.path(), &["cp source.txt dest.txt", "cat dest.txt"]);
+
+    assert!(
+        out.contains("copy me"),
+        "cp within workspace should work. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn workspace_cp_to_outside_denied() {
+    let workspace_dir = TestDir::new("workspace_cp_out_ws");
+    let outside_dir = TestDir::new("workspace_cp_out_outside");
+    std::fs::write(workspace_dir.path().join("source.txt"), "sensitive").unwrap();
+
+    let (out, err) = run_in_with_workspace(
+        workspace_dir.path(),
+        &[&format!("cp source.txt {}/leaked.txt", outside_dir.path().display())],
+        None,
+        Some(workspace_dir.path()),
+    );
+
+    let combined = format!("{out}{err}");
+    assert!(
+        combined.contains("denied") || combined.contains("outside workspace"),
+        "cp to outside should be denied. stdout: {out}, stderr: {err}"
+    );
+
+    // Verify file was not created outside
+    assert!(
+        !outside_dir.path().join("leaked.txt").exists(),
+        "file should not be copied outside workspace"
+    );
+}
+
+#[test]
+fn workspace_mv_to_outside_denied() {
+    let workspace_dir = TestDir::new("workspace_mv_out_ws");
+    let outside_dir = TestDir::new("workspace_mv_out_outside");
+    std::fs::write(workspace_dir.path().join("moveme.txt"), "move test").unwrap();
+
+    let (out, err) = run_in_with_workspace(
+        workspace_dir.path(),
+        &[&format!("mv moveme.txt {}/moved.txt", outside_dir.path().display())],
+        None,
+        Some(workspace_dir.path()),
+    );
+
+    let combined = format!("{out}{err}");
+    assert!(
+        combined.contains("denied") || combined.contains("outside workspace"),
+        "mv to outside should be denied. stdout: {out}, stderr: {err}"
+    );
+
+    // Verify source file still exists (mv failed)
+    assert!(
+        workspace_dir.path().join("moveme.txt").exists(),
+        "source file should still exist after failed mv"
+    );
+}
+
+#[test]
+fn workspace_multiple_allowed_paths() {
+    let workspace_dir = TestDir::new("workspace_multi_ws");
+    let extra1 = TestDir::new("workspace_multi_extra1");
+    let extra2 = TestDir::new("workspace_multi_extra2");
+
+    // Note: paths must be quoted to preserve backslashes on Windows
+    let (out, err) = run_in_with_workspace(
+        workspace_dir.path(),
+        &[
+            &format!("workspace allow '{}' rw", extra1.path().display()),
+            &format!("workspace allow '{}' rw", extra2.path().display()),
+            &format!("touch '{}/file1.txt'", extra1.path().display()),
+            &format!("touch '{}/file2.txt'", extra2.path().display()),
+            &format!("ls '{}'", extra1.path().display()),
+            &format!("ls '{}'", extra2.path().display()),
+        ],
+        None,
+        Some(workspace_dir.path()),
+    );
+
+    assert!(
+        out.contains("file1.txt") && out.contains("file2.txt"),
+        "multiple allowed paths should work. stdout: {out}, stderr: {err}"
+    );
+}
+
+#[test]
+fn workspace_nested_path_in_workspace_allowed() {
+    let dir = TestDir::new("workspace_nested");
+    std::fs::create_dir_all(dir.path().join("level1/level2")).unwrap();
+
+    let (out, err) = run_in(dir.path(), &[
+        "cd level1/level2",
+        "touch deep_file.txt",
+        "ls",
+    ]);
+
+    assert!(
+        out.contains("deep_file.txt"),
+        "nested paths in workspace should work. stdout: {out}, stderr: {err}"
     );
 }

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use wasmtime::*;
 
+use crate::spi::path::display_path;
 use crate::spi::state::{AccessMode, HostState, PathRule};
 
 /// Helper: read a string from wasm memory at (ptr, len).
@@ -81,14 +82,14 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                     ));
                     out.push_str(&format!(
                         "Root: {}\n",
-                        sandbox.workspace_root.display()
+                        display_path(&sandbox.workspace_root)
                     ));
                     out.push_str("Allowed paths:\n");
                     for (i, rule) in sandbox.allowed_paths.iter().enumerate() {
                         let label = if i == 0 { " (workspace)" } else { "" };
                         out.push_str(&format!(
                             "  {} [{}]{}\n",
-                            rule.root.display(),
+                            display_path(&rule.root),
                             format_mode(rule.mode),
                             label,
                         ));
@@ -123,12 +124,12 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                     };
                     let expanded = expand_tilde(raw_path);
                     let canonical = expanded.canonicalize().unwrap_or(expanded);
-                    let display = canonical.display().to_string();
+                    let path_display = display_path(&canonical);
                     caller.data_mut().sandbox.allowed_paths.push(PathRule {
                         root: canonical,
                         mode,
                     });
-                    let msg = format!("Allowed path added: {} [{}]\n", display, format_mode(mode));
+                    let msg = format!("Allowed path added: {} [{}]\n", path_display, format_mode(mode));
                     write_response(&mut caller, msg.as_bytes())
                 }
                 "disable" => {

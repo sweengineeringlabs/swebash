@@ -119,11 +119,11 @@ cargo test -p swebash-ai -p swebash
 | Engine unit tests | `features/shell/engine/src/` | 20 |
 | Readline unit tests | `features/shell/readline/src/` | 54 |
 | Host unit tests | `features/shell/host/src/spi/{git_config,git_gates,config}.rs` | 52 |
-| Host integration | `features/shell/host/tests/integration.rs` | 66 |
+| Host integration | `features/shell/host/tests/integration.rs` | 94 |
 | Host readline tests | `features/shell/host/tests/readline_tests.rs` | 19 |
 | AI unit tests | `features/ai/src/` | 123 |
 | AI integration | `features/ai/tests/integration.rs` | 189 |
-| **Total** | | **523** |
+| **Total** | | **551** |
 
 ### Agent-Specific Automated Tests
 
@@ -200,6 +200,50 @@ cargo test -p swebash-ai -p swebash
 | `test_agent_directives_override_defaults` | AI unit | Agent-level directives replace default directives |
 | `test_agent_empty_directives_suppresses_defaults` | AI unit | Agent with `directives: []` has no directives block |
 | `test_directives_ordering_with_docs_and_think_first` | AI unit | Order: `<directives>` → `<documentation>` → prompt → thinkFirst suffix |
+
+### Workspace Sandbox Automated Tests
+
+| Test | Suite | Verifies |
+|------|-------|----------|
+| `workspace_status_shows_info` | Host integration | `workspace` command displays sandbox status |
+| `workspace_write_allowed_in_workspace` | Host integration | `touch` succeeds inside workspace root |
+| `workspace_write_denied_outside_workspace` | Host integration | `touch` denied outside workspace |
+| `workspace_cd_denied_outside_workspace` | Host integration | `cd` denied outside workspace |
+| `workspace_rw_mode_allows_write` | Host integration | `workspace rw` enables writes |
+| `workspace_ro_mode_denies_write` | Host integration | `workspace ro` blocks writes |
+| `workspace_allow_adds_path` | Host integration | `workspace allow PATH` adds writable path |
+| `workspace_allow_ro_denies_write` | Host integration | `workspace allow PATH ro` denies write to that path |
+| `workspace_disable_allows_everything` | Host integration | `workspace disable` bypasses sandbox |
+| `workspace_enable_after_disable_restricts` | Host integration | `workspace enable` re-activates sandbox |
+| `workspace_ls_allowed_in_workspace` | Host integration | `ls` succeeds in workspace |
+| `workspace_cat_allowed_in_workspace` | Host integration | `cat` succeeds in workspace |
+| `workspace_cat_denied_outside_workspace` | Host integration | `cat` denied outside workspace |
+| `workspace_mkdir_allowed_in_workspace` | Host integration | `mkdir` succeeds in workspace |
+| `workspace_mkdir_denied_outside_workspace` | Host integration | `mkdir` denied outside workspace |
+| `workspace_rm_allowed_in_workspace` | Host integration | `rm` succeeds in workspace |
+| `workspace_rm_denied_outside_workspace` | Host integration | `rm` denied outside workspace |
+| `workspace_cp_within_workspace_allowed` | Host integration | `cp` within workspace succeeds |
+| `workspace_cp_to_outside_denied` | Host integration | `cp` to outside workspace denied |
+| `workspace_mv_to_outside_denied` | Host integration | `mv` to outside workspace denied |
+| `workspace_multiple_allowed_paths` | Host integration | Multiple `workspace allow` paths work together |
+| `workspace_nested_path_in_workspace_allowed` | Host integration | Nested paths inside workspace allowed |
+
+### Path Normalization Automated Tests
+
+Tests verifying that paths use forward slashes for cross-platform copy-paste compatibility.
+
+| Test | Suite | Verifies |
+|------|-------|----------|
+| `unix_path_unchanged` | Host unit | Unix paths remain unchanged |
+| `windows_path_normalized` | Host unit | Windows backslashes converted to forward slashes |
+| `unc_path_normalized` | Host unit | UNC prefix `\\?\` normalized to `//?/` |
+| `mixed_separators` | Host unit | Mixed separators normalized to forward slashes |
+| `path_pwd_uses_forward_slashes` | Host integration | `pwd` output contains only forward slashes |
+| `path_prompt_uses_forward_slashes` | Host integration | Shell prompt uses forward slashes |
+| `path_workspace_status_uses_forward_slashes` | Host integration | `workspace` status uses forward slashes |
+| `path_workspace_allow_uses_forward_slashes` | Host integration | `workspace allow` output uses forward slashes |
+| `path_sandbox_error_uses_forward_slashes` | Host integration | Sandbox error messages use forward slashes |
+| `path_copy_paste_roundtrip` | Host integration | Path from `pwd` can be used directly in `cd` |
 
 ### Git Safety Gate Automated Tests
 

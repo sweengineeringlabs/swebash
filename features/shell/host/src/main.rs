@@ -16,15 +16,19 @@ use spi::tab::{TabInner, TabKind, TabManager};
 const MAX_RECENT: usize = 10;
 
 /// Shorten a CWD path by replacing the home directory prefix with `~`.
+/// Also normalizes backslashes to forward slashes for copy-paste compatibility.
 fn display_cwd(cwd: &str, home: Option<&PathBuf>) -> String {
-    match home {
+    // Normalize backslashes to forward slashes
+    let cwd = cwd.replace('\\', "/");
+
+    let result = match home {
         Some(h) => {
-            let home_str = h.to_string_lossy();
-            if cwd == home_str.as_ref() {
+            let home_str = h.to_string_lossy().replace('\\', "/");
+            if cwd == home_str {
                 String::from("~")
-            } else if cwd.starts_with(home_str.as_ref()) {
+            } else if cwd.starts_with(&home_str) {
                 let rest = &cwd[home_str.len()..];
-                if rest.starts_with('/') || rest.starts_with('\\') {
+                if rest.starts_with('/') {
                     format!("~{rest}")
                 } else {
                     cwd.to_string()
@@ -34,7 +38,9 @@ fn display_cwd(cwd: &str, home: Option<&PathBuf>) -> String {
             }
         }
         None => cwd.to_string(),
-    }
+    };
+
+    result
 }
 
 #[tokio::main]

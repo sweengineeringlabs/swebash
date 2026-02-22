@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use super::path::display_path;
 use super::state::{AccessMode, SandboxPolicy};
 
 /// The kind of access being requested.
@@ -75,7 +76,7 @@ pub fn check_access(
                 (AccessKind::Write, AccessMode::ReadWrite) => Ok(()),
                 (AccessKind::Write, AccessMode::ReadOnly) => Err(format!(
                     "sandbox: write access denied for '{}': read-only workspace",
-                    resolved.display()
+                    display_path(resolved)
                 )),
             };
         }
@@ -89,7 +90,7 @@ pub fn check_access(
     Err(format!(
         "sandbox: {} access denied for '{}': outside workspace",
         label,
-        resolved.display()
+        display_path(resolved)
     ))
 }
 
