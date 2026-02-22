@@ -13,9 +13,36 @@ struct TableColumn {
     width: usize,
 }
 
+/// Calculate visible length of a string, excluding ANSI escape codes.
+fn visible_len(s: &str) -> usize {
+    let mut len = 0;
+    let mut in_escape = false;
+    for c in s.chars() {
+        if c == '\x1b' {
+            in_escape = true;
+        } else if in_escape {
+            if c == 'm' {
+                in_escape = false;
+            }
+        } else {
+            len += 1;
+        }
+    }
+    len
+}
+
+/// Pad a string (possibly with ANSI codes) to a visible width.
+fn pad_to_width(s: &str, width: usize) -> String {
+    let visible = visible_len(s);
+    if visible >= width {
+        s.to_string()
+    } else {
+        format!("{}{}", s, " ".repeat(width - visible))
+    }
+}
+
 /// Print a formatted table with headers, separator, and alternating row colors.
 fn print_table(columns: &[TableColumn], rows: &[Vec<String>]) {
-
     // Print header
     print!("  ");
     for col in columns {
@@ -42,7 +69,8 @@ fn print_table(columns: &[TableColumn], rows: &[Vec<String>]) {
         print!("{bg_start}  ");
         for (j, col) in columns.iter().enumerate() {
             let cell = row.get(j).map(|s| s.as_str()).unwrap_or("");
-            print!("{:<width$}  ", cell, width = col.width);
+            // Use pad_to_width for proper alignment with ANSI codes
+            print!("{}  ", pad_to_width(cell, col.width));
         }
         // Pad to total width for consistent background
         println!("{bg_end}");
@@ -600,6 +628,67 @@ fn save_repo_config(git_config: &GitConfig) {
     }
 }
 
+/// Print a summary of the completed setup.
+fn print_setup_summary(config: &GitConfig) {
+    println!();
+    println!("\x1b[1;36m╔══════════════════════════════════════╗\x1b[0m");
+    println!("\x1b[1;36m║         Configuration Summary        ║\x1b[0m");
+    println!("\x1b[1;36m╚══════════════════════════════════════╝\x1b[0m");
+    println!();
+
+    // User ID
+    println!("  \x1b[1mUser ID:\x1b[0m {}", config.user_id);
+    println!();
+
+    // Pipeline branches
+    println!("  \x1b[1mBranch Pipeline:\x1b[0m");
+    let branch_columns = [
+        TableColumn { header: "BRANCH", width: 18 },
+        TableColumn { header: "PROTECTED", width: 10 },
+    ];
+    let branch_rows: Vec<Vec<String>> = config
+        .pipeline
+        .branches
+        .iter()
+        .map(|b| {
+            vec![
+                b.name.clone(),
+                if b.protected {
+                    "\x1b[33myes\x1b[0m".to_string()
+                } else {
+                    "\x1b[90mno\x1b[0m".to_string()
+                },
+            ]
+        })
+        .collect();
+    print_table(&branch_columns, &branch_rows);
+    println!();
+
+    // Gates
+    println!("  \x1b[1mSafety Gates:\x1b[0m");
+    let gate_columns = [
+        TableColumn { header: "BRANCH", width: 18 },
+        TableColumn { header: "COMMIT", width: 20 },
+        TableColumn { header: "PUSH", width: 20 },
+        TableColumn { header: "MERGE", width: 20 },
+        TableColumn { header: "FORCE-PUSH", width: 20 },
+    ];
+    let gate_rows: Vec<Vec<String>> = config
+        .gates
+        .iter()
+        .map(|g| {
+            vec![
+                g.branch.clone(),
+                format_gate_action(g.can_commit),
+                format_gate_action(g.can_push),
+                format_gate_action(g.can_merge),
+                format_gate_action(g.can_force_push),
+            ]
+        })
+        .collect();
+    print_table(&gate_columns, &gate_rows);
+}
+
 // ── Main wizard entry point ─────────────────────────────────────────────────
 
 /// Run the first-run setup wizard. Returns `Ok(())` if the wizard completed
@@ -658,6 +747,9 @@ pub fn run_setup_wizard(config: &mut SwebashConfig) -> Result<(), ()> {
 
     // Save per-repo config
     save_repo_config(&git_config);
+
+    // Print summary
+    print_setup_summary(&git_config);
 
     println!();
     println!("\x1b[1;32m  Setup complete!\x1b[0m You can re-run this wizard with the \x1b[1msetup\x1b[0m command.");
@@ -806,5 +898,65 @@ mod tests {
         let rows = vec![vec!["x".to_string()]];
         // Should not panic, missing cells should be empty
         print_table(&columns, &rows);
+    }
+
+    // ── ANSI-aware string length tests ──────────────────────────────────────
+
+    #[test]
+    fn visible_len_plain_text() {
+        assert_eq!(visible_len("hello"), 5);
+        assert_eq!(visible_len(""), 0);
+        assert_eq!(visible_len("a"), 1);
+    }
+
+    #[test]
+    fn visible_len_with_ansi_codes() {
+        // Green "allow" - escape codes should not count
+        let green_allow = "\x1b[32mallow\x1b[0m";
+        assert_eq!(visible_len(green_allow), 5); // just "allow"
+    }
+
+    #[test]
+    fn visible_len_with_multiple_ansi_codes() {
+        // Yellow "block_with_override"
+        let yellow_block = "\x1b[33mblock_with_override\x1b[0m";
+        assert_eq!(visible_len(yellow_block), 19); // just "block_with_override"
+    }
+
+    #[test]
+    fn visible_len_mixed_content() {
+        // "prefix" + colored "middle" + "suffix"
+        let mixed = "prefix\x1b[31mmiddle\x1b[0msuffix";
+        assert_eq!(visible_len(mixed), 18); // "prefix" + "middle" + "suffix"
+    }
+
+    #[test]
+    fn pad_to_width_plain_text() {
+        let padded = pad_to_width("hi", 5);
+        assert_eq!(padded, "hi   ");
+    }
+
+    #[test]
+    fn pad_to_width_with_ansi_codes() {
+        let green = "\x1b[32mok\x1b[0m";
+        let padded = pad_to_width(green, 5);
+        // Should add 3 spaces after the reset code
+        assert_eq!(visible_len(&padded), 5);
+        assert!(padded.ends_with("   ")); // 3 trailing spaces
+    }
+
+    #[test]
+    fn pad_to_width_already_wide_enough() {
+        let text = "hello";
+        let padded = pad_to_width(text, 3);
+        // No padding needed, return as-is
+        assert_eq!(padded, "hello");
+    }
+
+    #[test]
+    fn pad_to_width_exact_width() {
+        let text = "exact";
+        let padded = pad_to_width(text, 5);
+        assert_eq!(padded, "exact");
     }
 }
