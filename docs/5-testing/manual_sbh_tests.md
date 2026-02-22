@@ -21,6 +21,7 @@
 - [sbh.ps1 test](#26-sbhps1-test-powershell)
 - [sbh.ps1 setup](#27-sbhps1-setup-powershell)
 - [sbh.ps1 build & run](#28-sbhps1-build--run-powershell)
+- [sbh.ps1 gen-aws-docs](#29-sbhps1-gen-aws-docs-powershell)
 
 ---
 
@@ -99,7 +100,7 @@ Generates AWS reference docs from live CLI help output. Writes 3 markdown files 
 
 | Test | Command | Expected |
 |------|---------|----------|
-| Help flag | `.\sbh.ps1 --help` | Prints usage with all commands: setup, build, run, test |
+| Help flag | `.\sbh.ps1 --help` | Prints usage with all commands: setup, build, run, test, gen-aws-docs |
 | Help short flag | `.\sbh.ps1 -h` | Same output as `--help` |
 | Help command | `.\sbh.ps1 help` | Same output as `--help` |
 | No args | `.\sbh.ps1` | Prints usage, exits with code 0 |
@@ -129,7 +130,16 @@ Generates AWS reference docs from live CLI help output. Writes 3 markdown files 
 |------|---------|----------|
 | Release build | `.\sbh.ps1 build` | Builds engine WASM (release) and host (release) without errors |
 | Debug build | `.\sbh.ps1 build -Debug` | Builds engine WASM (release) and host (debug) without errors |
-| Run | `.\sbh.ps1 run` | Launches shell, shows banner and prompt |
+| Run debug | `.\sbh.ps1 run` | Launches shell (debug build), shows banner and prompt |
+| Run release | `.\sbh.ps1 run -Release` | Launches shell (release build), shows banner and prompt |
+
+## 29. sbh.ps1 gen-aws-docs (PowerShell)
+
+| Test | Command | Expected |
+|------|---------|----------|
+| Dispatch works | `.\sbh.ps1 gen-aws-docs` | Routes to `bin\gen-aws-docs.ps1`, does not show sbh usage |
+| Install flag | `.\sbh.ps1 gen-aws-docs -Install` | Auto-installs AWS CLI if not found |
+| Full generation | `.\sbh.ps1 gen-aws-docs` (with aws installed) | Prints progress, writes 3 files to `~/.config/swebash/docs/aws/` |
 
 ---
 

@@ -97,7 +97,7 @@ export LLM_PROVIDER=anthropic
 | [AI Tests](manual_ai_tests.md) | AI commands, agents, config, memory, docs context | 97 |
 | [RAG Tests](manual_rag_tests.md) | RAG indexing, retrieval, staleness, vector stores, SweVecDB | 53 |
 | [Git Safety Gate Tests](manual_git_gates_tests.md) | Setup wizard, branch pipeline, safety gates, overrides | 67 |
-| [sbh Launcher Tests](manual_sbh_tests.md) | sbh/sbh.ps1 help, build, test, gen-aws-docs | 42 |
+| [sbh Launcher Tests](manual_sbh_tests.md) | sbh/sbh.ps1 help, build, test, gen-aws-docs | 46 |
 
 ---
 
