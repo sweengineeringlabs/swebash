@@ -1,0 +1,274 @@
+version: 1
+suite: ai_features
+
+config:
+  timeout_ms: 60000
+  tags: [ai]
+  parallel: false  # AI tests should run sequentially to avoid API rate limits
+  env:
+    SWEBASH_AI_ENABLED: "true"
+
+tests:
+  # ---------------------------------------------------------------------------
+  # AI Mode Entry/Exit
+  # ---------------------------------------------------------------------------
+  - id: ai_mode_basic_enter_exit
+    name: "AI mode can be entered and exited"
+    tags: [smoke]
+    steps:
+      - command: "ai"
+        expect:
+          contains: "Entered AI mode"
+      - command: "exit"
+        expect:
+          contains: "Exited AI mode"
+
+  - id: ai_mode_quit_command
+    name: "quit also exits AI mode"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "Entered AI mode"
+      - command: "quit"
+        expect:
+          contains: "Exited AI mode"
+
+  - id: ai_mode_shows_prompt
+    name: "AI mode shows [AI:agent] prompt"
+    tags: [smoke]
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # Agent Management
+  # ---------------------------------------------------------------------------
+  - id: ai_agents_list_command
+    name: "ai agents lists all available agents"
+    tags: [smoke]
+    steps:
+      - command: "ai agents"
+        expect:
+          all:
+            - any:
+                - contains: "shell"
+                - contains: "Shell"
+            - any:
+                - contains: "review"
+                - contains: "Review"
+            - any:
+                - contains: "git"
+                - contains: "Git"
+            - any:
+                - contains: "devops"
+                - contains: "DevOps"
+
+  - id: ai_agent_switch_to_review
+    name: "Switch to review agent with @review"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "@review"
+        expect:
+          any:
+            - contains: "Switched to"
+            - contains: "[AI:review]"
+      - command: "exit"
+
+  - id: ai_agent_switch_to_devops
+    name: "Switch to devops agent with @devops"
+    steps:
+      - command: "ai"
+      - command: "@devops"
+        expect:
+          any:
+            - contains: "Switched to"
+            - contains: "[AI:devops]"
+      - command: "exit"
+
+  - id: ai_agent_switch_to_git
+    name: "Switch to git agent with @git"
+    steps:
+      - command: "ai"
+      - command: "@git"
+        expect:
+          any:
+            - contains: "Switched to"
+            - contains: "[AI:git]"
+      - command: "exit"
+
+  - id: ai_agent_switch_back_to_shell
+    name: "Switch back to shell agent with @shell"
+    steps:
+      - command: "ai"
+      - command: "@review"
+      - command: "@shell"
+        expect:
+          any:
+            - contains: "Switched to"
+            - contains: "[AI:shell]"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # @agent from Shell Mode
+  # ---------------------------------------------------------------------------
+  - id: ai_at_agent_from_shell_enters_ai_mode
+    name: "@devops from shell mode enters AI mode"
+    steps:
+      - command: "@devops"
+        expect:
+          all:
+            - contains: "Entered AI mode"
+            - contains: "[AI:devops]"
+      - command: "exit"
+
+  - id: ai_at_agent_from_shell_all_agents
+    name: "All @agent shortcuts work from shell mode"
+    steps:
+      - command: "@review"
+        expect:
+          contains: "Entered AI mode"
+      - command: "exit"
+      - command: "@git"
+        expect:
+          contains: "Entered AI mode"
+      - command: "exit"
+      - command: "@devops"
+        expect:
+          contains: "Entered AI mode"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # AI Status and History
+  # ---------------------------------------------------------------------------
+  - id: ai_status_command
+    name: "status command shows AI status in AI mode"
+    steps:
+      - command: "ai"
+      - command: "status"
+        expect:
+          any:
+            - contains: "Agent:"
+            - contains: "Provider:"
+            - contains: "not configured"
+      - command: "exit"
+
+  - id: ai_history_command
+    name: "history command shows conversation history"
+    steps:
+      - command: "ai"
+      - command: "history"
+        expect:
+          any:
+            - contains: "History"
+            - contains: "no chat history"
+            - contains: "not configured"
+      - command: "exit"
+
+  - id: ai_clear_command
+    name: "clear command clears conversation history"
+    steps:
+      - command: "ai"
+      - command: "clear"
+        expect:
+          any:
+            - contains: "cleared"
+            - contains: "Cleared"
+            - contains: "not configured"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # AI Chat (may show "not configured" without API key)
+  # ---------------------------------------------------------------------------
+  - id: ai_chat_basic_question
+    name: "AI responds to basic question"
+    config:
+      timeout_ms: 120000
+    steps:
+      - command: "ai"
+      - command: "how do I list files?"
+        expect:
+          any:
+            - contains: "ls"
+            - contains: "dir"
+            - contains: "not configured"
+            - contains: "thinking"
+      - command: "exit"
+
+  - id: ai_chat_with_natural_language
+    name: "AI handles natural language with contractions"
+    config:
+      timeout_ms: 120000
+    steps:
+      - command: "ai"
+      - command: "what's the time"
+        expect:
+          any:
+            - contains: "date"
+            - contains: "time"
+            - contains: "not configured"
+            - contains: "[AI:"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # One-Shot AI Commands
+  # ---------------------------------------------------------------------------
+  - id: ai_ask_one_shot
+    name: "ai ask sends one-shot query"
+    config:
+      timeout_ms: 120000
+    steps:
+      - command: "ai ask list files in current directory"
+        expect:
+          any:
+            - contains: "ls"
+            - contains: "dir"
+            - contains: "not configured"
+
+  - id: ai_at_agent_with_query
+    name: "@agent with query in one command"
+    config:
+      timeout_ms: 120000
+    steps:
+      - command: "ai @review check this code"
+        expect:
+          any:
+            - contains: "review"
+            - contains: "code"
+            - contains: "not configured"
+            - contains: "[AI:"
+
+  # ---------------------------------------------------------------------------
+  # Multiline Input (Issue #10 regression)
+  # ---------------------------------------------------------------------------
+  - id: ai_multiline_does_not_hang
+    name: "AI mode handles apostrophes without hanging"
+    config:
+      timeout_ms: 10000
+    steps:
+      - command: "ai"
+      - command: "what's happening"
+        expect:
+          any:
+            - contains: "[AI:"
+            - contains: "not configured"
+            - contains: "thinking"
+      - command: "exit"
+
+  - id: ai_multiline_contractions
+    name: "AI mode handles various contractions"
+    config:
+      timeout_ms: 10000
+    steps:
+      - command: "ai"
+      - command: "it's working"
+      - command: "don't worry"
+      - command: "how's"
+        expect:
+          any:
+            - contains: "[AI:"
+            - contains: "not configured"
+      - command: "exit"

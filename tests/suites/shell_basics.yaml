@@ -1,0 +1,208 @@
+version: 1
+suite: shell_basics
+
+config:
+  timeout_ms: 5000
+  tags: [smoke, shell]
+  parallel: false
+  setup:
+    - "workspace rw"
+
+tests:
+  # ---------------------------------------------------------------------------
+  # Echo command tests
+  # ---------------------------------------------------------------------------
+  - id: echo_simple
+    name: "Echo prints arguments"
+    steps:
+      - command: "echo hello"
+        expect:
+          contains: "hello"
+
+  - id: echo_multiple_args
+    name: "Echo prints multiple arguments"
+    steps:
+      - command: "echo hello world"
+        expect:
+          contains: "hello world"
+
+  - id: echo_quoted
+    name: "Echo handles quoted strings"
+    steps:
+      - command: 'echo "hello world"'
+        expect:
+          contains: "hello world"
+
+  # ---------------------------------------------------------------------------
+  # pwd / cd tests
+  # ---------------------------------------------------------------------------
+  - id: pwd_outputs_path
+    name: "pwd outputs a path"
+    steps:
+      - command: "pwd"
+        expect:
+          any:
+            - contains: "/"
+            - contains: "\\"
+
+  # ---------------------------------------------------------------------------
+  # ls tests
+  # ---------------------------------------------------------------------------
+  - id: ls_current_dir
+    name: "ls lists current directory"
+    steps:
+      - command: "touch autotest_file.txt"
+      - command: "ls"
+        expect:
+          contains: "autotest_file.txt"
+      - command: "rm autotest_file.txt"
+
+  - id: ls_long_format
+    name: "ls -l shows detailed listing"
+    steps:
+      - command: "touch data.txt"
+      - command: "ls -l"
+        expect:
+          all:
+            - contains: "TYPE"
+            - contains: "NAME"
+            - contains: "data.txt"
+      - command: "rm data.txt"
+
+  # ---------------------------------------------------------------------------
+  # mkdir tests
+  # ---------------------------------------------------------------------------
+  - id: mkdir_creates_dir
+    name: "mkdir creates directory"
+    steps:
+      - command: "mkdir autotest_subdir"
+      - command: "ls"
+        expect:
+          contains: "autotest_subdir"
+      - command: "rm -r autotest_subdir"
+
+  - id: mkdir_recursive
+    name: "mkdir -p creates nested directories"
+    steps:
+      - command: "mkdir -p autotest_a/b/c"
+      - command: "ls autotest_a/b"
+        expect:
+          contains: "c"
+      - command: "rm -r autotest_a"
+
+  # ---------------------------------------------------------------------------
+  # touch tests
+  # ---------------------------------------------------------------------------
+  - id: touch_creates_file
+    name: "touch creates empty file"
+    steps:
+      - command: "touch autotest_new.txt"
+      - command: "ls"
+        expect:
+          contains: "autotest_new.txt"
+      - command: "rm autotest_new.txt"
+
+  # ---------------------------------------------------------------------------
+  # rm tests
+  # ---------------------------------------------------------------------------
+  - id: rm_file
+    name: "rm deletes file"
+    steps:
+      - command: "touch autotest_deleteme.txt"
+      - command: "rm autotest_deleteme.txt"
+      - command: "ls"
+        expect:
+          not_contains: "autotest_deleteme.txt"
+
+  # ---------------------------------------------------------------------------
+  # cp / mv tests
+  # ---------------------------------------------------------------------------
+  - id: cp_file
+    name: "cp copies file"
+    steps:
+      - command: "touch autotest_src.txt"
+      - command: "cp autotest_src.txt autotest_dst.txt"
+      - command: "ls"
+        expect:
+          all:
+            - contains: "autotest_src.txt"
+            - contains: "autotest_dst.txt"
+      - command: "rm autotest_src.txt autotest_dst.txt"
+
+  - id: mv_file
+    name: "mv moves file"
+    steps:
+      - command: "touch autotest_moveme.txt"
+      - command: "mv autotest_moveme.txt autotest_moved.txt"
+      - command: "ls"
+        expect:
+          contains: "autotest_moved.txt"
+      - command: "rm autotest_moved.txt"
+
+  # ---------------------------------------------------------------------------
+  # env / export tests
+  # ---------------------------------------------------------------------------
+  - id: env_lists_variables
+    name: "env lists environment variables"
+    steps:
+      - command: "env"
+        expect:
+          contains: "PATH="
+
+  - id: export_then_env
+    name: "export sets environment variable"
+    steps:
+      - command: "export TEST_VAR=hello123"
+      - command: "env"
+        expect:
+          contains: "TEST_VAR=hello123"
+
+  # ---------------------------------------------------------------------------
+  # AI mode tests (basic)
+  # ---------------------------------------------------------------------------
+  - id: ai_mode_enter_exit
+    name: "AI mode can be entered and exited"
+    tags: [ai]
+    steps:
+      - command: "ai"
+        expect:
+          contains: "Entered AI mode"
+      - command: "exit"
+        expect:
+          contains: "Exited AI mode"
+
+  - id: ai_mode_prompt_indicator
+    name: "AI mode shows agent in prompt"
+    tags: [ai]
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:"
+      - command: "exit"
+
+  - id: ai_agents_list
+    name: "ai agents lists available agents"
+    tags: [ai]
+    steps:
+      - command: "ai agents"
+        expect:
+          all:
+            - any:
+                - contains: "shell"
+                - contains: "Shell"
+            - any:
+                - contains: "review"
+                - contains: "Review"
+
+  # ---------------------------------------------------------------------------
+  # Workspace tests (basic)
+  # ---------------------------------------------------------------------------
+  - id: workspace_status
+    name: "workspace command shows status"
+    tags: [workspace]
+    steps:
+      - command: "workspace"
+        expect:
+          all:
+            - contains: "Workspace sandbox:"
+            - contains: "Root:"
