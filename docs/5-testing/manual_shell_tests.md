@@ -85,7 +85,7 @@
 
 | Test | Command | Expected |
 |------|---------|----------|
-| Default workspace | `./sbh run` then `pwd` | Shows `~/.local/share/swebash/workspace/` (XDG-compliant, auto-created if missing) |
+| Default workspace | `./sbh run` then `pwd` | Shows `~/.config/swebash/workspace/` (XDG-compliant, auto-created if missing) |
 | Sandbox status | `workspace` | Shows enabled, root path, allowed paths with modes |
 | Read-only default | `touch foo` | Denied: `sandbox: write access denied for '...'` |
 | Switch to RW | `workspace rw` then `touch foo` | File created successfully |

@@ -245,7 +245,7 @@ cargo test -p swebash-ai -p swebash
 | `custom_deny_commit_on_branch` | Host unit | Custom Deny gate → Denied result |
 | `custom_allow_force_push` | Host unit | Custom Allow gate for force-push → Allowed |
 | `default_config_setup_completed_false` | Host unit | Default config: setup_completed=false, git=None |
-| `default_config_workspace_defaults` | Host unit | Default workspace: root=~/.local/share/swebash/workspace, mode=ro, enabled=true (XDG-compliant) |
+| `default_config_workspace_defaults` | Host unit | Default workspace: root=~/.config/swebash/workspace, mode=ro, enabled=true (XDG-compliant) |
 | `serde_roundtrip_default_config` | Host unit | Default SwebashConfig survives TOML roundtrip |
 | `serde_roundtrip_with_git_config` | Host unit | Config with git section survives roundtrip |
 | `deserialize_legacy_config_without_git_fields` | Host unit | Pre-git-gates config.toml loads with defaults |

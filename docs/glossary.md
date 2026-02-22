@@ -159,7 +159,7 @@ A freedesktop.org standard defining where applications should store files on Lin
 A concrete `AgentDescriptor` implementation in rustratify's `agent-controller::yaml` module. Built from YAML config with defaults merging, tool filter computation, directives block, and thinkFirst suffix. `ConfigAgent` wraps this via composition.
 
 **Workspace**
-The root directory for shell operations, controlled by the sandbox policy. Defaults to `~/.local/share/swebash/workspace/` (XDG-compliant), overridable via `SWEBASH_WORKSPACE` env var or `~/.config/swebash/config.toml`.
+The root directory for shell operations, controlled by the sandbox policy. Defaults to `~/.config/swebash/workspace/` (XDG-compliant), overridable via `SWEBASH_WORKSPACE` env var or `~/.config/swebash/config.toml`.
 
 **`workspace` command**
 A shell builtin that displays and modifies the sandbox policy at runtime. Supports subcommands: `rw`, `ro`, `allow`, `enable`, `disable`.

@@ -349,7 +349,7 @@ The sandbox shall intercept all filesystem operations at the host import boundar
 | **State** | Implemented |
 | **Verification** | Test |
 | **Traces to** | STK-04 → `host/src/spi/config.rs` |
-| **Acceptance** | Config loaded from `~/.config/swebash/config.toml` with `[workspace]` section; `SWEBASH_WORKSPACE` env var overrides config root; default workspace is `~/.local/share/swebash/workspace/` in read-only mode (XDG-compliant) |
+| **Acceptance** | Config loaded from `~/.config/swebash/config.toml` with `[workspace]` section; `SWEBASH_WORKSPACE` env var overrides config root; default workspace is `~/.config/swebash/workspace/` in read-only mode (XDG-compliant) |
 
 Configuration precedence: `SWEBASH_WORKSPACE` env var > `config.toml` > `~/workspace/` default. When the env var is set, the workspace defaults to read-write (backward compatible).
 

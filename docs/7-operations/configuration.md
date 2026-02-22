@@ -20,19 +20,18 @@ swebash follows the [XDG Base Directory Specification](https://specifications.fr
 
 | Variable | Default | Purpose | swebash Usage |
 |----------|---------|---------|---------------|
-| `XDG_CONFIG_HOME` | `~/.config` | Configuration files | `~/.config/swebash/config.toml`, `agents.yaml` |
-| `XDG_DATA_HOME` | `~/.local/share` | Application data | `~/.local/share/swebash/workspace/` (default workspace) |
+| `XDG_CONFIG_HOME` | `~/.config` | Configuration files | `~/.config/swebash/config.toml`, `agents.yaml`, `workspace/` |
+| `XDG_DATA_HOME` | `~/.local/share` | Application data | *(not currently used)* |
 | `XDG_STATE_HOME` | `~/.local/state` | Logs, history | `~/.local/state/swebash/history` |
 | `XDG_CACHE_HOME` | `~/.cache` | Cache (disposable) | *(not currently used)* |
 
 This separation ensures:
-- **Config** (`~/.config/swebash/`) — settings you might want to version control or sync
-- **Data** (`~/.local/share/swebash/`) — workspace files, agent docs
+- **Config** (`~/.config/swebash/`) — settings, agents, and default workspace
 - **State** — history files that are machine-specific
 
 ## Workspace Sandbox
 
-The workspace sandbox controls which filesystem paths the shell can access. It defaults to `~/.local/share/swebash/workspace/` in read-only mode (XDG Base Directory compliant).
+The workspace sandbox controls which filesystem paths the shell can access. It defaults to `~/.config/swebash/workspace/` in read-only mode (XDG Base Directory compliant).
 
 ### Config File
 
@@ -40,7 +39,7 @@ Persistent workspace settings are stored in `~/.config/swebash/config.toml`:
 
 ```toml
 [workspace]
-root = "~/.local/share/swebash/workspace"  # Workspace root directory (XDG-compliant, supports ~ expansion)
+root = "~/.config/swebash/workspace"  # Workspace root directory (XDG-compliant, supports ~ expansion)
 mode = "ro"                                 # Default access mode: "ro" or "rw"
 enabled = true                              # Whether sandbox enforcement is active
 
@@ -68,7 +67,7 @@ Workspace root is resolved in this order (first match wins):
 
 1. `SWEBASH_WORKSPACE` environment variable
 2. `root` in `~/.config/swebash/config.toml`
-3. `~/.local/share/swebash/workspace/` (XDG-compliant default)
+3. `~/.config/swebash/workspace/` (XDG-compliant default)
 
 When `SWEBASH_WORKSPACE` is set via environment variable, the workspace defaults to **read-write** mode (the user explicitly chose the workspace).
 

@@ -76,7 +76,7 @@ pub struct HostState {
 
 ```toml
 [workspace]
-root = "~/.local/share/swebash/workspace"  # XDG-compliant default, supports ~ expansion
+root = "~/.config/swebash/workspace"  # XDG-compliant default, supports ~ expansion
 mode = "ro"                                 # "ro" or "rw"
 enabled = true
 
@@ -99,7 +99,7 @@ Loaded by `config::load_config()` at startup. Falls back to defaults if the file
 
 1. `SWEBASH_WORKSPACE` env var (if set, also forces RW)
 2. `root` from config file
-3. `~/.local/share/swebash/workspace/` (XDG-compliant default)
+3. `~/.config/swebash/workspace/` (XDG-compliant default)
 
 ## Startup Sequence
 
@@ -108,7 +108,7 @@ In `main.rs`:
 1. Load `.env` files (existing)
 2. Load `~/.config/swebash/config.toml` via `config::load_config()`
 3. Check for `SWEBASH_WORKSPACE` env var
-4. Resolve workspace root (env > config > `~/.local/share/swebash/workspace/`)
+4. Resolve workspace root (env > config > `~/.config/swebash/workspace/`)
 5. Auto-create workspace directory if missing (`create_dir_all`)
 6. Build `SandboxPolicy` via `config.into_policy()`
 7. If `SWEBASH_WORKSPACE` was set via env var: override root + force RW mode

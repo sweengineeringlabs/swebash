@@ -80,7 +80,7 @@ pub struct AllowEntry {
 }
 
 fn default_workspace_root() -> String {
-    "~/.local/share/swebash/workspace".to_string()
+    "~/.config/swebash/workspace".to_string()
 }
 
 fn default_mode_str() -> String {
@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn default_config_workspace_defaults() {
         let config = SwebashConfig::default();
-        assert_eq!(config.workspace.root, "~/.local/share/swebash/workspace");
+        assert_eq!(config.workspace.root, "~/.config/swebash/workspace");
         assert_eq!(config.workspace.mode, "ro");
         assert!(config.workspace.enabled);
         assert!(config.workspace.allow.is_empty());
@@ -210,9 +210,9 @@ mod tests {
 
     #[test]
     fn default_workspace_follows_xdg_spec() {
-        // XDG Base Directory Specification: app data goes in ~/.local/share/<app>
+        // XDG Base Directory Specification: config goes in ~/.config/<app>
         let root = default_workspace_root();
-        assert!(root.starts_with("~/.local/share/swebash"));
+        assert!(root.starts_with("~/.config/swebash"));
         assert!(root.contains("workspace"));
     }
 
