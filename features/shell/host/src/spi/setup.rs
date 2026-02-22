@@ -189,55 +189,312 @@ fn read_line_or_skip() -> Result<String, ()> {
 
 // ── Wizard steps ────────────────────────────────────────────────────────────
 
-/// Step 1: Detect or initialize a git repository.
-fn step_git_repo() -> Result<(), ()> {
-    println!();
-    println!("\x1b[1;33m── Step 1/5: Git Repository ──\x1b[0m");
+/// Information about a detected git repository.
+#[derive(Debug, Clone)]
+pub struct RepoInfo {
+    pub local_path: String,
+    pub remote_url: Option<String>,
+}
 
-    let output = Command::new("git")
-        .args(["rev-parse", "--is-inside-work-tree"])
-        .output();
+/// Information about a GitHub account from `gh auth status`.
+#[derive(Debug, Clone)]
+struct GhAccount {
+    username: String,
+    is_active: bool,
+}
 
-    match output {
-        Ok(ref o) if o.status.success() => {
-            let root = Command::new("git")
-                .args(["rev-parse", "--show-toplevel"])
-                .output()
-                .ok()
-                .and_then(|o| String::from_utf8(o.stdout).ok())
-                .unwrap_or_default();
-            println!(
-                "  \x1b[32m✓\x1b[0m Local:  {}",
-                root.trim()
-            );
+/// Parse gh auth status text output into account list.
+fn parse_gh_auth_output(text: &str) -> Vec<GhAccount> {
+    let mut accounts = Vec::new();
+    let mut current_username: Option<String> = None;
 
-            // Show remote URL if available
-            let remote = Command::new("git")
-                .args(["remote", "get-url", "origin"])
-                .output()
-                .ok()
-                .and_then(|o| {
-                    if o.status.success() {
-                        String::from_utf8(o.stdout).ok().map(|s| s.trim().to_string())
-                    } else {
-                        None
-                    }
-                });
-            if let Some(url) = remote {
-                println!("  \x1b[32m✓\x1b[0m Remote: {}", url);
-            } else {
-                println!("  \x1b[33m!\x1b[0m Remote: (none configured)");
-            }
-            Ok(())
+    for line in text.lines() {
+        // Look for "Logged in to github.com account USERNAME"
+        if line.contains("Logged in to") && line.contains("account ") {
+            // Save the username, wait for Active account line
+            current_username = line
+                .split("account ")
+                .nth(1)
+                .and_then(|s| s.split_whitespace().next())
+                .map(|s| s.to_string());
         }
-        _ => {
+        // "Active account: true/false" comes AFTER the account line
+        if let Some(ref username) = current_username {
+            if line.contains("Active account:") {
+                let is_active = line.contains("true");
+                accounts.push(GhAccount {
+                    username: username.clone(),
+                    is_active,
+                });
+                current_username = None;
+            }
+        }
+    }
+
+    accounts
+}
+
+/// Run `gh auth status` and parse all accounts.
+fn get_gh_accounts() -> Vec<GhAccount> {
+    let output = Command::new("gh")
+        .args(["auth", "status"])
+        .output()
+        .ok();
+
+    let Some(output) = output else {
+        return vec![];
+    };
+
+    // gh auth status may write to stdout or stderr depending on version/platform
+    // Try stdout first, fall back to stderr
+    let stdout_text = String::from_utf8_lossy(&output.stdout);
+    let stderr_text = String::from_utf8_lossy(&output.stderr);
+
+    let accounts = parse_gh_auth_output(&stdout_text);
+    if !accounts.is_empty() {
+        return accounts;
+    }
+
+    parse_gh_auth_output(&stderr_text)
+}
+
+/// Check if a remote URL belongs to a GitHub account.
+fn remote_matches_account(remote: &str, account: &str) -> bool {
+    let remote_lower = remote.to_lowercase();
+    let account_lower = account.to_lowercase();
+
+    // SSH format: git@github.com:USER/repo.git
+    if remote_lower.contains(&format!(":{}/", account_lower))
+        || remote_lower.contains(&format!(":{account_lower}.")) {
+        return true;
+    }
+
+    // HTTPS format: https://github.com/USER/repo.git
+    if remote_lower.contains(&format!("/{}/", account_lower)) {
+        return true;
+    }
+
+    false
+}
+
+/// Get repo info for a given path.
+fn get_repo_info(path: &str) -> Option<RepoInfo> {
+    let output = Command::new("git")
+        .args(["-C", path, "rev-parse", "--show-toplevel"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let local_path = String::from_utf8(output.stdout)
+        .ok()?
+        .trim()
+        .to_string();
+
+    let remote_url = Command::new("git")
+        .args(["-C", path, "remote", "get-url", "origin"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                String::from_utf8(o.stdout).ok().map(|s| s.trim().to_string())
+            } else {
+                None
+            }
+        });
+
+    Some(RepoInfo { local_path, remote_url })
+}
+
+/// Step 1: Detect or initialize a git repository and bind workspace.
+fn step_git_repo(config: &SwebashConfig) -> Result<RepoInfo, ()> {
+    println!();
+    println!("\x1b[1;33m── Step 1/6: Repository & Workspace Binding ──\x1b[0m");
+    println!("  \x1b[90mWorkspaces are permanently bound to a repository to prevent accidental commits.\x1b[0m");
+    println!();
+
+    // First, show GitHub accounts
+    let gh_accounts = get_gh_accounts();
+    if !gh_accounts.is_empty() {
+        println!("  GitHub Accounts (gh auth status):");
+        println!();
+
+        let columns = [
+            TableColumn { header: "ACCOUNT", width: 25 },
+            TableColumn { header: "STATUS", width: 15 },
+        ];
+
+        let rows: Vec<Vec<String>> = gh_accounts
+            .iter()
+            .map(|acc| {
+                vec![
+                    acc.username.clone(),
+                    if acc.is_active {
+                        "\x1b[32m● active\x1b[0m".to_string()
+                    } else {
+                        "\x1b[90m○ inactive\x1b[0m".to_string()
+                    },
+                ]
+            })
+            .collect();
+        print_table(&columns, &rows);
+        println!();
+
+        // Check if there's an active account
+        let active_account = gh_accounts.iter().find(|a| a.is_active);
+        if active_account.is_none() && gh_accounts.len() > 1 {
+            println!("  \x1b[33m!\x1b[0m No active GitHub account. Please select one:");
+            println!();
+
+            for (i, acc) in gh_accounts.iter().enumerate() {
+                println!("    [{}] {}", i + 1, acc.username);
+            }
+            println!();
+
+            loop {
+                print!("  Select account [1-{}]: ", gh_accounts.len());
+                io::stdout().flush().ok();
+
+                let mut input = String::new();
+                if io::stdin().lock().read_line(&mut input).is_err() {
+                    return Err(());
+                }
+
+                let input = input.trim();
+                if input.eq_ignore_ascii_case("skip") {
+                    return Err(());
+                }
+
+                if let Ok(idx) = input.parse::<usize>() {
+                    if idx >= 1 && idx <= gh_accounts.len() {
+                        let selected = &gh_accounts[idx - 1];
+                        println!();
+                        println!("  Switching to account: {}", selected.username);
+
+                        // Run gh auth switch
+                        let switch_result = Command::new("gh")
+                            .args(["auth", "switch", "-u", &selected.username])
+                            .status();
+
+                        match switch_result {
+                            Ok(s) if s.success() => {
+                                println!("  \x1b[32m✓\x1b[0m Switched to {}", selected.username);
+                                println!();
+                            }
+                            _ => {
+                                eprintln!("  \x1b[31m✗\x1b[0m Failed to switch account");
+                                return Err(());
+                            }
+                        }
+                        break;
+                    }
+                }
+                println!("  \x1b[31mInvalid selection. Try again.\x1b[0m");
+            }
+        }
+    }
+
+    let cwd = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.to_str().map(|s| s.to_string()))
+        .unwrap_or_default();
+
+    // Check if this workspace is already bound
+    if let Some(bound) = config.find_workspace_for_path(&cwd) {
+        println!("  \x1b[33m!\x1b[0m This workspace is already bound to a repository:");
+        println!("    Workspace: {}", bound.workspace_path);
+        println!("    Repo:      {}", bound.repo_remote);
+        println!("    Bound at:  {}", bound.bound_at);
+        println!();
+        println!("  \x1b[90mWorkspace bindings cannot be changed. To use a different repo,");
+        println!("  start swebash from a different directory.\x1b[0m");
+        return Err(());
+    }
+
+    // Detect current repo
+    let repo_info = get_repo_info(&cwd);
+
+    match repo_info {
+        Some(ref info) => {
+            println!("  Detected repository:");
+            println!();
+
+            let columns = [
+                TableColumn { header: "TYPE", width: 10 },
+                TableColumn { header: "PATH/URL", width: 60 },
+            ];
+
+            let mut rows = vec![
+                vec!["Local".to_string(), info.local_path.clone()],
+                vec![
+                    "Remote".to_string(),
+                    info.remote_url.clone().unwrap_or_else(|| "\x1b[90m(none)\x1b[0m".to_string()),
+                ],
+            ];
+
+            // Show which account owns this repo
+            if let Some(ref remote) = info.remote_url {
+                if let Some(owner) = gh_accounts.iter().find(|a| remote_matches_account(remote, &a.username)) {
+                    rows.push(vec![
+                        "Owner".to_string(),
+                        format!(
+                            "{}{}",
+                            owner.username,
+                            if owner.is_active { " \x1b[32m(active)\x1b[0m" } else { " \x1b[33m(not active)\x1b[0m" }
+                        ),
+                    ]);
+                }
+            }
+
+            print_table(&columns, &rows);
+            println!();
+
+            // Check if remote is configured
+            if info.remote_url.is_none() {
+                println!("  \x1b[33m!\x1b[0m No remote configured. Workspace binding requires a remote URL.");
+                println!("  \x1b[90mAdd a remote with: git remote add origin <url>\x1b[0m");
+                return Err(());
+            }
+
+            // Warn if repo owner doesn't match active account
+            if let Some(ref remote) = info.remote_url {
+                let active = gh_accounts.iter().find(|a| a.is_active);
+                if let Some(active_acc) = active {
+                    if !remote_matches_account(remote, &active_acc.username) {
+                        println!("  \x1b[33m!\x1b[0m Warning: This repo's remote doesn't match your active GitHub account.");
+                        println!("  \x1b[90mActive account: {}\x1b[0m", active_acc.username);
+                        println!("  \x1b[90mYou may want to run: gh auth switch -u <account>\x1b[0m");
+                        println!();
+                    }
+                }
+            }
+
+            // Confirm binding
+            println!("  \x1b[1mIMPORTANT:\x1b[0m Once bound, this workspace will ONLY allow commits to this repository.");
+            println!("  This prevents accidental commits to the wrong repo.");
+            println!();
+
+            if !prompt_yn("  Bind this workspace to this repository?", true)? {
+                println!("  \x1b[90mSetup cancelled. Run 'setup' again when ready.\x1b[0m");
+                return Err(());
+            }
+
+            Ok(info.clone())
+        }
+        None => {
             println!("  \x1b[33m!\x1b[0m No git repository found in the current directory.");
             if prompt_yn("  Initialize a new git repository here?", true)? {
                 let status = Command::new("git").arg("init").status();
                 match status {
                     Ok(s) if s.success() => {
                         println!("  \x1b[32m✓\x1b[0m Git repository initialized.");
-                        Ok(())
+                        println!();
+                        println!("  \x1b[33m!\x1b[0m You need to add a remote before binding.");
+                        println!("  \x1b[90mRun: git remote add origin <url>\x1b[0m");
+                        println!("  \x1b[90mThen run 'setup' again.\x1b[0m");
+                        Err(())
                     }
                     _ => {
                         eprintln!("  \x1b[31m✗\x1b[0m Failed to initialize git repository.");
@@ -245,8 +502,8 @@ fn step_git_repo() -> Result<(), ()> {
                     }
                 }
             } else {
-                println!("  Skipping git init. Some features may be unavailable.");
-                Ok(())
+                println!("  Skipping. Setup requires a git repository.");
+                Err(())
             }
         }
     }
@@ -255,9 +512,10 @@ fn step_git_repo() -> Result<(), ()> {
 /// Step 2: Detect or set the user ID.
 fn step_user_id() -> Result<String, ()> {
     println!();
-    println!("\x1b[1;33m── Step 2/5: User Identity ──\x1b[0m");
+    println!("\x1b[1;33m── Step 2/6: User Identity ──\x1b[0m");
 
-    let detected = Command::new("git")
+    // Check git config user.name
+    let git_user = Command::new("git")
         .args(["config", "user.name"])
         .output()
         .ok()
@@ -272,13 +530,42 @@ fn step_user_id() -> Result<String, ()> {
             }
         });
 
-    let default_id = detected.unwrap_or_default();
-    if !default_id.is_empty() {
-        println!(
-            "  \x1b[32m✓\x1b[0m Detected git user: \x1b[1m{}\x1b[0m",
-            default_id
-        );
+    // Check gh auth status for GitHub username
+    let gh_user = Command::new("gh")
+        .args(["auth", "status", "--active"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            // Parse "Logged in to github.com account USERNAME" from output
+            let output = String::from_utf8_lossy(&o.stderr);
+            output
+                .lines()
+                .find(|l| l.contains("Logged in to"))
+                .and_then(|line| {
+                    // Extract username from "account USERNAME (keyring)"
+                    line.split("account ")
+                        .nth(1)
+                        .and_then(|s| s.split_whitespace().next())
+                        .map(|s| s.to_string())
+                })
+        });
+
+    // Display detected identities
+    let has_git = git_user.is_some();
+    let has_gh = gh_user.is_some();
+
+    if let Some(ref user) = git_user {
+        println!("  \x1b[32m✓\x1b[0m Git user.name:  \x1b[1m{}\x1b[0m", user);
     }
+    if let Some(ref user) = gh_user {
+        println!("  \x1b[32m✓\x1b[0m GitHub account: \x1b[1m{}\x1b[0m", user);
+    }
+    if !has_git && !has_gh {
+        println!("  \x1b[33m!\x1b[0m No git or GitHub identity detected.");
+    }
+
+    // Prefer GitHub account, fallback to git user.name
+    let default_id = gh_user.or(git_user).unwrap_or_default();
 
     println!("  \x1b[90mType 'help' or '?' for more info\x1b[0m");
     let user_id = prompt_line_with_help(
@@ -316,7 +603,7 @@ fn step_user_id() -> Result<String, ()> {
 /// Step 3: Present and optionally customize the branch pipeline.
 fn step_pipeline(user_id: &str) -> Result<BranchPipeline, ()> {
     println!();
-    println!("\x1b[1;33m── Step 3/5: Branch Pipeline ──\x1b[0m");
+    println!("\x1b[1;33m── Step 3/6: Branch Pipeline ──\x1b[0m");
 
     let default_pipeline = BranchPipeline::default_for_user(user_id);
 
@@ -370,7 +657,7 @@ fn step_pipeline(user_id: &str) -> Result<BranchPipeline, ()> {
 /// Step 4: Present and optionally customize the gate matrix.
 fn step_gates(pipeline: &BranchPipeline) -> Result<Vec<BranchGate>, ()> {
     println!();
-    println!("\x1b[1;33m── Step 4/5: Safety Gates ──\x1b[0m");
+    println!("\x1b[1;33m── Step 4/6: Safety Gates ──\x1b[0m");
     println!("  \x1b[90mGates control what operations are allowed on each branch.\x1b[0m");
     println!();
 
@@ -490,7 +777,7 @@ fn format_exists(exists: bool) -> String {
 /// Step 5: List existing vs missing branches and offer to create missing ones.
 fn step_branches(pipeline: &BranchPipeline) -> Result<(), ()> {
     println!();
-    println!("\x1b[1;33m── Step 5/5: Create Branches ──\x1b[0m");
+    println!("\x1b[1;33m── Step 5/6: Create Branches ──\x1b[0m");
     println!("  \x1b[90mThese branches are defined in your pipeline configuration.\x1b[0m");
     println!();
 
@@ -628,12 +915,129 @@ fn save_repo_config(git_config: &GitConfig) {
     }
 }
 
-/// Print a summary of the completed setup.
-fn print_setup_summary(config: &GitConfig) {
+// ── Main wizard entry point ─────────────────────────────────────────────────
+
+/// Run the first-run setup wizard. Returns `Ok(())` if the wizard completed
+/// (or was skipped), `Err(())` if it was aborted.
+///
+/// Mutates `config` in-place and saves it to `~/.config/swebash/config.toml`.
+pub fn run_setup_wizard(config: &mut SwebashConfig) -> Result<(), ()> {
+    println!();
+    println!("\x1b[1;36m╔══════════════════════════════════════╗\x1b[0m");
+    println!("\x1b[1;36m║   swebash — First-Run Setup Wizard   ║\x1b[0m");
+    println!("\x1b[1;36m╚══════════════════════════════════════╝\x1b[0m");
+    println!();
+    println!("  This wizard will bind this workspace to a git repository and configure");
+    println!("  your branch pipeline and safety gates.");
+    println!("  Type \x1b[1mskip\x1b[0m at any prompt to skip the wizard.");
+    println!();
+
+    if !prompt_yn("Continue with setup?", true)? {
+        println!("  Setup skipped.");
+        config.setup_completed = true;
+        let _ = super::config::save_config(config);
+        return Ok(());
+    }
+
+    // Step 1: Git repo and workspace binding
+    let repo_info = step_git_repo(config)?;
+
+    // Step 2: User ID
+    let user_id = step_user_id()?;
+
+    // Step 3: Pipeline
+    let pipeline = step_pipeline(&user_id)?;
+
+    // Step 4: Gates
+    let gates = step_gates(&pipeline)?;
+
+    // Step 5: Branches
+    step_branches(&pipeline)?;
+
+    // Build GitConfig
+    let git_config = GitConfig {
+        user_id,
+        pipeline,
+        gates,
+    };
+
+    // Create workspace binding
+    let cwd = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.to_str().map(|s| s.to_string()))
+        .unwrap_or_default();
+
+    let bound_workspace = super::config::BoundWorkspace {
+        workspace_path: cwd,
+        repo_remote: repo_info.remote_url.clone().unwrap_or_default(),
+        repo_local: repo_info.local_path.clone(),
+        bound_at: chrono_lite_now(),
+        git: Some(git_config.clone()),
+    };
+
+    // Add to bound workspaces
+    config.bound_workspaces.push(bound_workspace);
+    config.setup_completed = true;
+
+    // Also set legacy git field for backwards compatibility
+    config.git = Some(git_config.clone());
+
+    match super::config::save_config(config) {
+        Ok(()) => println!(
+            "\n  \x1b[32m✓\x1b[0m Saved config: ~/.config/swebash/config.toml"
+        ),
+        Err(e) => eprintln!("\n  \x1b[31m✗\x1b[0m Failed to save config: {e}"),
+    }
+
+    // Save per-repo config
+    save_repo_config(&git_config);
+
+    // Print summary
+    print_setup_summary_with_binding(&git_config, &repo_info);
+
+    println!();
+    println!("\x1b[1;32m  Setup complete!\x1b[0m You can re-run this wizard with the \x1b[1msetup\x1b[0m command.");
+    println!();
+
+    Ok(())
+}
+
+/// Get current timestamp in ISO 8601 format (simplified, no external deps).
+fn chrono_lite_now() -> String {
+    use std::time::SystemTime;
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    // Simple ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ
+    // This is a rough approximation without full date math
+    let days = now / 86400;
+    let years = 1970 + days / 365;
+    let remaining_days = days % 365;
+    let months = remaining_days / 30 + 1;
+    let day = remaining_days % 30 + 1;
+    let hours = (now % 86400) / 3600;
+    let minutes = (now % 3600) / 60;
+    let seconds = now % 60;
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        years, months, day, hours, minutes, seconds
+    )
+}
+
+/// Print summary including workspace binding.
+fn print_setup_summary_with_binding(config: &GitConfig, repo: &RepoInfo) {
     println!();
     println!("\x1b[1;36m╔══════════════════════════════════════╗\x1b[0m");
     println!("\x1b[1;36m║         Configuration Summary        ║\x1b[0m");
     println!("\x1b[1;36m╚══════════════════════════════════════╝\x1b[0m");
+    println!();
+
+    // Workspace binding
+    println!("  \x1b[1mWorkspace Binding:\x1b[0m");
+    println!("    Repo:   {}", repo.remote_url.as_deref().unwrap_or("(none)"));
+    println!("    Local:  {}", repo.local_path);
+    println!("    \x1b[90mCommits to other repos will be blocked.\x1b[0m");
     println!();
 
     // User ID
@@ -687,75 +1091,6 @@ fn print_setup_summary(config: &GitConfig) {
         })
         .collect();
     print_table(&gate_columns, &gate_rows);
-}
-
-// ── Main wizard entry point ─────────────────────────────────────────────────
-
-/// Run the first-run setup wizard. Returns `Ok(())` if the wizard completed
-/// (or was skipped), `Err(())` if it was aborted.
-///
-/// Mutates `config` in-place and saves it to `~/.config/swebash/config.toml`.
-pub fn run_setup_wizard(config: &mut SwebashConfig) -> Result<(), ()> {
-    println!();
-    println!("\x1b[1;36m╔══════════════════════════════════════╗\x1b[0m");
-    println!("\x1b[1;36m║   swebash — First-Run Setup Wizard   ║\x1b[0m");
-    println!("\x1b[1;36m╚══════════════════════════════════════╝\x1b[0m");
-    println!();
-    println!("  This wizard will configure your git branch pipeline and safety gates.");
-    println!("  Type \x1b[1mskip\x1b[0m at any prompt to skip the wizard.");
-    println!();
-
-    if !prompt_yn("Continue with setup?", true)? {
-        println!("  Setup skipped.");
-        config.setup_completed = true;
-        let _ = super::config::save_config(config);
-        return Ok(());
-    }
-
-    // Step 1: Git repo
-    step_git_repo()?;
-
-    // Step 2: User ID
-    let user_id = step_user_id()?;
-
-    // Step 3: Pipeline
-    let pipeline = step_pipeline(&user_id)?;
-
-    // Step 4: Gates
-    let gates = step_gates(&pipeline)?;
-
-    // Step 5: Branches
-    step_branches(&pipeline)?;
-
-    // Build GitConfig
-    let git_config = GitConfig {
-        user_id,
-        pipeline,
-        gates,
-    };
-
-    // Save to global config
-    config.git = Some(git_config.clone());
-    config.setup_completed = true;
-
-    match super::config::save_config(config) {
-        Ok(()) => println!(
-            "\n  \x1b[32m✓\x1b[0m Saved global config: ~/.config/swebash/config.toml"
-        ),
-        Err(e) => eprintln!("\n  \x1b[31m✗\x1b[0m Failed to save global config: {e}"),
-    }
-
-    // Save per-repo config
-    save_repo_config(&git_config);
-
-    // Print summary
-    print_setup_summary(&git_config);
-
-    println!();
-    println!("\x1b[1;32m  Setup complete!\x1b[0m You can re-run this wizard with the \x1b[1msetup\x1b[0m command.");
-    println!();
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -958,5 +1293,93 @@ mod tests {
         let text = "exact";
         let padded = pad_to_width(text, 5);
         assert_eq!(padded, "exact");
+    }
+
+    // ── GitHub account matching tests ──────────────────────────────────────────
+
+    #[test]
+    fn remote_matches_account_ssh_format() {
+        let remote = "git@github.com:sweengineeringlabs/swebash.git";
+        assert!(remote_matches_account(remote, "sweengineeringlabs"));
+        assert!(!remote_matches_account(remote, "phdsystems"));
+    }
+
+    #[test]
+    fn remote_matches_account_https_format() {
+        let remote = "https://github.com/sweengineeringlabs/swebash.git";
+        assert!(remote_matches_account(remote, "sweengineeringlabs"));
+        assert!(!remote_matches_account(remote, "phdsystems"));
+    }
+
+    #[test]
+    fn remote_matches_account_case_insensitive() {
+        let remote = "git@github.com:SweEngineeringLabs/swebash.git";
+        assert!(remote_matches_account(remote, "sweengineeringlabs"));
+        assert!(remote_matches_account(remote, "SWEENGINEERINGLABS"));
+    }
+
+    #[test]
+    fn remote_matches_account_different_repo() {
+        let remote1 = "git@github.com:alice/repo.git";
+        let remote2 = "git@github.com:bob/repo.git";
+        assert!(remote_matches_account(remote1, "alice"));
+        assert!(!remote_matches_account(remote1, "bob"));
+        assert!(remote_matches_account(remote2, "bob"));
+    }
+
+    #[test]
+    fn gh_account_struct_fields() {
+        let account = GhAccount {
+            username: "testuser".to_string(),
+            is_active: true,
+        };
+        assert_eq!(account.username, "testuser");
+        assert!(account.is_active);
+    }
+
+    #[test]
+    fn parse_gh_auth_status_output() {
+        // Actual gh auth status output format
+        let output = r#"github.com
+  ✓ Logged in to github.com account sweengineeringlabs (keyring)
+  - Active account: true
+  - Git operations protocol: ssh
+  - Token: gho_************************************
+  - Token scopes: 'admin:public_key', 'gist', 'read:org', 'repo'
+
+  ✓ Logged in to github.com account phdsystems (keyring)
+  - Active account: false
+  - Git operations protocol: ssh
+  - Token: gho_************************************
+  - Token scopes: 'gist', 'read:org', 'repo'"#;
+
+        let accounts = parse_gh_auth_output(output);
+
+        assert_eq!(accounts.len(), 2, "Should find 2 accounts");
+        assert_eq!(accounts[0].username, "sweengineeringlabs");
+        assert!(accounts[0].is_active, "sweengineeringlabs should be active");
+        assert_eq!(accounts[1].username, "phdsystems");
+        assert!(!accounts[1].is_active, "phdsystems should be inactive");
+    }
+
+    #[test]
+    fn parse_gh_auth_status_single_account() {
+        let output = r#"github.com
+  ✓ Logged in to github.com account myuser (keyring)
+  - Active account: true
+  - Git operations protocol: https"#;
+
+        let accounts = parse_gh_auth_output(output);
+
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].username, "myuser");
+        assert!(accounts[0].is_active);
+    }
+
+    #[test]
+    fn parse_gh_auth_status_no_accounts() {
+        let output = "You are not logged in to any GitHub hosts.";
+        let accounts = parse_gh_auth_output(output);
+        assert!(accounts.is_empty());
     }
 }

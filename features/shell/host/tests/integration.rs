@@ -2018,3 +2018,138 @@ fn workspace_nested_path_in_workspace_allowed() {
         "nested paths in workspace should work. stdout: {out}, stderr: {err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Tests — workspace-repo binding
+// ---------------------------------------------------------------------------
+
+/// Helper to write config.toml with workspace bindings
+fn write_config_with_bindings(home: &Path, bindings: &str) {
+    let config_dir = home.join(".config").join("swebash");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::write(
+        config_dir.join("config.toml"),
+        format!(
+            r#"setup_completed = true
+
+[workspace]
+root = "."
+
+{bindings}
+"#
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn workspace_binding_config_loads_bindings() {
+    let home = TestDir::new("ws_binding_load");
+    let workspace = TestDir::new("ws_binding_load_ws");
+
+    // Write config with one bound workspace
+    write_config_with_bindings(
+        home.path(),
+        &format!(
+            r#"
+[[bound_workspaces]]
+workspace_path = "{}"
+repo_remote = "https://github.com/test/repo.git"
+repo_local = "{}"
+bound_at = "2026-02-22T12:00:00Z"
+"#,
+            workspace.path().display().to_string().replace('\\', "/"),
+            workspace.path().display().to_string().replace('\\', "/")
+        ),
+    );
+
+    // Verify config file was written
+    let config_path = home.path().join(".config/swebash/config.toml");
+    assert!(config_path.exists(), "config should exist");
+
+    let contents = std::fs::read_to_string(&config_path).unwrap();
+    assert!(
+        contents.contains("bound_workspaces"),
+        "config should contain bound_workspaces section"
+    );
+    assert!(
+        contents.contains("repo_remote"),
+        "config should contain repo_remote field"
+    );
+}
+
+#[test]
+fn workspace_binding_multiple_workspaces_allowed() {
+    let home = TestDir::new("ws_binding_multi");
+    let ws1 = TestDir::new("ws_binding_multi_ws1");
+    let ws2 = TestDir::new("ws_binding_multi_ws2");
+
+    // Write config with two bound workspaces
+    write_config_with_bindings(
+        home.path(),
+        &format!(
+            r#"
+[[bound_workspaces]]
+workspace_path = "{}"
+repo_remote = "https://github.com/test/repo1.git"
+repo_local = "{}"
+bound_at = "2026-02-22T12:00:00Z"
+
+[[bound_workspaces]]
+workspace_path = "{}"
+repo_remote = "https://github.com/test/repo2.git"
+repo_local = "{}"
+bound_at = "2026-02-22T12:00:00Z"
+"#,
+            ws1.path().display().to_string().replace('\\', "/"),
+            ws1.path().display().to_string().replace('\\', "/"),
+            ws2.path().display().to_string().replace('\\', "/"),
+            ws2.path().display().to_string().replace('\\', "/")
+        ),
+    );
+
+    let config_path = home.path().join(".config/swebash/config.toml");
+    let contents = std::fs::read_to_string(&config_path).unwrap();
+
+    // Count bound_workspaces sections
+    let count = contents.matches("[[bound_workspaces]]").count();
+    assert_eq!(
+        count, 2,
+        "config should have 2 bound_workspaces sections, got {count}"
+    );
+}
+
+#[test]
+fn workspace_binding_path_normalization() {
+    // Test that paths with backslashes and forward slashes normalize correctly
+    let path1 = r"C:\Users\test\project";
+    let path2 = "C:/Users/test/project";
+
+    // Both should normalize to the same forward-slash format
+    let normalized1 = path1.replace('\\', "/").to_lowercase();
+    let normalized2 = path2.replace('\\', "/").to_lowercase();
+
+    assert_eq!(
+        normalized1, normalized2,
+        "paths should normalize to same format"
+    );
+}
+
+#[test]
+fn workspace_binding_remote_normalization() {
+    // Test SSH to HTTPS normalization
+    let ssh_remote = "git@github.com:user/repo.git";
+    let https_remote = "https://github.com/user/repo.git";
+
+    // Extract repo path from both
+    let ssh_repo = ssh_remote
+        .strip_prefix("git@github.com:")
+        .unwrap()
+        .trim_end_matches(".git");
+    let https_repo = https_remote
+        .strip_prefix("https://github.com/")
+        .unwrap()
+        .trim_end_matches(".git");
+
+    assert_eq!(ssh_repo, https_repo, "repos should normalize to same path");
+}

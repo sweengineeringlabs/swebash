@@ -14,11 +14,119 @@ pub struct SwebashConfig {
     #[serde(default)]
     pub ai: AiConfig,
     /// Git branch pipeline and safety gate configuration.
+    /// Deprecated: Use `workspaces` instead for repo-bound configs.
     #[serde(default)]
     pub git: Option<GitConfig>,
     /// Whether the first-run setup wizard has been completed.
     #[serde(default)]
     pub setup_completed: bool,
+    /// Workspace-to-repository bindings.
+    /// Each workspace is permanently bound to a specific git repository.
+    #[serde(default)]
+    pub bound_workspaces: Vec<BoundWorkspace>,
+}
+
+/// A workspace permanently bound to a specific git repository.
+/// Once created, the binding cannot be changed - only deleted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BoundWorkspace {
+    /// Workspace root path (absolute).
+    pub workspace_path: String,
+    /// Git remote URL this workspace is bound to (for verification).
+    pub repo_remote: String,
+    /// Local repository path at time of binding.
+    pub repo_local: String,
+    /// ISO 8601 timestamp when this binding was created.
+    pub bound_at: String,
+    /// Git branch pipeline and safety gates for this workspace.
+    #[serde(default)]
+    pub git: Option<GitConfig>,
+}
+
+impl BoundWorkspace {
+    /// Check if the given path matches this workspace.
+    pub fn matches_workspace(&self, path: &str) -> bool {
+        let workspace = normalize_path(&self.workspace_path);
+        let check = normalize_path(path);
+        check.starts_with(&workspace)
+    }
+
+    /// Check if the given repo remote matches this binding.
+    pub fn matches_remote(&self, remote: &str) -> bool {
+        normalize_remote(&self.repo_remote) == normalize_remote(remote)
+    }
+}
+
+/// Normalize a path for comparison (lowercase on Windows, forward slashes).
+fn normalize_path(path: &str) -> String {
+    let p = path.replace('\\', "/");
+    #[cfg(windows)]
+    {
+        p.to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        p
+    }
+}
+
+/// Normalize a git remote URL for comparison.
+/// Handles: https://github.com/user/repo.git vs git@github.com:user/repo.git
+fn normalize_remote(remote: &str) -> String {
+    let r = remote.trim();
+    // Remove trailing .git
+    let r = r.strip_suffix(".git").unwrap_or(r);
+    // Convert SSH to HTTPS format for comparison
+    if r.starts_with("git@") {
+        // git@github.com:user/repo -> github.com/user/repo
+        r.strip_prefix("git@")
+            .unwrap_or(r)
+            .replace(':', "/")
+            .to_lowercase()
+    } else if r.starts_with("https://") {
+        // https://github.com/user/repo -> github.com/user/repo
+        r.strip_prefix("https://").unwrap_or(r).to_lowercase()
+    } else if r.starts_with("http://") {
+        r.strip_prefix("http://").unwrap_or(r).to_lowercase()
+    } else {
+        r.to_lowercase()
+    }
+}
+
+impl SwebashConfig {
+    /// Find a bound workspace that matches the given path.
+    pub fn find_workspace_for_path(&self, path: &str) -> Option<&BoundWorkspace> {
+        self.bound_workspaces
+            .iter()
+            .find(|ws| ws.matches_workspace(path))
+    }
+
+    /// Find a bound workspace that matches the given repo remote.
+    pub fn find_workspace_for_remote(&self, remote: &str) -> Option<&BoundWorkspace> {
+        self.bound_workspaces
+            .iter()
+            .find(|ws| ws.matches_remote(remote))
+    }
+
+    /// Check if a workspace is already bound to any repo.
+    pub fn is_workspace_bound(&self, path: &str) -> bool {
+        self.find_workspace_for_path(path).is_some()
+    }
+
+    /// Verify that the current directory's repo matches the bound workspace.
+    /// Returns Err with message if there's a mismatch.
+    pub fn verify_repo_binding(&self, workspace_path: &str, current_remote: &str) -> Result<(), String> {
+        if let Some(bound) = self.find_workspace_for_path(workspace_path) {
+            if !bound.matches_remote(current_remote) {
+                return Err(format!(
+                    "Workspace mismatch: This workspace is bound to '{}' but current repo is '{}'.\n\
+                     Commits are blocked to prevent accidental changes to the wrong repository.",
+                    bound.repo_remote, current_remote
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// `[ai]` section of the config.
@@ -254,6 +362,7 @@ mod tests {
             ai: AiConfig::default(),
             git: Some(git_config),
             setup_completed: true,
+            bound_workspaces: vec![],
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
@@ -334,6 +443,7 @@ root = "~/workspace"
                 gates,
             }),
             setup_completed: true,
+            bound_workspaces: vec![],
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
@@ -394,5 +504,236 @@ root = "~/workspace"
 
         let deserialized: SwebashConfig = toml::from_str(&serialized).unwrap();
         assert!(!deserialized.ai.enabled);
+    }
+
+    // ── Workspace binding tests ────────────────────────────────────────────
+
+    #[test]
+    fn normalize_path_converts_backslashes() {
+        let result = normalize_path("C:\\Users\\test\\project");
+        assert_eq!(result, "c:/users/test/project");
+    }
+
+    #[test]
+    fn normalize_path_preserves_forward_slashes() {
+        let result = normalize_path("/home/user/project");
+        #[cfg(windows)]
+        assert_eq!(result, "/home/user/project");
+        #[cfg(not(windows))]
+        assert_eq!(result, "/home/user/project");
+    }
+
+    #[test]
+    fn normalize_remote_https_url() {
+        let result = normalize_remote("https://github.com/user/repo.git");
+        assert_eq!(result, "github.com/user/repo");
+    }
+
+    #[test]
+    fn normalize_remote_ssh_url() {
+        let result = normalize_remote("git@github.com:user/repo.git");
+        assert_eq!(result, "github.com/user/repo");
+    }
+
+    #[test]
+    fn normalize_remote_removes_trailing_git() {
+        let result = normalize_remote("https://github.com/user/repo");
+        assert_eq!(result, "github.com/user/repo");
+    }
+
+    #[test]
+    fn normalize_remote_case_insensitive() {
+        let result1 = normalize_remote("https://GitHub.com/User/Repo.git");
+        let result2 = normalize_remote("https://github.com/user/repo.git");
+        assert_eq!(result1, result2);
+    }
+
+    #[test]
+    fn bound_workspace_matches_workspace_exact() {
+        let ws = BoundWorkspace {
+            workspace_path: "/home/user/project".to_string(),
+            repo_remote: "https://github.com/user/repo.git".to_string(),
+            repo_local: "/home/user/project".to_string(),
+            bound_at: "2026-01-01T00:00:00Z".to_string(),
+            git: None,
+        };
+        assert!(ws.matches_workspace("/home/user/project"));
+    }
+
+    #[test]
+    fn bound_workspace_matches_workspace_subdirectory() {
+        let ws = BoundWorkspace {
+            workspace_path: "/home/user/project".to_string(),
+            repo_remote: "https://github.com/user/repo.git".to_string(),
+            repo_local: "/home/user/project".to_string(),
+            bound_at: "2026-01-01T00:00:00Z".to_string(),
+            git: None,
+        };
+        assert!(ws.matches_workspace("/home/user/project/src/main.rs"));
+    }
+
+    #[test]
+    fn bound_workspace_no_match_different_path() {
+        let ws = BoundWorkspace {
+            workspace_path: "/home/user/project".to_string(),
+            repo_remote: "https://github.com/user/repo.git".to_string(),
+            repo_local: "/home/user/project".to_string(),
+            bound_at: "2026-01-01T00:00:00Z".to_string(),
+            git: None,
+        };
+        assert!(!ws.matches_workspace("/home/user/other"));
+    }
+
+    #[test]
+    fn bound_workspace_matches_remote_same_url() {
+        let ws = BoundWorkspace {
+            workspace_path: "/home/user/project".to_string(),
+            repo_remote: "https://github.com/user/repo.git".to_string(),
+            repo_local: "/home/user/project".to_string(),
+            bound_at: "2026-01-01T00:00:00Z".to_string(),
+            git: None,
+        };
+        assert!(ws.matches_remote("https://github.com/user/repo.git"));
+    }
+
+    #[test]
+    fn bound_workspace_matches_remote_ssh_vs_https() {
+        let ws = BoundWorkspace {
+            workspace_path: "/home/user/project".to_string(),
+            repo_remote: "https://github.com/user/repo.git".to_string(),
+            repo_local: "/home/user/project".to_string(),
+            bound_at: "2026-01-01T00:00:00Z".to_string(),
+            git: None,
+        };
+        // SSH format should match HTTPS format
+        assert!(ws.matches_remote("git@github.com:user/repo.git"));
+    }
+
+    #[test]
+    fn bound_workspace_no_match_different_remote() {
+        let ws = BoundWorkspace {
+            workspace_path: "/home/user/project".to_string(),
+            repo_remote: "https://github.com/user/repo.git".to_string(),
+            repo_local: "/home/user/project".to_string(),
+            bound_at: "2026-01-01T00:00:00Z".to_string(),
+            git: None,
+        };
+        assert!(!ws.matches_remote("https://github.com/other/repo.git"));
+    }
+
+    #[test]
+    fn config_find_workspace_for_path() {
+        let ws = BoundWorkspace {
+            workspace_path: "/home/user/project".to_string(),
+            repo_remote: "https://github.com/user/repo.git".to_string(),
+            repo_local: "/home/user/project".to_string(),
+            bound_at: "2026-01-01T00:00:00Z".to_string(),
+            git: None,
+        };
+        let config = SwebashConfig {
+            bound_workspaces: vec![ws],
+            ..Default::default()
+        };
+        assert!(config.find_workspace_for_path("/home/user/project").is_some());
+        assert!(config.find_workspace_for_path("/home/user/other").is_none());
+    }
+
+    #[test]
+    fn config_verify_repo_binding_success() {
+        let ws = BoundWorkspace {
+            workspace_path: "/home/user/project".to_string(),
+            repo_remote: "https://github.com/user/repo.git".to_string(),
+            repo_local: "/home/user/project".to_string(),
+            bound_at: "2026-01-01T00:00:00Z".to_string(),
+            git: None,
+        };
+        let config = SwebashConfig {
+            bound_workspaces: vec![ws],
+            ..Default::default()
+        };
+        let result = config.verify_repo_binding(
+            "/home/user/project",
+            "https://github.com/user/repo.git",
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn config_verify_repo_binding_mismatch() {
+        let ws = BoundWorkspace {
+            workspace_path: "/home/user/project".to_string(),
+            repo_remote: "https://github.com/user/repo.git".to_string(),
+            repo_local: "/home/user/project".to_string(),
+            bound_at: "2026-01-01T00:00:00Z".to_string(),
+            git: None,
+        };
+        let config = SwebashConfig {
+            bound_workspaces: vec![ws],
+            ..Default::default()
+        };
+        let result = config.verify_repo_binding(
+            "/home/user/project",
+            "https://github.com/other/repo.git",
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("mismatch"));
+    }
+
+    #[test]
+    fn config_multiple_workspaces() {
+        let ws1 = BoundWorkspace {
+            workspace_path: "/home/user/project1".to_string(),
+            repo_remote: "https://github.com/user/repo1.git".to_string(),
+            repo_local: "/home/user/project1".to_string(),
+            bound_at: "2026-01-01T00:00:00Z".to_string(),
+            git: None,
+        };
+        let ws2 = BoundWorkspace {
+            workspace_path: "/home/user/project2".to_string(),
+            repo_remote: "https://github.com/user/repo2.git".to_string(),
+            repo_local: "/home/user/project2".to_string(),
+            bound_at: "2026-01-01T00:00:00Z".to_string(),
+            git: None,
+        };
+        let config = SwebashConfig {
+            bound_workspaces: vec![ws1, ws2],
+            ..Default::default()
+        };
+
+        // Each workspace should find its own binding
+        let found1 = config.find_workspace_for_path("/home/user/project1");
+        let found2 = config.find_workspace_for_path("/home/user/project2");
+
+        assert!(found1.is_some());
+        assert!(found2.is_some());
+        assert!(found1.unwrap().matches_remote("https://github.com/user/repo1.git"));
+        assert!(found2.unwrap().matches_remote("https://github.com/user/repo2.git"));
+    }
+
+    #[test]
+    fn bound_workspace_serde_roundtrip() {
+        let ws = BoundWorkspace {
+            workspace_path: "/home/user/project".to_string(),
+            repo_remote: "https://github.com/user/repo.git".to_string(),
+            repo_local: "/home/user/project".to_string(),
+            bound_at: "2026-01-01T00:00:00Z".to_string(),
+            git: None,
+        };
+        let config = SwebashConfig {
+            bound_workspaces: vec![ws],
+            ..Default::default()
+        };
+
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        assert!(serialized.contains("[[bound_workspaces]]"));
+        assert!(serialized.contains("workspace_path"));
+        assert!(serialized.contains("repo_remote"));
+
+        let deserialized: SwebashConfig = toml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.bound_workspaces.len(), 1);
+        assert_eq!(
+            deserialized.bound_workspaces[0].repo_remote,
+            "https://github.com/user/repo.git"
+        );
     }
 }

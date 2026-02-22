@@ -96,7 +96,7 @@ export LLM_PROVIDER=anthropic
 | [Tab Tests](manual_tab_tests.md) | Tab commands, CWD isolation, tab bar, shortcuts, mode tabs | 68 |
 | [AI Tests](manual_ai_tests.md) | AI commands, agents, config, memory, docs context | 98 |
 | [RAG Tests](manual_rag_tests.md) | RAG indexing, retrieval, staleness, vector stores, SweVecDB | 53 |
-| [Git Safety Gate Tests](manual_git_gates_tests.md) | Setup wizard, branch pipeline, safety gates, overrides | 67 |
+| [Git Safety Gate Tests](manual_git_gates_tests.md) | Setup wizard, branch pipeline, safety gates, workspace binding | 91 |
 | [sbh Launcher Tests](manual_sbh_tests.md) | sbh/sbh.ps1 help, build, test, gen-aws-docs | 46 |
 
 ---
@@ -118,12 +118,12 @@ cargo test -p swebash-ai -p swebash
 |-------|----------|-------|
 | Engine unit tests | `features/shell/engine/src/` | 20 |
 | Readline unit tests | `features/shell/readline/src/` | 54 |
-| Host unit tests | `features/shell/host/src/spi/{git_config,git_gates,config}.rs` | 52 |
-| Host integration | `features/shell/host/tests/integration.rs` | 94 |
+| Host unit tests | `features/shell/host/src/spi/{git_config,git_gates,config}.rs` | 112 |
+| Host integration | `features/shell/host/tests/integration.rs` | 98 |
 | Host readline tests | `features/shell/host/tests/readline_tests.rs` | 19 |
 | AI unit tests | `features/ai/src/` | 123 |
 | AI integration | `features/ai/tests/integration.rs` | 189 |
-| **Total** | | **551** |
+| **Total** | | **615** |
 
 ### Agent-Specific Automated Tests
 
@@ -304,3 +304,29 @@ Tests verifying that paths use forward slashes for cross-platform copy-paste com
 | `git_gate_denies_force_push_on_protected_branch` | Host integration | Force-push on main → denied |
 | `git_gate_no_config_allows_everything` | Host integration | No .swebash/git.toml → all operations pass |
 | `git_gate_passthrough_commands_always_allowed` | Host integration | git status/log always allowed even with deny gates |
+
+### Workspace-Repo Binding Automated Tests
+
+| Test | Suite | Verifies |
+|------|-------|----------|
+| `bound_workspace_matches_workspace_exact` | Host unit | Exact path match for workspace binding |
+| `bound_workspace_matches_workspace_subdirectory` | Host unit | Subdirectory matches parent workspace binding |
+| `bound_workspace_no_match_different_path` | Host unit | Different paths do not match |
+| `bound_workspace_matches_remote_same_url` | Host unit | Same remote URL matches |
+| `bound_workspace_matches_remote_ssh_vs_https` | Host unit | SSH and HTTPS URLs for same repo match |
+| `bound_workspace_no_match_different_remote` | Host unit | Different repos do not match |
+| `config_find_workspace_for_path` | Host unit | find_workspace_for_path() returns correct binding |
+| `config_multiple_workspaces` | Host unit | Multiple workspaces can be bound |
+| `config_verify_repo_binding_success` | Host unit | verify_repo_binding() succeeds when remote matches |
+| `config_verify_repo_binding_mismatch` | Host unit | verify_repo_binding() fails when remote differs |
+| `bound_workspace_serde_roundtrip` | Host unit | BoundWorkspace survives TOML serialization |
+| `normalize_path_preserves_forward_slashes` | Host unit | Forward slashes unchanged |
+| `normalize_path_converts_backslashes` | Host unit | Backslashes converted to forward slashes |
+| `normalize_remote_https_url` | Host unit | HTTPS URL normalized correctly |
+| `normalize_remote_ssh_url` | Host unit | SSH URL normalized correctly |
+| `normalize_remote_removes_trailing_git` | Host unit | .git suffix removed |
+| `normalize_remote_case_insensitive` | Host unit | Case-insensitive normalization |
+| `workspace_binding_config_loads_bindings` | Host integration | Config file with bound_workspaces loads correctly |
+| `workspace_binding_multiple_workspaces_allowed` | Host integration | Multiple workspace bindings in config |
+| `workspace_binding_path_normalization` | Host integration | Path normalization for cross-platform use |
+| `workspace_binding_remote_normalization` | Host integration | Remote URL normalization (SSH vs HTTPS) |

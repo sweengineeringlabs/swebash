@@ -384,6 +384,27 @@ The `workspace` built-in command shall support runtime sandbox modification:
 | **Traces to** | STK-04 → `host/src/spi/sandbox.rs` |
 | **Acceptance** | Relative paths are resolved against the tab's virtual CWD; `~` is expanded to the home directory; symlinks are resolved before checking |
 
+#### FR-304: Workspace-repository binding
+
+| Attribute | Value |
+|-----------|-------|
+| **Priority** | Must |
+| **State** | Implemented |
+| **Verification** | Test |
+| **Traces to** | STK-04 → `host/src/spi/config.rs` |
+| **Acceptance** | Setup wizard permanently binds workspace path to git remote; config supports multiple workspace/repo pairs; commits prevented when remote doesn't match binding; path and remote normalization for cross-platform compatibility (SSH/HTTPS, forward/backward slashes) |
+
+The workspace-repository binding feature ensures that once a workspace is configured for a specific git repository, accidental commits to the wrong repository are prevented:
+
+| Feature | Description |
+|---------|-------------|
+| Permanent binding | Setup wizard records workspace path + git remote URL at configuration time |
+| Multi-workspace support | Config file supports `[[bound_workspaces]]` array for multiple projects |
+| Remote verification | On git operations, current remote is compared against bound remote |
+| Path normalization | Windows backslashes and drive letters normalized for cross-platform matching |
+| Remote normalization | SSH (`git@github.com:user/repo`) and HTTPS (`https://github.com/user/repo`) normalized for comparison |
+| Mismatch protection | Git commit/push blocked if current repo remote differs from bound remote |
+
 ### 4.4 Tab System
 
 #### FR-400: Multi-tab shell sessions

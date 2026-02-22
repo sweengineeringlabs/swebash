@@ -26,6 +26,7 @@
 - [Re-Run Wizard](#11-re-run-wizard)
 - [Edge Cases](#12-edge-cases)
 - [Branch Creation Gate](#13-branch-creation-gate)
+- [Workspace-Repository Binding](#14-workspace-repository-binding)
 
 ---
 
@@ -185,6 +186,27 @@ Users can only create branches that are listed in the config. This prevents ad-h
 
 ---
 
+## 14. Workspace-Repository Binding
+
+Tests for the workspace-repo binding feature that permanently associates a workspace directory with a git repository.
+
+| # | Test | Steps | Expected |
+|---|------|-------|----------|
+| 80 | Binding created during setup | Run setup wizard in a git repo with remote | Config shows `[[bound_workspaces]]` with workspace_path and repo_remote |
+| 81 | Binding displays remote URL | Complete setup in repo | Step 1 shows "Local: /path/to/repo" and "Remote: https://github.com/user/repo.git" |
+| 82 | Multiple workspace bindings | Run setup in two different repos | Config has two `[[bound_workspaces]]` entries |
+| 83 | Binding survives restart | Restart swebash, inspect config | `bound_workspaces` entries preserved |
+| 84 | SSH remote normalized | Setup in repo with SSH remote `git@github.com:user/repo.git` | Remote stored, matches HTTPS equivalent for comparison |
+| 85 | HTTPS remote normalized | Setup in repo with HTTPS remote | Remote stored without trailing `.git` |
+| 86 | Windows path normalized | Setup on Windows path | Backslashes converted to forward slashes in config |
+| 87 | Subdirectory matches binding | `cd` to subdirectory of bound workspace | Still considered bound to same repo |
+| 88 | Different repo different binding | Clone different repo, run setup | New binding created for new repo |
+| 89 | Binding timestamp recorded | Inspect config after setup | `bound_at` field contains ISO timestamp |
+| 90 | Git config preserved in binding | Setup with custom git config | `[git]` section present under bound workspace |
+| 91 | Re-setup same workspace | Delete config, re-run setup in same workspace | New binding created (replaces old) |
+
+---
+
 ## Summary
 
 | Category | Test Count |
@@ -202,4 +224,5 @@ Users can only create branches that are listed in the config. This prevents ad-h
 | Re-Run Wizard | 3 |
 | Edge Cases | 6 |
 | Branch Creation Gate | 12 |
-| **Total** | **79** |
+| Workspace-Repo Binding | 12 |
+| **Total** | **91** |
