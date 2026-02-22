@@ -17,12 +17,22 @@ const EMBEDDED_ENGINE_WASM: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/en
 /// If the `ENGINE_WASM` environment variable is set at runtime, the module is
 /// loaded from that file path (useful during development).  Otherwise the
 /// compile-time embedded bytes are used.
+///
+/// Wasmtime's disk cache is enabled by default to avoid JIT compilation overhead
+/// on subsequent runs. See docs/3-design/wasmtime_caching.md for details.
 pub fn setup(
     sandbox: SandboxPolicy,
     initial_cwd: PathBuf,
     git_enforcer: Option<Arc<GitGateEnforcer>>,
 ) -> Result<(Store<HostState>, Instance)> {
-    let engine = Engine::default();
+    // Enable wasmtime disk cache for faster subsequent startups.
+    // First run: JIT compiles and caches (~700ms)
+    // Subsequent runs: loads cached native code (~50ms)
+    let mut config = Config::new();
+    // Cache is optional - silently continue without it if unavailable.
+    // Errors can occur due to permissions, missing directories, etc.
+    let _ = config.cache_config_load_default();
+    let engine = Engine::new(&config).context("failed to create wasmtime engine")?;
 
     let module = if let Ok(path) = std::env::var("ENGINE_WASM") {
         Module::from_file(&engine, &path)
