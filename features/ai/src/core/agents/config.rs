@@ -396,7 +396,7 @@ impl ConfigAgent {
         let mut base = YamlAgentDescriptor::from_entry_with_prompt_modifier(
             entry,
             &defaults.base,
-            |_entry, mut system_prompt| {
+            |entry, mut system_prompt| {
                 if let (Some(docs_info), Some(dir)) = (&docs_for_modifier, base_dir) {
                     match strategy_for_modifier {
                         DocsStrategy::Preload => {
@@ -416,11 +416,13 @@ impl ConfigAgent {
                                     docs_content, system_prompt
                                 );
                             }
-                            if !result.unresolved.is_empty() {
-                                tracing::warn!(
-                                    unresolved = ?result.unresolved,
-                                    files_loaded = result.files_loaded,
-                                    "agent has docs_context sources that resolved no files"
+                            if !result.unresolved.is_empty() && result.files_loaded == 0 {
+                                // Only log at debug level - missing docs for built-in agents
+                                // is expected when running outside their target project.
+                                tracing::debug!(
+                                    agent = %entry.id,
+                                    unresolved_count = result.unresolved.len(),
+                                    "agent docs sources not found (run with RUST_LOG=debug to see paths)"
                                 );
                             }
                         }
