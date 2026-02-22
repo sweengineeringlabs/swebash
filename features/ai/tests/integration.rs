@@ -55,6 +55,7 @@ fn anthropic_config() -> AiConfig {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     }
 }
 
@@ -103,6 +104,7 @@ fn config_has_api_key_known_provider() {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     };
     assert!(config.has_api_key());
     std::env::remove_var("OPENAI_API_KEY");
@@ -123,6 +125,7 @@ fn config_has_api_key_missing() {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     };
     assert!(!config.has_api_key());
 }
@@ -140,6 +143,7 @@ fn config_has_api_key_unknown_provider() {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     };
     assert!(!config.has_api_key());
 }
@@ -219,6 +223,7 @@ async fn service_status_model_matches_config() {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => assert_eq!(service.status().await.model, expected_model),
@@ -604,6 +609,7 @@ async fn chat_history_respects_capacity() {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -922,6 +928,7 @@ async fn service_disabled_rejects_requests() {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -956,6 +963,7 @@ async fn error_bad_api_key_propagates() {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     };
     let has_oauth = config_for_check.has_oauth_credentials();
 
@@ -1019,6 +1027,7 @@ async fn error_invalid_model_propagates() {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -1050,6 +1059,7 @@ async fn error_disabled_service_propagates_through_chat() {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     };
     match try_create_service_with_config(config).await {
         Ok(service) => {
@@ -1395,6 +1405,7 @@ fn factory_creates_engine_with_cache_enabled() {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     };
     let llm: Arc<dyn LlmService> = Arc::new(MockLlmService::new());
     let registry = swebash_ai::core::agents::builtins::create_default_registry(llm, config);
@@ -1421,6 +1432,7 @@ fn factory_creates_engine_with_cache_disabled() {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     };
     let llm: Arc<dyn LlmService> = Arc::new(MockLlmService::new());
     let registry = swebash_ai::core::agents::builtins::create_default_registry(llm, config);
@@ -1627,6 +1639,7 @@ fn config_fs_only() -> AiConfig {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     }
 }
 
@@ -1655,6 +1668,7 @@ fn config_exec_only() -> AiConfig {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     }
 }
 

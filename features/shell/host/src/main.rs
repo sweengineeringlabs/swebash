@@ -151,7 +151,27 @@ async fn main() -> Result<()> {
         .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
         .unwrap_or(config.ai.enabled);
     let ai_service = if ai_enabled {
-        swebash_ai::create_ai_service().await.ok()
+        // Create AI sandbox from workspace policy
+        let ai_sandbox = if policy.enabled {
+            let mut rules = Vec::new();
+            for path_rule in &policy.allowed_paths {
+                let mode = match path_rule.mode {
+                    spi::state::AccessMode::ReadOnly => swebash_ai::SandboxAccessMode::ReadOnly,
+                    spi::state::AccessMode::ReadWrite => swebash_ai::SandboxAccessMode::ReadWrite,
+                };
+                rules.push(swebash_ai::SandboxRule {
+                    path: path_rule.root.clone(),
+                    mode,
+                });
+            }
+            Some(Arc::new(swebash_ai::ToolSandbox {
+                rules,
+                enabled: true,
+            }))
+        } else {
+            None
+        };
+        swebash_ai::create_ai_service_with_sandbox(ai_sandbox).await.ok()
     } else {
         None
     };
@@ -349,10 +369,15 @@ async fn main() -> Result<()> {
         }
 
         // Check if command is complete
-        let validator = Validator::new();
-        if validator.validate(&tab_mgr.active_tab().multiline_buffer) == ValidationResult::Incomplete
-        {
-            continue;
+        // Skip validation for AI mode - natural language doesn't need shell quote validation
+        let tab = tab_mgr.active_tab();
+        let skip_validation = tab.ai_mode || matches!(tab.kind(), TabKind::Ai);
+        if !skip_validation {
+            let validator = Validator::new();
+            if validator.validate(&tab_mgr.active_tab().multiline_buffer) == ValidationResult::Incomplete
+            {
+                continue;
+            }
         }
 
         // Command is complete, process it

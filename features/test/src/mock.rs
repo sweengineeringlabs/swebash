@@ -186,6 +186,7 @@ pub fn mock_config() -> AiConfig {
         log_dir: None,
         docs_base_dir: None,
         rag: swebash_ai::spi::config::RagConfig::default(),
+        tool_sandbox: None,
     }
 }
 

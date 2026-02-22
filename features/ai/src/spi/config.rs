@@ -1,7 +1,10 @@
 /// Configuration from environment variables.
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use llmrag::VectorStoreConfig;
+
+use crate::core::tools::ToolSandbox;
 
 /// AI service configuration.
 #[derive(Debug, Clone)]
@@ -30,6 +33,12 @@ pub struct AiConfig {
     pub docs_base_dir: Option<PathBuf>,
     /// RAG (Retrieval-Augmented Generation) configuration.
     pub rag: RagConfig,
+    /// Optional sandbox restrictions for AI tools.
+    ///
+    /// When set, filesystem and command executor tools are wrapped
+    /// to enforce path restrictions, preventing access outside the
+    /// allowed workspace.
+    pub tool_sandbox: Option<Arc<ToolSandbox>>,
 }
 
 /// RAG (Retrieval-Augmented Generation) configuration.
@@ -314,6 +323,7 @@ impl AiConfig {
             log_dir,
             docs_base_dir,
             rag,
+            tool_sandbox: None, // Set via create_ai_service_with_sandbox()
         }
     }
 

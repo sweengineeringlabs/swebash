@@ -28,6 +28,7 @@ pub use api::commands::{self, AiCommand};
 pub use api::output;
 pub use spi::config::{AiConfig, ToolCacheConfig, ToolConfig};
 pub use core::DefaultAiService;
+pub use core::tools::{ToolSandbox, SandboxAccessMode, SandboxRule};
 
 /// Factory: create the AI service from environment configuration.
 ///
@@ -43,7 +44,18 @@ pub use core::DefaultAiService;
 /// let ai_service = swebash_ai::create_ai_service().ok();
 /// ```
 pub async fn create_ai_service() -> AiResult<DefaultAiService> {
-    let config = AiConfig::from_env();
+    create_ai_service_with_sandbox(None).await
+}
+
+/// Factory: create the AI service with optional sandbox restrictions.
+///
+/// When `sandbox` is provided, filesystem and command executor tools are
+/// wrapped to enforce path restrictions, preventing AI tools from accessing
+/// files outside the allowed workspace.
+pub async fn create_ai_service_with_sandbox(
+    sandbox: Option<std::sync::Arc<ToolSandbox>>,
+) -> AiResult<DefaultAiService> {
+    let mut config = AiConfig::from_env();
 
     if !config.enabled {
         return Err(AiError::NotConfigured(
@@ -57,6 +69,9 @@ pub async fn create_ai_service() -> AiResult<DefaultAiService> {
             config.provider
         )));
     }
+
+    // Store sandbox in config for agent registry to use
+    config.tool_sandbox = sandbox;
 
     // Create the SPI client (initializes the LLM provider)
     let client = spi::chat_provider::ChatProviderClient::new(&config).await?;

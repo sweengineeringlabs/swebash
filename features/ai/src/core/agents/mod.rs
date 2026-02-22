@@ -121,10 +121,28 @@ impl EngineFactory<ConfigAgent> for SwebashEngineFactory {
                 let cache_cfg = agent_cache::CacheConfig::with_ttl(
                     Duration::from_secs(effective_tools.cache.ttl_secs),
                 ).with_max_entries(effective_tools.cache.max_entries);
-                let (reg, _) = tools::create_cached_registry(&rustratify_config, cache_cfg);
+                let (reg, _) = tools::create_cached_registry_with_sandbox(
+                    &rustratify_config,
+                    cache_cfg,
+                    self.config.tool_sandbox.clone(),
+                );
                 reg
             } else {
-                tools::create_standard_registry(&rustratify_config)
+                // Note: standard registry doesn't support sandbox yet
+                // Use cached registry with sandbox for security
+                if self.config.tool_sandbox.is_some() {
+                    let cache_cfg = agent_cache::CacheConfig::with_ttl(
+                        Duration::from_secs(300),
+                    ).with_max_entries(100);
+                    let (reg, _) = tools::create_cached_registry_with_sandbox(
+                        &rustratify_config,
+                        cache_cfg,
+                        self.config.tool_sandbox.clone(),
+                    );
+                    reg
+                } else {
+                    tools::create_standard_registry(&rustratify_config)
+                }
             };
 
             // Register SwebashRagTool for agents using the RAG docs strategy.
@@ -350,6 +368,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -388,6 +407,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -412,6 +432,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -441,6 +462,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -468,6 +490,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -491,6 +514,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -512,6 +536,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -534,6 +559,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -553,6 +579,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -577,6 +604,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -603,6 +631,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -628,6 +657,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -657,6 +687,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -689,6 +720,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -750,6 +782,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -780,6 +813,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -820,6 +854,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -868,6 +903,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -903,6 +939,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -937,6 +974,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -971,6 +1009,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let factory = SwebashEngineFactory {
@@ -1020,6 +1059,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -1043,6 +1083,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -1064,6 +1105,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -1085,6 +1127,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -1112,6 +1155,7 @@ mod tests {
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);

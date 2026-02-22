@@ -415,6 +415,7 @@ agents:
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -459,6 +460,7 @@ agents:
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);
@@ -484,6 +486,7 @@ agents:
             log_dir: None,
             docs_base_dir: None,
             rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
         };
 
         let mut manager = AgentManager::new(Arc::new(MockLlmService::new()), config, None);

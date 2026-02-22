@@ -49,7 +49,13 @@ fn list_short(path: Option<&str>) {
     }
 
     let data = crate::api::buffer::read_response(len as usize);
-    crate::write_bytes(data);
+    if data.is_empty() || data == b"\n" {
+        crate::write_bytes(DIM);
+        crate::write_bytes(b"(empty)\n");
+        crate::write_bytes(RESET);
+    } else {
+        crate::write_bytes(data);
+    }
 }
 
 /// Format a byte size into a human-readable 7-char right-aligned string.
@@ -139,6 +145,15 @@ fn list_long(path: Option<&str>) {
         Some(p) => String::from(p),
         None => String::from("."),
     };
+
+    // Check if directory is empty
+    let has_entries = listing.lines().any(|e| !e.is_empty());
+    if !has_entries {
+        crate::write_bytes(DIM);
+        crate::write_bytes(b"(empty)\n");
+        crate::write_bytes(RESET);
+        return;
+    }
 
     for entry in listing.lines() {
         if entry.is_empty() {

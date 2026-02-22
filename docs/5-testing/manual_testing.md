@@ -119,11 +119,11 @@ cargo test -p swebash-ai -p swebash
 | Engine unit tests | `features/shell/engine/src/` | 20 |
 | Readline unit tests | `features/shell/readline/src/` | 54 |
 | Host unit tests | `features/shell/host/src/spi/{git_config,git_gates,config}.rs` | 112 |
-| Host integration | `features/shell/host/tests/integration.rs` | 98 |
+| Host integration | `features/shell/host/tests/integration.rs` | 107 |
 | Host readline tests | `features/shell/host/tests/readline_tests.rs` | 19 |
-| AI unit tests | `features/ai/src/` | 123 |
-| AI integration | `features/ai/tests/integration.rs` | 189 |
-| **Total** | | **615** |
+| AI unit tests | `features/ai/src/` | 164 |
+| AI integration | `features/ai/tests/integration.rs` | 201 |
+| **Total** | | **677** |
 
 ### Agent-Specific Automated Tests
 
@@ -330,3 +330,38 @@ Tests verifying that paths use forward slashes for cross-platform copy-paste com
 | `workspace_binding_multiple_workspaces_allowed` | Host integration | Multiple workspace bindings in config |
 | `workspace_binding_path_normalization` | Host integration | Path normalization for cross-platform use |
 | `workspace_binding_remote_normalization` | Host integration | Remote URL normalization (SSH vs HTTPS) |
+| `workspace_binding_config_with_mismatch_detectable` | Host integration | Config with mismatched remote is detectable |
+| `workspace_binding_config_with_matching_remote` | Host integration | Config with matching remote works correctly |
+
+### Empty Folder Message Automated Tests
+
+| Test | Suite | Verifies |
+|------|-------|----------|
+| `ls_empty_directory_shows_message` | Host integration | `ls` in empty directory shows "(empty)" |
+| `ls_long_empty_directory_shows_message` | Host integration | `ls -l` in empty directory shows header + "(empty)" |
+| `ls_non_empty_directory_no_empty_message` | Host integration | `ls` with files does not show "(empty)" |
+
+### AI Mode Multiline Input Automated Tests
+
+| Test | Suite | Verifies |
+|------|-------|----------|
+| `ai_mode_incomplete_quote_does_not_hang` | Host integration | Natural language with apostrophe (what's) doesn't hang |
+| `ai_mode_natural_language_with_quotes_works` | Host integration | Contractions (what's, it's, don't) work in AI mode |
+| `ai_mode_question_with_apostrophe` | Host integration | Incomplete-looking quotes (how's) process correctly |
+
+### AI Tool Sandbox Automated Tests
+
+| Test | Suite | Verifies |
+|------|-------|----------|
+| `sandbox_allows_path_inside_workspace` | AI unit | Paths inside workspace root are allowed |
+| `sandbox_denies_path_outside_workspace` | AI unit | Paths outside workspace are denied |
+| `sandbox_readonly_denies_write` | AI unit | Read-only mode blocks write operations |
+| `sandbox_disabled_allows_everything` | AI unit | Disabled sandbox allows all operations |
+| `normalize_path_handles_backslashes` | AI unit | Windows backslashes normalized correctly |
+| `sandbox_multiple_allowed_paths` | AI unit | Multiple workspace paths with different modes |
+| `sandbox_nested_path_allowed` | AI unit | Deeply nested paths inside workspace allowed |
+| `sandbox_parent_traversal_blocked` | AI unit | Parent directory access blocked |
+| `sandbox_error_message_includes_path` | AI unit | Error messages include the blocked path |
+| `sandboxed_tool_check_args_extracts_path` | AI unit | Tool arguments are checked for paths |
+| `sandboxed_tool_needs_write_detection` | AI unit | Write operations detected from tool name |
+| `ai_sandbox_respects_workspace_policy` | Host integration | AI sandbox inherits workspace restrictions |
