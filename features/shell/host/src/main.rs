@@ -18,6 +18,8 @@ const MAX_RECENT: usize = 10;
 /// Shorten a CWD path by replacing the home directory prefix with `~`.
 /// Also normalizes backslashes to forward slashes for copy-paste compatibility.
 fn display_cwd(cwd: &str, home: Option<&PathBuf>) -> String {
+    // Strip Windows extended-length path prefix if present
+    let cwd = cwd.strip_prefix(r"\\?\").unwrap_or(cwd);
     // Normalize backslashes to forward slashes
     let cwd = cwd.replace('\\', "/");
 

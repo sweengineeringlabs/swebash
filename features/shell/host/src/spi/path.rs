@@ -12,14 +12,20 @@ use std::path::Path;
 /// This allows users to copy-paste paths from shell output directly
 /// into commands without needing to quote them.
 ///
+/// On Windows, also strips the extended-length path prefix (`\\?\`)
+/// that `canonicalize()` adds, as it's not user-friendly.
+///
 /// # Examples
 ///
 /// ```ignore
 /// // On Windows: C:\Users\alice -> C:/Users/alice
+/// // On Windows: \\?\C:\Users\alice -> C:/Users/alice
 /// // On Unix: /home/alice -> /home/alice (unchanged)
 /// ```
 pub fn display_path(path: &Path) -> String {
     let s = path.to_string_lossy();
+    // Strip Windows extended-length path prefix if present
+    let s = s.strip_prefix(r"\\?\").unwrap_or(&s);
     // Replace backslashes with forward slashes for consistent display
     s.replace('\\', "/")
 }
@@ -56,11 +62,11 @@ mod tests {
     }
 
     #[test]
-    fn unc_path_normalized() {
-        // UNC paths like \\?\C:\path
+    fn extended_path_prefix_stripped() {
+        // Extended-length paths like \\?\C:\path (from canonicalize on Windows)
         let p = PathBuf::from("\\\\?\\C:\\Users\\alice");
         let displayed = display_path(&p);
         #[cfg(windows)]
-        assert_eq!(displayed, "//?/C:/Users/alice");
+        assert_eq!(displayed, "C:/Users/alice");
     }
 }
