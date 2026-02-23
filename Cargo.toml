@@ -4,7 +4,7 @@ members = [
   "features/shell/engine",
   "features/shell/host",
   "features/shell/readline",
-  "features/ai",
+  "features/llm",
   "features/test",
   "features/autotest",
 ]

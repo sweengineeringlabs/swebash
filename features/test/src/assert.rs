@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use swebash_ai::api::error::AiError;
+use swebash_llm::api::error::AiError;
 
 // ── Percentile Utilities ─────────────────────────────────────────────
 

@@ -3,7 +3,7 @@
 /// Provides utilities for collecting events from a streaming chat receiver
 /// and asserting properties of the event sequence.
 
-use swebash_ai::api::types::AiEvent;
+use swebash_llm::api::types::AiEvent;
 use tokio::sync::mpsc;
 
 /// Drain all events from an `AiEvent` receiver.

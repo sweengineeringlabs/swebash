@@ -4,9 +4,9 @@
 /// documented API contract. Use `verify_all_contracts` to run the full
 /// suite, or call individual verifiers in targeted tests.
 
-use swebash_ai::api::error::AiError;
-use swebash_ai::api::types::TranslateRequest;
-use swebash_ai::api::AiService;
+use swebash_llm::api::error::AiError;
+use swebash_llm::api::types::TranslateRequest;
+use swebash_llm::api::AiService;
 
 use crate::error::TestError;
 

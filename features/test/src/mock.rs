@@ -7,12 +7,12 @@ use std::sync::Arc;
 
 use llm_provider::{LlmService, MockBehaviour, MockLlmService};
 use parking_lot::Mutex;
-use swebash_ai::api::error::{AiError, AiResult};
-use swebash_ai::api::types::{AiMessage, AiResponse, CompletionOptions};
-use swebash_ai::core::agents::builtins::create_default_registry;
-use swebash_ai::core::DefaultAiService;
-use swebash_ai::spi::rag::EmbeddingProvider;
-use swebash_ai::{AiConfig, ToolConfig};
+use swebash_llm::api::error::{AiError, AiResult};
+use swebash_llm::api::types::{AiMessage, AiResponse, CompletionOptions};
+use swebash_llm::core::agents::builtins::create_default_registry;
+use swebash_llm::core::DefaultAiService;
+use swebash_llm::spi::rag::EmbeddingProvider;
+use swebash_llm::{AiConfig, ToolConfig};
 
 use llmrag::RagResult;
 
@@ -24,7 +24,7 @@ use llmrag::RagResult;
 pub struct MockAiClient;
 
 #[async_trait::async_trait]
-impl swebash_ai::spi::AiClient for MockAiClient {
+impl swebash_llm::spi::AiClient for MockAiClient {
     async fn complete(
         &self,
         _messages: Vec<AiMessage>,
@@ -60,7 +60,7 @@ pub struct ErrorMockAiClient {
 }
 
 #[async_trait::async_trait]
-impl swebash_ai::spi::AiClient for ErrorMockAiClient {
+impl swebash_llm::spi::AiClient for ErrorMockAiClient {
     async fn complete(
         &self,
         _messages: Vec<AiMessage>,
@@ -185,7 +185,7 @@ pub fn mock_config() -> AiConfig {
         tools: ToolConfig::default(),
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     }
 }
@@ -250,8 +250,8 @@ pub fn create_mock_service_full_error(error_msg: &str) -> DefaultAiService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swebash_ai::api::AiService;
-    use swebash_ai::spi::AiClient;
+    use swebash_llm::api::AiService;
+    use swebash_llm::spi::AiClient;
 
     #[test]
     fn mock_config_has_sensible_defaults() {

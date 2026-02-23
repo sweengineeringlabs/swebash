@@ -6,16 +6,16 @@ rust-version = "1.93"
 
 [features]
 default = ["rag-local"]
-rag-local = ["swebash-ai/rag-local"]
-rag-sqlite = ["swebash-ai/rag-sqlite"]
-rag-swevecdb = ["swebash-ai/rag-swevecdb"]
+rag-local = ["swebash-llm/rag-local"]
+rag-sqlite = ["swebash-llm/rag-sqlite"]
+rag-swevecdb = ["swebash-llm/rag-swevecdb"]
 
 [dependencies]
 wasmtime = "29"
 anyhow = "1"
 dirs = "5"
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
-swebash-ai = { path = "../../ai", default-features = false }
+swebash-llm = { path = "../../llm", default-features = false }
 swebash-readline = { path = "../readline" }
 dotenvy = "0.15"
 serde = { version = "1", features = ["derive"] }

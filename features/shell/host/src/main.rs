@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
-use swebash_ai::{commands, handle_ai_command, output, AiCommand, AiService, DefaultAiService};
+use swebash_llm::{commands, handle_ai_command, output, AiCommand, AiService, DefaultAiService};
 use swebash_readline::{
     Completer, EditorAction, Hinter, History, LineEditor, ReadlineConfig, ValidationResult,
     Validator,
@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
     let _ = dotenvy::dotenv();
 
     // Initialize tracing subscriber. Honors RUST_LOG env var for filtering.
-    // Default: warnings only. Example: RUST_LOG=swebash_ai=debug
+    // Default: warnings only. Example: RUST_LOG=swebash_llm=debug
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -186,16 +186,16 @@ async fn main() -> Result<()> {
             let mut rules = Vec::new();
             for path_rule in &policy.allowed_paths {
                 let mode = match path_rule.mode {
-                    spi::state::AccessMode::ReadOnly => swebash_ai::SandboxAccessMode::ReadOnly,
-                    spi::state::AccessMode::ReadWrite => swebash_ai::SandboxAccessMode::ReadWrite,
+                    spi::state::AccessMode::ReadOnly => swebash_llm::SandboxAccessMode::ReadOnly,
+                    spi::state::AccessMode::ReadWrite => swebash_llm::SandboxAccessMode::ReadWrite,
                 };
-                rules.push(swebash_ai::SandboxRule {
+                rules.push(swebash_llm::SandboxRule {
                     path: path_rule.root.clone(),
                     mode,
                 });
             }
             // Initialize sandbox with initial_cwd for correct relative path resolution
-            Some(Arc::new(swebash_ai::ToolSandbox::with_rules_and_cwd(
+            Some(Arc::new(swebash_llm::ToolSandbox::with_rules_and_cwd(
                 rules,
                 true,
                 initial_cwd.clone(),
@@ -203,7 +203,7 @@ async fn main() -> Result<()> {
         } else {
             None
         };
-        swebash_ai::create_ai_service_with_sandbox(ai_sandbox).await.ok()
+        swebash_llm::create_ai_service_with_sandbox(ai_sandbox).await.ok()
     } else {
         None
     };

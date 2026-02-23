@@ -1,9 +1,9 @@
 [package]
-name = "swebash-ai"
+name = "swebash-llm"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.93"
-description = "AI/LLM integration for swebash shell (SEA pattern)"
+description = "LLM integration for swebash shell (SEA pattern)"
 
 [features]
 default = ["rag-local"]

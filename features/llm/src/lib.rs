@@ -1,4 +1,4 @@
-/// L5 Facade: swebash-ai crate entry point.
+/// L5 Facade: swebash-llm crate entry point.
 ///
 /// Re-exports the public API and provides the `create_ai_service()` factory.
 ///
@@ -41,7 +41,7 @@ pub use core::tools::{ToolSandbox, SandboxAccessMode, SandboxRule};
 ///
 /// The host should call this at startup and store the result as `Option`:
 /// ```ignore
-/// let ai_service = swebash_ai::create_ai_service().ok();
+/// let ai_service = swebash_llm::create_ai_service().ok();
 /// ```
 pub async fn create_ai_service() -> AiResult<DefaultAiService> {
     create_ai_service_with_sandbox(None).await

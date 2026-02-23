@@ -19,7 +19,7 @@ use crate::error::TestError;
 pub struct CapturedEvent {
     /// The severity level of the event.
     pub level: Level,
-    /// The target module path (e.g., `swebash_ai::core`).
+    /// The target module path (e.g., `swebash_llm::core`).
     pub target: String,
     /// The formatted message (from the `message` field).
     pub message: String,

@@ -1,7 +1,7 @@
 /// Tool calling infrastructure (from rustratify)
 ///
 /// This module re-exports tool types from rustratify's tool crate
-/// for use in swebash-ai.
+/// for use in swebash-llm.
 pub mod cached;
 pub mod devops;
 pub mod error;

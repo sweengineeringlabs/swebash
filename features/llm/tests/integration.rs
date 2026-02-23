@@ -1,4 +1,4 @@
-/// Integration tests for swebash-ai using the real Anthropic LLM provider.
+/// Integration tests for swebash-llm using the real Anthropic LLM provider.
 ///
 /// Every test always runs and asserts something meaningful:
 /// - With `ANTHROPIC_API_KEY` set: tests exercise the real API and verify responses.
@@ -16,26 +16,26 @@ use std::sync::Arc;
 
 use llm_provider::{LlmService, MockLlmService, MockBehaviour};
 use serial_test::serial;
-use swebash_ai::api::error::{AiError, AiResult};
-use swebash_ai::api::types::{
+use swebash_llm::api::error::{AiError, AiResult};
+use swebash_llm::api::types::{
     AiEvent, AutocompleteRequest, ChatRequest, ExplainRequest, TranslateRequest,
 };
-use swebash_ai::api::AiService;
-use swebash_ai::{AiConfig, ToolCacheConfig, ToolConfig};
-use swebash_ai::core::agents::builtins::{builtin_agent_count, create_default_registry};
+use swebash_llm::api::AiService;
+use swebash_llm::{AiConfig, ToolCacheConfig, ToolConfig};
+use swebash_llm::core::agents::builtins::{builtin_agent_count, create_default_registry};
 
 fn builtin_count() -> usize {
     builtin_agent_count()
 }
-use swebash_ai::core::agents::config::{AgentDefaults, AgentEntry, SwebashAgentsYaml, SwebashAgentExt, SwebashFullDefaults, ConfigAgent, DocsConfig, DocsStrategy, ToolsConfig, load_docs_context};
-use swebash_ai::core::agents::{AgentDescriptor, ToolFilter};
-use swebash_ai::core::DefaultAiService;
-use swebash_ai::spi::chat_provider::ChatProviderClient;
-use swebash_ai::core::rag::chunker::ChunkerConfig;
-use swebash_ai::core::rag::index::{RagIndexManager, RagIndexService};
-use swebash_ai::core::rag::stores::InMemoryVectorStore;
-use swebash_ai::core::rag::tool::SwebashRagTool;
-use swebash_ai::spi::rag::{EmbeddingProvider, VectorStore};
+use swebash_llm::core::agents::config::{AgentDefaults, AgentEntry, SwebashAgentsYaml, SwebashAgentExt, SwebashFullDefaults, ConfigAgent, DocsConfig, DocsStrategy, ToolsConfig, load_docs_context};
+use swebash_llm::core::agents::{AgentDescriptor, ToolFilter};
+use swebash_llm::core::DefaultAiService;
+use swebash_llm::spi::chat_provider::ChatProviderClient;
+use swebash_llm::core::rag::chunker::ChunkerConfig;
+use swebash_llm::core::rag::index::{RagIndexManager, RagIndexService};
+use swebash_llm::core::rag::stores::InMemoryVectorStore;
+use swebash_llm::core::rag::tool::SwebashRagTool;
+use swebash_llm::spi::rag::{EmbeddingProvider, VectorStore};
 use swebash_test::prelude::*;
 use tool::Tool;
 
@@ -54,7 +54,7 @@ fn anthropic_config() -> AiConfig {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     }
 }
@@ -67,7 +67,7 @@ async fn try_create_service() -> AiResult<DefaultAiService> {
     let config = anthropic_config();
     let client = ChatProviderClient::new(&config).await?;
     let llm = client.llm_service();
-    let agents = swebash_ai::core::agents::builtins::create_default_registry(llm, config.clone());
+    let agents = swebash_llm::core::agents::builtins::create_default_registry(llm, config.clone());
     Ok(DefaultAiService::new(Box::new(client), agents, config))
 }
 
@@ -75,7 +75,7 @@ async fn try_create_service() -> AiResult<DefaultAiService> {
 async fn try_create_service_with_config(config: AiConfig) -> AiResult<DefaultAiService> {
     let client = ChatProviderClient::new(&config).await?;
     let llm = client.llm_service();
-    let agents = swebash_ai::core::agents::builtins::create_default_registry(llm, config.clone());
+    let agents = swebash_llm::core::agents::builtins::create_default_registry(llm, config.clone());
     Ok(DefaultAiService::new(Box::new(client), agents, config))
 }
 
@@ -83,7 +83,7 @@ async fn try_create_service_with_config(config: AiConfig) -> AiResult<DefaultAiS
 async fn try_create_service_with_tools(config: AiConfig) -> AiResult<DefaultAiService> {
     let client = ChatProviderClient::new(&config).await?;
     let llm = client.llm_service();
-    let agents = swebash_ai::core::agents::builtins::create_default_registry(llm, config.clone());
+    let agents = swebash_llm::core::agents::builtins::create_default_registry(llm, config.clone());
     Ok(DefaultAiService::new(Box::new(client), agents, config))
 }
 
@@ -103,7 +103,7 @@ fn config_has_api_key_known_provider() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     };
     assert!(config.has_api_key());
@@ -124,7 +124,7 @@ fn config_has_api_key_missing() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     };
     assert!(!config.has_api_key());
@@ -142,7 +142,7 @@ fn config_has_api_key_unknown_provider() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     };
     assert!(!config.has_api_key());
@@ -152,7 +152,7 @@ fn config_has_api_key_unknown_provider() {
 
 #[tokio::test]
 async fn factory_missing_api_key() {
-    let result = swebash_ai::create_ai_service().await;
+    let result = swebash_llm::create_ai_service().await;
     // Either NotConfigured (no key) or Provider (bad key/unreachable) is ok.
     match result {
         Ok(_) => {
@@ -166,7 +166,7 @@ async fn factory_missing_api_key() {
 #[serial]
 async fn factory_disabled() {
     std::env::set_var("SWEBASH_AI_ENABLED", "false");
-    let result = swebash_ai::create_ai_service().await;
+    let result = swebash_llm::create_ai_service().await;
     std::env::remove_var("SWEBASH_AI_ENABLED");
 
     match result {
@@ -222,7 +222,7 @@ async fn service_status_model_matches_config() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     };
     match try_create_service_with_config(config).await {
@@ -608,7 +608,7 @@ async fn chat_history_respects_capacity() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     };
     match try_create_service_with_config(config).await {
@@ -927,7 +927,7 @@ async fn service_disabled_rejects_requests() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     };
     match try_create_service_with_config(config).await {
@@ -962,7 +962,7 @@ async fn error_bad_api_key_propagates() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     };
     let has_oauth = config_for_check.has_oauth_credentials();
@@ -977,7 +977,7 @@ async fn error_bad_api_key_propagates() {
         Err(e) => Err(e),
         Ok(client) => {
             let llm = client.llm_service();
-            let agents = swebash_ai::core::agents::builtins::create_default_registry(
+            let agents = swebash_llm::core::agents::builtins::create_default_registry(
                 llm,
                 config_for_check.clone(),
             );
@@ -1026,7 +1026,7 @@ async fn error_invalid_model_propagates() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     };
     match try_create_service_with_config(config).await {
@@ -1058,7 +1058,7 @@ async fn error_disabled_service_propagates_through_chat() {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     };
     match try_create_service_with_config(config).await {
@@ -1256,7 +1256,7 @@ async fn error_chain_service_remains_usable_after_error() {
 #[test]
 fn map_llm_error_configuration() {
     let llm_err = llm_provider::LlmError::Configuration("bad config".to_string());
-    let ai_err = swebash_ai::spi::chat_provider::map_llm_error(llm_err);
+    let ai_err = swebash_llm::spi::chat_provider::map_llm_error(llm_err);
     match ai_err {
         AiError::NotConfigured(msg) => assert_eq!(msg, "bad config"),
         other => panic!("Expected NotConfigured, got: {:?}", other),
@@ -1268,7 +1268,7 @@ fn map_llm_error_rate_limited() {
     let llm_err = llm_provider::LlmError::RateLimited {
         retry_after_ms: Some(5000),
     };
-    let ai_err = swebash_ai::spi::chat_provider::map_llm_error(llm_err);
+    let ai_err = swebash_llm::spi::chat_provider::map_llm_error(llm_err);
     match ai_err {
         AiError::RateLimited => {}
         other => panic!("Expected RateLimited, got: {:?}", other),
@@ -1278,7 +1278,7 @@ fn map_llm_error_rate_limited() {
 #[test]
 fn map_llm_error_timeout() {
     let llm_err = llm_provider::LlmError::Timeout(30000);
-    let ai_err = swebash_ai::spi::chat_provider::map_llm_error(llm_err);
+    let ai_err = swebash_llm::spi::chat_provider::map_llm_error(llm_err);
     match ai_err {
         AiError::Timeout => {}
         other => panic!("Expected Timeout, got: {:?}", other),
@@ -1288,7 +1288,7 @@ fn map_llm_error_timeout() {
 #[test]
 fn map_llm_error_network() {
     let llm_err = llm_provider::LlmError::NetworkError("connection refused".to_string());
-    let ai_err = swebash_ai::spi::chat_provider::map_llm_error(llm_err);
+    let ai_err = swebash_llm::spi::chat_provider::map_llm_error(llm_err);
     match ai_err {
         AiError::Provider(msg) => {
             assert!(
@@ -1304,7 +1304,7 @@ fn map_llm_error_network() {
 #[test]
 fn map_llm_error_serialization() {
     let llm_err = llm_provider::LlmError::SerializationError("bad json".to_string());
-    let ai_err = swebash_ai::spi::chat_provider::map_llm_error(llm_err);
+    let ai_err = swebash_llm::spi::chat_provider::map_llm_error(llm_err);
     match ai_err {
         AiError::ParseError(msg) => assert_eq!(msg, "bad json"),
         other => panic!("Expected ParseError, got: {:?}", other),
@@ -1314,7 +1314,7 @@ fn map_llm_error_serialization() {
 #[test]
 fn map_llm_error_fallthrough() {
     let llm_err = llm_provider::LlmError::ProviderNotFound("unknown-llm".to_string());
-    let ai_err = swebash_ai::spi::chat_provider::map_llm_error(llm_err);
+    let ai_err = swebash_llm::spi::chat_provider::map_llm_error(llm_err);
     match ai_err {
         AiError::Provider(_) => {}
         other => panic!("Expected Provider (catch-all), got: {:?}", other),
@@ -1406,11 +1406,11 @@ fn factory_creates_engine_with_cache_enabled() {
         tools: ToolConfig::default(), // cache enabled by default
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     };
     let llm: Arc<dyn LlmService> = Arc::new(MockLlmService::new());
-    let registry = swebash_ai::core::agents::builtins::create_default_registry(llm, config);
+    let registry = swebash_llm::core::agents::builtins::create_default_registry(llm, config);
     // Should create engines without errors when cache is enabled
     assert!(registry.engine_for("shell").is_some());
 }
@@ -1433,11 +1433,11 @@ fn factory_creates_engine_with_cache_disabled() {
         },
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     };
     let llm: Arc<dyn LlmService> = Arc::new(MockLlmService::new());
-    let registry = swebash_ai::core::agents::builtins::create_default_registry(llm, config);
+    let registry = swebash_llm::core::agents::builtins::create_default_registry(llm, config);
     // Should create engines without errors when cache is disabled (standard registry path)
     assert!(registry.engine_for("shell").is_some());
 }
@@ -1448,7 +1448,7 @@ async fn tool_aware_engine_creation() {
         Ok(client) => {
             let config = anthropic_config();
             let llm = client.llm_service();
-            let registry = swebash_ai::core::agents::builtins::create_default_registry(llm, config);
+            let registry = swebash_llm::core::agents::builtins::create_default_registry(llm, config);
             // Verify registry was created with built-in agents
             assert!(registry.get("shell").is_some());
         }
@@ -1466,7 +1466,7 @@ async fn tool_aware_engine_with_fs_only() {
     match ChatProviderClient::new(&config).await {
         Ok(client) => {
             let llm = client.llm_service();
-            let registry = swebash_ai::core::agents::builtins::create_default_registry(llm, config);
+            let registry = swebash_llm::core::agents::builtins::create_default_registry(llm, config);
             // Verify review agent exists (it uses fs-only tools)
             assert!(registry.get("review").is_some());
         }
@@ -1484,7 +1484,7 @@ async fn tool_aware_engine_with_exec_only() {
     match ChatProviderClient::new(&config).await {
         Ok(client) => {
             let llm = client.llm_service();
-            let registry = swebash_ai::core::agents::builtins::create_default_registry(llm, config);
+            let registry = swebash_llm::core::agents::builtins::create_default_registry(llm, config);
             // Verify git agent exists (it uses fs + exec tools)
             assert!(registry.get("git").is_some());
         }
@@ -1500,7 +1500,7 @@ async fn service_uses_simple_engine_when_tools_disabled() {
     config.tools.enable_web = false;
 
     // Using the factory from lib.rs should create SimpleChatEngine when tools disabled
-    match swebash_ai::create_ai_service().await {
+    match swebash_llm::create_ai_service().await {
         Ok(_service) => {
             // If service was created, verify it's available
             // (In a real scenario, we'd need API access to verify engine type)
@@ -1518,7 +1518,7 @@ async fn service_uses_tool_aware_engine_when_tools_enabled() {
     std::env::set_var("SWEBASH_AI_TOOLS_FS", "true");
     std::env::set_var("SWEBASH_AI_TOOLS_EXEC", "true");
 
-    match swebash_ai::create_ai_service().await {
+    match swebash_llm::create_ai_service().await {
         Ok(_service) => {
             // If service was created with tools enabled, it should use ToolAwareChatEngine
             // (In a real scenario, we'd need API access to verify engine type)
@@ -1641,7 +1641,7 @@ fn config_fs_only() -> AiConfig {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     }
 }
@@ -1671,7 +1671,7 @@ fn config_exec_only() -> AiConfig {
         agent_auto_detect: true,
         log_dir: None,
         docs_base_dir: None,
-        rag: swebash_ai::spi::config::RagConfig::default(),
+        rag: swebash_llm::spi::config::RagConfig::default(),
         tool_sandbox: None,
     }
 }
@@ -3508,7 +3508,7 @@ async fn delegate_e2e_service_layer_round_trip() {
             let result = service.switch_agent("docker").await;
             assert!(result.is_err()); // "docker" is not an agent ID
             // But the error hint should suggest devops
-            if let Err(swebash_ai::api::error::AiError::NotConfigured(msg)) = result {
+            if let Err(swebash_llm::api::error::AiError::NotConfigured(msg)) = result {
                 assert!(
                     msg.contains("devops"),
                     "error hint should suggest devops, got: {}",
@@ -3522,7 +3522,7 @@ async fn delegate_e2e_service_layer_round_trip() {
 
 // ── Logging integration tests ────────────────────────────────────────────
 
-use swebash_ai::spi::logging::LoggingLlmService;
+use swebash_llm::spi::logging::LoggingLlmService;
 
 #[tokio::test]
 async fn logging_writes_file_on_complete() {
@@ -3735,8 +3735,8 @@ async fn logging_stream_preserves_all_chunks() {
 
 // ── LoggingAiClient integration tests ────────────────────────────────────
 
-use swebash_ai::spi::logging::LoggingAiClient;
-use swebash_ai::spi::AiClient as SpiAiClient;
+use swebash_llm::spi::logging::LoggingAiClient;
+use swebash_llm::spi::AiClient as SpiAiClient;
 
 /// A minimal in-process AiClient stub used to drive LoggingAiClient integration tests
 /// without requiring a real LLM provider or API key.
@@ -3757,11 +3757,11 @@ impl StubLoggingClient {
 impl SpiAiClient for StubLoggingClient {
     async fn complete(
         &self,
-        _messages: Vec<swebash_ai::AiMessage>,
-        _options: swebash_ai::CompletionOptions,
-    ) -> AiResult<swebash_ai::AiResponse> {
+        _messages: Vec<swebash_llm::AiMessage>,
+        _options: swebash_llm::CompletionOptions,
+    ) -> AiResult<swebash_llm::AiResponse> {
         match &self.response {
-            Ok(content) => Ok(swebash_ai::AiResponse {
+            Ok(content) => Ok(swebash_llm::AiResponse {
                 content: content.clone(),
                 model: "stub-model".into(),
             }),
@@ -4737,7 +4737,7 @@ agents:
 #[test]
 #[serial]
 fn yaml_rag_config_parsed_from_project_local() {
-    use swebash_ai::core::agents::config::SwebashAgentsYaml;
+    use swebash_llm::core::agents::config::SwebashAgentsYaml;
 
     // Parse a YAML with rag section
     let yaml = r#"
@@ -4766,7 +4766,7 @@ agents:
 #[test]
 #[serial]
 fn yaml_rag_config_defaults_when_omitted() {
-    use swebash_ai::core::agents::config::SwebashAgentsYaml;
+    use swebash_llm::core::agents::config::SwebashAgentsYaml;
 
     // Parse a YAML without rag section
     let yaml = r#"
@@ -4785,7 +4785,7 @@ agents:
 #[test]
 #[serial]
 fn yaml_rag_config_partial_fields() {
-    use swebash_ai::core::agents::config::SwebashAgentsYaml;
+    use swebash_llm::core::agents::config::SwebashAgentsYaml;
 
     // Parse a YAML with partial rag section (only store)
     let yaml = r#"
@@ -5407,7 +5407,7 @@ async fn rag_tool_e2e_validates_query_parameter() {
 #[test]
 #[serial]
 fn yaml_rag_config_parses_swevecdb_store() {
-    use swebash_ai::core::agents::config::SwebashAgentsYaml;
+    use swebash_llm::core::agents::config::SwebashAgentsYaml;
 
     let yaml = r#"
 version: 1
@@ -5438,7 +5438,7 @@ agents:
 #[test]
 #[serial]
 fn yaml_rag_config_swevecdb_builds_vector_store_config() {
-    use swebash_ai::core::rag::stores::VectorStoreConfig;
+    use swebash_llm::core::rag::stores::VectorStoreConfig;
 
     let config = VectorStoreConfig::from_yaml(
         "swevecdb",
@@ -5455,7 +5455,7 @@ fn yaml_rag_config_swevecdb_builds_vector_store_config() {
 #[test]
 #[serial]
 fn yaml_rag_config_swevecdb_default_endpoint() {
-    use swebash_ai::core::rag::stores::VectorStoreConfig;
+    use swebash_llm::core::rag::stores::VectorStoreConfig;
 
     let config = VectorStoreConfig::from_yaml("swevecdb", None);
     match config {
@@ -5478,7 +5478,7 @@ fn config_env_swevecdb_store_with_endpoint() {
     std::env::remove_var("SWEBASH_AI_RAG_SWEVECDB_ENDPOINT");
 
     match config.rag.vector_store {
-        swebash_ai::core::rag::stores::VectorStoreConfig::Swevecdb { endpoint } => {
+        swebash_llm::core::rag::stores::VectorStoreConfig::Swevecdb { endpoint } => {
             assert_eq!(endpoint, "http://prod-vecdb:9090");
         }
         other => panic!("expected Swevecdb config, got {other:?}"),
@@ -5494,7 +5494,7 @@ fn config_env_swevecdb_store_default_endpoint() {
     std::env::remove_var("SWEBASH_AI_RAG_STORE");
 
     match config.rag.vector_store {
-        swebash_ai::core::rag::stores::VectorStoreConfig::Swevecdb { endpoint } => {
+        swebash_llm::core::rag::stores::VectorStoreConfig::Swevecdb { endpoint } => {
             assert_eq!(endpoint, "http://localhost:8080");
         }
         other => panic!("expected Swevecdb config, got {other:?}"),
@@ -5511,7 +5511,7 @@ fn config_env_memory_store_unchanged() {
     assert!(
         matches!(
             config.rag.vector_store,
-            swebash_ai::core::rag::stores::VectorStoreConfig::Memory
+            swebash_llm::core::rag::stores::VectorStoreConfig::Memory
         ),
         "default store should be Memory"
     );
@@ -5528,7 +5528,7 @@ fn swevecdb_test_endpoint() -> String {
 #[cfg(feature = "rag-swevecdb")]
 #[tokio::test]
 async fn rag_index_manager_swevecdb_build_and_search() {
-    use swebash_ai::core::rag::stores::SweVecdbVectorStore;
+    use swebash_llm::core::rag::stores::SweVecdbVectorStore;
 
     let dir = tempfile::tempdir().unwrap();
     let docs_dir = dir.path().join("docs");
@@ -5575,7 +5575,7 @@ async fn rag_index_manager_swevecdb_build_and_search() {
 #[cfg(feature = "rag-swevecdb")]
 #[tokio::test]
 async fn rag_index_manager_swevecdb_skips_rebuild_when_current() {
-    use swebash_ai::core::rag::stores::SweVecdbVectorStore;
+    use swebash_llm::core::rag::stores::SweVecdbVectorStore;
 
     let dir = tempfile::tempdir().unwrap();
     let docs_dir = dir.path().join("docs");
@@ -5614,7 +5614,7 @@ async fn rag_index_manager_swevecdb_skips_rebuild_when_current() {
 #[cfg(feature = "rag-swevecdb")]
 #[tokio::test]
 async fn rag_index_manager_swevecdb_fingerprint_survives_restart() {
-    use swebash_ai::core::rag::stores::SweVecdbVectorStore;
+    use swebash_llm::core::rag::stores::SweVecdbVectorStore;
 
     let dir = tempfile::tempdir().unwrap();
     let docs_dir = dir.path().join("docs");
@@ -5674,7 +5674,7 @@ async fn rag_index_manager_swevecdb_fingerprint_survives_restart() {
 #[cfg(feature = "rag-swevecdb")]
 #[tokio::test]
 async fn rag_tool_swevecdb_e2e_search() {
-    use swebash_ai::core::rag::stores::SweVecdbVectorStore;
+    use swebash_llm::core::rag::stores::SweVecdbVectorStore;
 
     let dir = tempfile::tempdir().unwrap();
     let docs_dir = dir.path().join("docs");
@@ -5723,7 +5723,7 @@ async fn rag_tool_swevecdb_e2e_search() {
 #[cfg(feature = "rag-swevecdb")]
 #[tokio::test]
 async fn rag_index_manager_swevecdb_agents_isolated() {
-    use swebash_ai::core::rag::stores::SweVecdbVectorStore;
+    use swebash_llm::core::rag::stores::SweVecdbVectorStore;
 
     let dir = tempfile::tempdir().unwrap();
 
@@ -5777,9 +5777,9 @@ async fn rag_index_manager_swevecdb_agents_isolated() {
 #[tokio::test]
 async fn cli_chat_error_does_not_panic() {
     let service = create_mock_service_full_error("credit balance too low");
-    let result = swebash_ai::handle_ai_command(
+    let result = swebash_llm::handle_ai_command(
         &Some(service),
-        swebash_ai::AiCommand::Chat("hello".to_string()),
+        swebash_llm::AiCommand::Chat("hello".to_string()),
         &[],
     )
     .await;
@@ -5790,9 +5790,9 @@ async fn cli_chat_error_does_not_panic() {
 #[tokio::test]
 async fn cli_explain_error_does_not_panic() {
     let service = create_mock_service_full_error("insufficient credits");
-    let result = swebash_ai::handle_ai_command(
+    let result = swebash_llm::handle_ai_command(
         &Some(service),
-        swebash_ai::AiCommand::Explain("ls -la".to_string()),
+        swebash_llm::AiCommand::Explain("ls -la".to_string()),
         &[],
     )
     .await;
@@ -5803,9 +5803,9 @@ async fn cli_explain_error_does_not_panic() {
 #[tokio::test]
 async fn cli_ask_error_does_not_panic() {
     let service = create_mock_service_full_error("rate limited");
-    let result = swebash_ai::handle_ai_command(
+    let result = swebash_llm::handle_ai_command(
         &Some(service),
-        swebash_ai::AiCommand::Ask("list files".to_string()),
+        swebash_llm::AiCommand::Ask("list files".to_string()),
         &[],
     )
     .await;
@@ -5816,9 +5816,9 @@ async fn cli_ask_error_does_not_panic() {
 #[tokio::test]
 async fn cli_suggest_error_does_not_panic() {
     let service = create_mock_service_full_error("timeout");
-    let result = swebash_ai::handle_ai_command(
+    let result = swebash_llm::handle_ai_command(
         &Some(service),
-        swebash_ai::AiCommand::Suggest,
+        swebash_llm::AiCommand::Suggest,
         &[],
     )
     .await;
@@ -5829,9 +5829,9 @@ async fn cli_suggest_error_does_not_panic() {
 #[tokio::test]
 async fn cli_chat_success_does_not_panic() {
     let service = create_mock_service_fixed("hello there");
-    let result = swebash_ai::handle_ai_command(
+    let result = swebash_llm::handle_ai_command(
         &Some(service),
-        swebash_ai::AiCommand::Chat("hi".to_string()),
+        swebash_llm::AiCommand::Chat("hi".to_string()),
         &[],
     )
     .await;
@@ -5842,12 +5842,12 @@ async fn cli_chat_success_does_not_panic() {
 #[tokio::test]
 async fn cli_no_service_does_not_panic() {
     for cmd in [
-        swebash_ai::AiCommand::Chat("hi".to_string()),
-        swebash_ai::AiCommand::Explain("ls".to_string()),
-        swebash_ai::AiCommand::Ask("list files".to_string()),
-        swebash_ai::AiCommand::Suggest,
+        swebash_llm::AiCommand::Chat("hi".to_string()),
+        swebash_llm::AiCommand::Explain("ls".to_string()),
+        swebash_llm::AiCommand::Ask("list files".to_string()),
+        swebash_llm::AiCommand::Suggest,
     ] {
-        let result = swebash_ai::handle_ai_command(&None, cmd, &[]).await;
+        let result = swebash_llm::handle_ai_command(&None, cmd, &[]).await;
         assert!(!result, "Should return false when service is None");
     }
 }

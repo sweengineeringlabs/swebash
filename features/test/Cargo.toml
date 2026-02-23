@@ -13,7 +13,7 @@ load   = []
 live   = ["tokio/net"]
 
 [dependencies]
-swebash-ai = { path = "../ai", default-features = false }
+swebash-llm = { path = "../llm", default-features = false }
 llmrag = { version = "0.1.0", registry = "local", default-features = false }
 llm-provider = { version = "0.1.0", registry = "local", features = ["testing"] }
 agent-controller = { version = "0.1.0", registry = "local", features = ["testing"] }

@@ -1,6 +1,6 @@
 /// L2 SPI implementation: delegates to the `chat` and `llm-provider` crates from rustratify.
 ///
-/// This is the ONLY file in swebash-ai that depends on `chat-engine`, `llm-provider`,
+/// This is the ONLY file in swebash-llm that depends on `chat-engine`, `llm-provider`,
 /// and `react`. All other modules program against the `AiClient` trait.
 use std::sync::Arc;
 
