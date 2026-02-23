@@ -3706,7 +3706,7 @@ dependencies = [
  "dirs 5.0.1",
  "dotenvy",
  "serde",
- "swebash-ai",
+ "swebash-llm",
  "swebash-readline",
  "tokio",
  "toml",
@@ -3715,7 +3715,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "swebash-ai"
+name = "swebash-autotest"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "colored",
+ "indicatif",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "swebash-test",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "swebash-llm"
 version = "0.1.0"
 dependencies = [
  "agent-cache",
@@ -3747,24 +3765,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "swebash-autotest"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "clap",
- "colored",
- "indicatif",
- "rayon",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
- "swebash-test",
- "tempfile",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "swebash-readline"
 version = "0.1.0"
 dependencies = [
@@ -3781,7 +3781,7 @@ dependencies = [
  "llmrag",
  "parking_lot",
  "serde",
- "swebash-ai",
+ "swebash-llm",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
