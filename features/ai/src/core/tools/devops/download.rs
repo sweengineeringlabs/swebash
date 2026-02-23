@@ -17,7 +17,8 @@ use tokio::fs::{self, File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{debug, info, instrument, warn};
 
-use super::error::{DownloadError, IntoToolError};
+use super::super::error::IntoToolError;
+use super::error::DownloadError;
 use tool::{RiskLevel, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
 
 /// Supported checksum algorithms.

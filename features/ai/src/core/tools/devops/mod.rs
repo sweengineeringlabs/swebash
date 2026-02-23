@@ -14,5 +14,5 @@ mod error;
 mod package_manager;
 
 pub use download::DownloadTool;
-pub use error::{DownloadError, ErrorCategory, IntoToolError, PackageManagerError};
+pub use error::{DownloadError, PackageManagerError};
 pub use package_manager::PackageManagerTool;

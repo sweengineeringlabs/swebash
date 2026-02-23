@@ -14,7 +14,8 @@ use tokio::process::Command;
 use tokio::time::timeout;
 use tracing::{debug, info, instrument, warn};
 
-use super::error::{IntoToolError, PackageManagerError};
+use super::super::error::IntoToolError;
+use super::error::PackageManagerError;
 use tool::{RiskLevel, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
 
 /// Detected package manager on the system.

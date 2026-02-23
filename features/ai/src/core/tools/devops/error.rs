@@ -5,29 +5,7 @@
 use thiserror::Error;
 use tool::ToolError;
 
-/// Error categories for DevOps tool operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErrorCategory {
-    /// Configuration or environment issue - user action required.
-    Configuration,
-    /// Invalid input from the LLM - prompt engineering issue.
-    Validation,
-    /// Network or external service issue - may be transient.
-    Network,
-    /// Execution failed - check logs/output.
-    Execution,
-    /// Operation timed out - may retry with longer timeout.
-    Timeout,
-    /// Permission denied - requires elevated privileges.
-    Permission,
-}
-
-impl ErrorCategory {
-    /// Whether this error category is potentially retryable.
-    pub fn is_retryable(&self) -> bool {
-        matches!(self, ErrorCategory::Network | ErrorCategory::Timeout)
-    }
-}
+use super::super::error::{ErrorCategory, IntoToolError};
 
 /// Package manager specific errors.
 #[derive(Debug, Error)]
@@ -279,11 +257,6 @@ impl DownloadError {
             self.suggestion()
         )
     }
-}
-
-/// Extension trait to convert DevOps errors to ToolError.
-pub trait IntoToolError {
-    fn into_tool_error(self) -> ToolError;
 }
 
 impl IntoToolError for PackageManagerError {

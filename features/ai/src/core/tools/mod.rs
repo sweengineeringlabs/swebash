@@ -4,7 +4,11 @@
 /// for use in swebash-ai.
 pub mod cached;
 pub mod devops;
+pub mod error;
 pub mod sandboxed;
+pub mod web;
+
+pub use error::{ErrorCategory, IntoToolError};
 
 pub use sandboxed::{SandboxedTool, ToolSandbox, SandboxAccessMode, SandboxRule};
 
