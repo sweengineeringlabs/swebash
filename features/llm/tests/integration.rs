@@ -3961,6 +3961,89 @@ async fn logging_ai_client_request_messages_are_logged() {
     assert!(has_nl, "logged messages should include the natural language request text");
 }
 
+/// MDC context fields (session_id, agent_id, etc.) should appear in log files
+/// when `with_log_context()` is used to wrap the async call.
+#[tokio::test]
+async fn logging_mdc_context_appears_in_log_files() {
+    use swebash_llm::spi::logging::{LogContext, with_log_context};
+
+    let dir = tempfile::tempdir().unwrap();
+    let service = make_logging_service(
+        Some(dir.path().to_path_buf()),
+        StubLoggingClient::ok("response"),
+    );
+
+    let ctx = LogContext::new()
+        .with_session_id("mdc-test-session")
+        .with_agent_id("shell")
+        .with_turn(7)
+        .with_correlation_id("corr-xyz");
+
+    with_log_context(ctx, async {
+        let _ = service.translate(TranslateRequest {
+            natural_language: "test mdc".into(),
+            cwd: "/tmp".into(),
+            recent_commands: vec![],
+        }).await;
+    }).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let files: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
+        .collect();
+
+    assert_eq!(files.len(), 1, "Expected one log file");
+
+    let content = std::fs::read_to_string(files[0].path()).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+    // Verify MDC context fields are present
+    assert_eq!(json["context"]["session_id"], "mdc-test-session");
+    assert_eq!(json["context"]["agent_id"], "shell");
+    assert_eq!(json["context"]["conversation_turn"], 7);
+    assert_eq!(json["context"]["correlation_id"], "corr-xyz");
+}
+
+/// Without `with_log_context()`, the context field should be absent from logs.
+#[tokio::test]
+async fn logging_without_mdc_context_omits_context_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = make_logging_service(
+        Some(dir.path().to_path_buf()),
+        StubLoggingClient::ok("response"),
+    );
+
+    // No with_log_context wrapper
+    let _ = service.translate(TranslateRequest {
+        natural_language: "test no mdc".into(),
+        cwd: "/tmp".into(),
+        recent_commands: vec![],
+    }).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let files: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
+        .collect();
+
+    assert_eq!(files.len(), 1, "Expected one log file");
+
+    let content = std::fs::read_to_string(files[0].path()).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+    // Context should be absent when empty (skip_serializing_if)
+    assert!(
+        json.get("context").is_none(),
+        "Empty context should be omitted from log, got: {:?}",
+        json.get("context")
+    );
+}
+
 // ── thinkFirst config tests ──────────────────────────────────────────────
 
 #[test]

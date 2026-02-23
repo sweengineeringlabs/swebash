@@ -10,6 +10,24 @@
 ///
 /// Both decorators write to the same directory, differentiated by their
 /// `kind` field, giving two complementary layers of observability.
+///
+/// ## MDC (Mapped Diagnostic Context)
+///
+/// Use `LogContext` to add contextual fields that propagate through the call chain:
+///
+/// ```ignore
+/// use swebash_llm::spi::logging::{LogContext, with_log_context};
+///
+/// let ctx = LogContext::new()
+///     .with_session_id("ses-001")
+///     .with_agent_id("shell");
+///
+/// with_log_context(ctx, async {
+///     // All logs within this block include session_id and agent_id
+///     service.complete(request).await
+/// }).await;
+/// ```
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -26,6 +44,140 @@ use llm_provider::{
 use crate::api::error::AiResult;
 use crate::api::types::{AiMessage, AiResponse, CompletionOptions};
 use crate::spi::AiClient;
+
+// ── MDC (Mapped Diagnostic Context) ──────────────────────────────────────
+
+tokio::task_local! {
+    static LOG_CONTEXT: RefCell<LogContext>;
+}
+
+/// Contextual fields that propagate through the logging call chain.
+///
+/// Use `with_log_context()` to set context for a block of async code.
+/// All log entries within that block will include these fields.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct LogContext {
+    /// Unique identifier for the user session/conversation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+
+    /// Current agent handling the request (e.g., "shell", "devops", "web").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+
+    /// Turn number within the conversation (1-indexed).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation_turn: Option<u32>,
+
+    /// Correlation ID for tracing requests across services.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
+
+    /// User identifier (if available).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+
+    /// Additional custom fields.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra: Option<serde_json::Value>,
+}
+
+impl LogContext {
+    /// Create a new empty context.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the session ID.
+    pub fn with_session_id(mut self, id: impl Into<String>) -> Self {
+        self.session_id = Some(id.into());
+        self
+    }
+
+    /// Set the agent ID.
+    pub fn with_agent_id(mut self, id: impl Into<String>) -> Self {
+        self.agent_id = Some(id.into());
+        self
+    }
+
+    /// Set the conversation turn number.
+    pub fn with_turn(mut self, turn: u32) -> Self {
+        self.conversation_turn = Some(turn);
+        self
+    }
+
+    /// Set the correlation ID.
+    pub fn with_correlation_id(mut self, id: impl Into<String>) -> Self {
+        self.correlation_id = Some(id.into());
+        self
+    }
+
+    /// Set the user ID.
+    pub fn with_user_id(mut self, id: impl Into<String>) -> Self {
+        self.user_id = Some(id.into());
+        self
+    }
+
+    /// Set additional custom fields.
+    pub fn with_extra(mut self, extra: serde_json::Value) -> Self {
+        self.extra = Some(extra);
+        self
+    }
+
+    /// Check if context has any fields set.
+    pub fn is_empty(&self) -> bool {
+        self.session_id.is_none()
+            && self.agent_id.is_none()
+            && self.conversation_turn.is_none()
+            && self.correlation_id.is_none()
+            && self.user_id.is_none()
+            && self.extra.is_none()
+    }
+}
+
+/// Execute an async block with the given log context.
+///
+/// All log entries created within this block will include the context fields.
+///
+/// # Example
+///
+/// ```ignore
+/// let ctx = LogContext::new()
+///     .with_session_id("ses-001")
+///     .with_agent_id("shell");
+///
+/// with_log_context(ctx, async {
+///     // Logs here include session_id="ses-001", agent_id="shell"
+///     client.complete(messages, options).await
+/// }).await;
+/// ```
+pub async fn with_log_context<F, T>(ctx: LogContext, f: F) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    LOG_CONTEXT.scope(RefCell::new(ctx), f).await
+}
+
+/// Get a clone of the current log context, if set.
+///
+/// Returns `LogContext::default()` if no context is set.
+pub fn current_log_context() -> LogContext {
+    LOG_CONTEXT
+        .try_with(|ctx| ctx.borrow().clone())
+        .unwrap_or_default()
+}
+
+/// Update the current log context with a modifier function.
+///
+/// Does nothing if no context is set.
+pub fn update_log_context<F>(f: F)
+where
+    F: FnOnce(&mut LogContext),
+{
+    let _ = LOG_CONTEXT.try_with(|ctx| {
+        f(&mut ctx.borrow_mut());
+    });
+}
 
 // ── Public API ───────────────────────────────────────────────────────────
 
@@ -76,6 +228,7 @@ impl LlmService for LoggingLlmService {
             timestamp_epoch_ms: timestamp,
             duration_ms,
             kind: "complete",
+            context: current_log_context(),
             request: request_value,
             result: log_result,
         };
@@ -119,6 +272,7 @@ impl LlmService for LoggingLlmService {
                     timestamp,
                     start,
                     request: request_value,
+                    context: current_log_context(),
                     finished: false,
                 };
 
@@ -131,6 +285,7 @@ impl LlmService for LoggingLlmService {
                     timestamp_epoch_ms: timestamp,
                     duration_ms,
                     kind: "complete_stream",
+                    context: current_log_context(),
                     request: request_value,
                     result: LogResult::Error {
                         error: e.to_string(),
@@ -170,6 +325,7 @@ struct StreamLogger {
     timestamp: u128,
     start: Instant,
     request: serde_json::Value,
+    context: LogContext,
     finished: bool,
 }
 
@@ -208,6 +364,7 @@ impl StreamLogger {
             timestamp_epoch_ms: self.timestamp,
             duration_ms,
             kind: "complete_stream",
+            context: self.context.clone(),
             request: self.request.clone(),
             result: LogResult::Success {
                 response: serde_json::to_value(&assembled).unwrap_or_default(),
@@ -235,6 +392,8 @@ pub(crate) struct LogEntry {
     pub timestamp_epoch_ms: u128,
     pub duration_ms: u128,
     pub kind: &'static str,
+    #[serde(skip_serializing_if = "LogContext::is_empty")]
+    pub context: LogContext,
     pub request: serde_json::Value,
     pub result: LogResult,
 }
@@ -386,6 +545,7 @@ impl AiClient for LoggingAiClient {
             timestamp_epoch_ms: timestamp,
             duration_ms,
             kind: "ai-complete",
+            context: current_log_context(),
             request: request_value,
             result: log_result,
         };
@@ -470,6 +630,7 @@ mod tests {
             timestamp_epoch_ms: 1700000000000,
             duration_ms: 42,
             kind: "complete",
+            context: LogContext::default(),
             request: serde_json::json!({"model": "gpt-4o"}),
             result: LogResult::Success {
                 response: serde_json::json!({"content": "hello"}),
@@ -482,6 +643,8 @@ mod tests {
         assert_eq!(json["result"]["status"], "success");
         assert_eq!(json["result"]["response"]["content"], "hello");
         assert_eq!(json["duration_ms"], 42);
+        // Empty context should be skipped
+        assert!(json.get("context").is_none());
     }
 
     #[test]
@@ -491,6 +654,7 @@ mod tests {
             timestamp_epoch_ms: 1700000000000,
             duration_ms: 10,
             kind: "complete",
+            context: LogContext::default(),
             request: serde_json::json!({}),
             result: LogResult::Error {
                 error: "connection refused".into(),
@@ -500,6 +664,95 @@ mod tests {
         let json = serde_json::to_value(&entry).unwrap();
         assert_eq!(json["result"]["status"], "error");
         assert_eq!(json["result"]["error"], "connection refused");
+    }
+
+    #[test]
+    fn log_entry_with_context_serialization() {
+        let entry = LogEntry {
+            id: "test-789-complete".into(),
+            timestamp_epoch_ms: 1700000000000,
+            duration_ms: 50,
+            kind: "complete",
+            context: LogContext::new()
+                .with_session_id("ses-001")
+                .with_agent_id("shell")
+                .with_turn(3),
+            request: serde_json::json!({}),
+            result: LogResult::Success {
+                response: serde_json::json!({"content": "ok"}),
+            },
+        };
+
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["context"]["session_id"], "ses-001");
+        assert_eq!(json["context"]["agent_id"], "shell");
+        assert_eq!(json["context"]["conversation_turn"], 3);
+        // Fields not set should be absent
+        assert!(json["context"].get("correlation_id").is_none());
+        assert!(json["context"].get("user_id").is_none());
+    }
+
+    // ── LogContext tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn log_context_builder_pattern() {
+        let ctx = LogContext::new()
+            .with_session_id("ses-123")
+            .with_agent_id("devops")
+            .with_turn(5)
+            .with_correlation_id("corr-456")
+            .with_user_id("user-789")
+            .with_extra(serde_json::json!({"custom": "value"}));
+
+        assert_eq!(ctx.session_id, Some("ses-123".into()));
+        assert_eq!(ctx.agent_id, Some("devops".into()));
+        assert_eq!(ctx.conversation_turn, Some(5));
+        assert_eq!(ctx.correlation_id, Some("corr-456".into()));
+        assert_eq!(ctx.user_id, Some("user-789".into()));
+        assert!(ctx.extra.is_some());
+        assert!(!ctx.is_empty());
+    }
+
+    #[test]
+    fn log_context_default_is_empty() {
+        let ctx = LogContext::default();
+        assert!(ctx.is_empty());
+    }
+
+    #[tokio::test]
+    async fn with_log_context_sets_context() {
+        let ctx = LogContext::new()
+            .with_session_id("test-session")
+            .with_agent_id("test-agent");
+
+        let captured = with_log_context(ctx, async {
+            current_log_context()
+        }).await;
+
+        assert_eq!(captured.session_id, Some("test-session".into()));
+        assert_eq!(captured.agent_id, Some("test-agent".into()));
+    }
+
+    #[tokio::test]
+    async fn current_log_context_returns_default_when_not_set() {
+        // Outside of with_log_context, should return default
+        let ctx = current_log_context();
+        assert!(ctx.is_empty());
+    }
+
+    #[tokio::test]
+    async fn update_log_context_modifies_context() {
+        let ctx = LogContext::new().with_session_id("initial");
+
+        let captured = with_log_context(ctx, async {
+            update_log_context(|c| {
+                c.conversation_turn = Some(42);
+            });
+            current_log_context()
+        }).await;
+
+        assert_eq!(captured.session_id, Some("initial".into()));
+        assert_eq!(captured.conversation_turn, Some(42));
     }
 
     #[test]
