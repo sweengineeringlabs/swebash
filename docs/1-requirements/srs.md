@@ -6,8 +6,8 @@
 
 This SRS defines requirements for swebash, a WASM-based Unix-like shell with integrated AI assistance. The shell compiles its command engine to WebAssembly for isolation, runs a native host runtime with multi-tab support and a workspace sandbox, and provides LLM-powered features (translation, explanation, chat, autocomplete) through a pluggable agent system with 11 built-in agents. It covers stakeholder needs, functional requirements for shell operations, AI integration, tab management, and readline editing, non-functional requirements for security and performance, and traceability from stakeholder goals to implementation modules.
 
-**Version**: 1.1
-**Date**: 2026-02-22
+**Version**: 1.2
+**Date**: 2026-02-23
 **Standard**: ISO/IEC/IEEE 29148:2018
 
 ---
@@ -24,7 +24,7 @@ swebash is a multi-crate Rust workspace comprising five crates:
 
 - **engine** — WASM shell engine (no_std, `wasm32-unknown-unknown` target) with built-in commands and command parsing
 - **host** — Native binary providing the REPL, WASM runtime, host imports, tab management, sandbox enforcement, and AI command interception
-- **ai** (swebash-ai) — LLM integration following the SEA pattern, with agents, tools, RAG, and streaming support
+- **llm** (swebash-llm) — LLM integration following the SEA pattern, with agents, tools, RAG, MDC logging, and streaming support
 - **readline** (swebash-readline) — Terminal line editing with completion, highlighting, hints, and history
 - **test** (swebash-test) — Shared test framework with mocks, fixtures, and assertions
 
@@ -58,6 +58,7 @@ swebash does **not**:
 | **MoSCoW** | Must / Should / Could / Won't prioritization scheme |
 | **ReAct** | Reasoning + Acting agent execution pattern where the LLM alternates between reasoning and tool calls |
 | **LLM** | Large Language Model — the AI model generating responses (OpenAI, Anthropic, or Gemini) |
+| **MDC** | Mapped Diagnostic Context — contextual fields (session ID, agent ID, turn number) that propagate through async call chains for structured logging |
 
 ### 1.4 References
 
@@ -381,7 +382,7 @@ The `workspace` built-in command shall support runtime sandbox modification:
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-04 → `host/src/spi/sandbox.rs`, `ai/src/core/tools/sandboxed.rs` |
+| **Traces to** | STK-04 → `host/src/spi/sandbox.rs`, `llm/src/core/tools/sandboxed.rs` |
 | **Acceptance** | Relative paths are resolved against the tab's virtual CWD; `~` is expanded to the home directory; symlinks are resolved before checking; AI tool sandbox tracks shell's virtual_cwd via `set_cwd()` |
 
 The sandbox path resolution applies to both the host filesystem sandbox and the AI tool sandbox:
@@ -587,7 +588,7 @@ Tab bar format: `[N:icon:label]` where icon is `>` (Shell), `AI` (AI), or `H` (H
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-02 → `ai/src/api/commands.rs`, `host/src/ai/commands.rs` |
+| **Traces to** | STK-02 → `llm/src/api/commands.rs`, `host/src/ai/commands.rs` |
 | **Acceptance** | All AI command triggers are recognized and routed to the correct handler |
 
 The host shall intercept AI commands before passing input to the WASM engine:
@@ -614,7 +615,7 @@ The host shall intercept AI commands before passing input to the WASM engine:
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-02 → `ai/src/core/translate.rs` |
+| **Traces to** | STK-02 → `llm/src/core/translate.rs` |
 | **Acceptance** | `? list all .rs files` returns a valid shell command; user is prompted `[Y/n/e]` before execution |
 
 The AI shall translate natural language descriptions into shell commands, present the command for confirmation, and execute on approval.
@@ -626,7 +627,7 @@ The AI shall translate natural language descriptions into shell commands, presen
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-02 → `ai/src/core/explain.rs` |
+| **Traces to** | STK-02 → `llm/src/core/explain.rs` |
 | **Acceptance** | `?? find . -name "*.log" -delete` returns a structured explanation of each flag and argument |
 
 #### FR-603: Conversational chat
@@ -636,7 +637,7 @@ The AI shall translate natural language descriptions into shell commands, presen
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-02 → `ai/src/core/chat.rs` |
+| **Traces to** | STK-02 → `llm/src/core/chat.rs` |
 | **Acceptance** | `ai chat` maintains conversation history; responses are contextual; history is configurable via `SWEBASH_AI_HISTORY_SIZE` (default 20) |
 
 #### FR-604: Autocomplete suggestions
@@ -646,7 +647,7 @@ The AI shall translate natural language descriptions into shell commands, presen
 | **Priority** | Should |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-02 → `ai/src/core/complete.rs` |
+| **Traces to** | STK-02 → `llm/src/core/complete.rs` |
 | **Acceptance** | `ai suggest` uses CWD listing and recent commands as context to generate completion suggestions |
 
 #### FR-605: AI mode
@@ -671,7 +672,7 @@ AI mode shall provide smart intent detection:
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-05 → `ai/src/lib.rs` |
+| **Traces to** | STK-05 → `llm/src/lib.rs` |
 | **Acceptance** | When no API key is configured, `create_ai_service()` returns `None`; AI commands print `AI is not configured` and return to the prompt; shell functionality is unaffected |
 
 ### 4.7 Agent System
@@ -683,7 +684,7 @@ AI mode shall provide smart intent detection:
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-02, STK-06 → `ai/src/core/agents/default_agents.yaml`, `ai/src/core/agents/builtins.rs` |
+| **Traces to** | STK-02, STK-06 → `llm/src/core/agents/default_agents.yaml`, `llm/src/core/agents/builtins.rs` |
 | **Acceptance** | `ai agents` lists all 11 built-in agents with correct properties |
 
 The system shall include 11 built-in agents:
@@ -709,7 +710,7 @@ The system shall include 11 built-in agents:
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-06 → `ai/src/core/agents/config.rs` |
+| **Traces to** | STK-06 → `llm/src/core/agents/config.rs` |
 | **Acceptance** | Agents parse from YAML with defaults merging; per-agent fields override defaults for temperature, maxTokens, tools, thinkFirst, and directives |
 
 Agent YAML schema (per-entry fields):
@@ -737,7 +738,7 @@ Agent YAML schema (per-entry fields):
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-02 → `ai/src/core/agents/mod.rs` |
+| **Traces to** | STK-02 → `llm/src/core/agents/mod.rs` |
 | **Acceptance** | `@review` switches to the review agent; `ai @devops hello` sends a one-shot message to devops and restores the previous agent |
 
 #### FR-703: Agent auto-detection
@@ -747,7 +748,7 @@ Agent YAML schema (per-entry fields):
 | **Priority** | Should |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-02 → `ai/src/core/agents/mod.rs` |
+| **Traces to** | STK-02 → `llm/src/core/agents/mod.rs` |
 | **Acceptance** | In AI mode, typing "git commit" auto-switches to the `git` agent; "docker ps" auto-switches to `devops`; unmatched input stays on the current agent; disabled by `SWEBASH_AI_AGENT_AUTO_DETECT=false` |
 
 #### FR-704: User-defined agents
@@ -757,7 +758,7 @@ Agent YAML schema (per-entry fields):
 | **Priority** | Should |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-06 → `ai/src/core/agents/builtins.rs` |
+| **Traces to** | STK-06 → `llm/src/core/agents/builtins.rs` |
 | **Acceptance** | Agents defined in `~/.config/swebash/agents.yaml` or the path in `SWEBASH_AGENTS_CONFIG` are loaded, merged with built-ins (user overrides win), and accessible via `@agent` |
 
 Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.yaml` → user config → `SWEBASH_AGENTS_CONFIG`.
@@ -779,7 +780,7 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Inspection |
-| **Traces to** | STK-06 → `ai/src/core/agents/config.rs` |
+| **Traces to** | STK-06 → `llm/src/core/agents/config.rs` |
 | **Acceptance** | `ConfigAgent` wraps `YamlAgentDescriptor` (from rustratify `agent-controller::yaml`) via composition; delegates `AgentDescriptor` trait methods to the base; adds swebash-specific fields (docs, bypass, iterations) |
 
 ### 4.8 Agent Tools
@@ -791,7 +792,7 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-02 → `ai/src/core/tools/` |
+| **Traces to** | STK-02 → `llm/src/core/tools/` |
 | **Acceptance** | Agents with `tools.fs: true` can read files, list directories, and query file metadata; agents with `tools.fs: false` cannot |
 
 #### FR-801: Execution tools
@@ -801,7 +802,7 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-02 → `ai/src/core/tools/` |
+| **Traces to** | STK-02 → `llm/src/core/tools/` |
 | **Acceptance** | Agents with `tools.exec: true` can execute shell commands; command timeout is controlled by `SWEBASH_AI_EXEC_TIMEOUT` (default 30s) |
 
 #### FR-802: Web search tools
@@ -811,7 +812,7 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 | **Priority** | Should |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-02 → `ai/src/core/tools/` |
+| **Traces to** | STK-02 → `llm/src/core/tools/` |
 | **Acceptance** | Agents with `tools.web: true` can perform web searches; agents with `tools.web: false` cannot |
 
 #### FR-803: Tool execution confirmation
@@ -821,7 +822,7 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-04 → `ai/src/core/tools/` |
+| **Traces to** | STK-04 → `llm/src/core/tools/` |
 | **Acceptance** | When `SWEBASH_AI_TOOLS_CONFIRM=true` (default), tool calls require user confirmation before execution; agents with `bypassConfirmation: true` skip this |
 
 #### FR-804: Tool iteration limits
@@ -831,7 +832,7 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-02 → `ai/src/core/tools/` |
+| **Traces to** | STK-02 → `llm/src/core/tools/` |
 | **Acceptance** | Tool loops are capped at the agent's `maxIterations` (default from `SWEBASH_AI_TOOLS_MAX_ITER`, default 10); exceeding the limit stops the loop |
 
 #### FR-805: Tool result caching
@@ -841,7 +842,7 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 | **Priority** | Should |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-02 → `ai/src/core/tools/` |
+| **Traces to** | STK-02 → `llm/src/core/tools/` |
 | **Acceptance** | When `SWEBASH_AI_TOOL_CACHE=true` (default), identical tool calls within the TTL (default 300s) return cached results; max entries default to 200 |
 
 #### FR-806: Tool path resolution using shell CWD
@@ -851,7 +852,7 @@ Multi-layer YAML loading: embedded defaults → project-local `.swebash/agents.y
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-02, STK-04 → `ai/src/core/tools/sandboxed.rs` |
+| **Traces to** | STK-02, STK-04 → `llm/src/core/tools/sandboxed.rs` |
 | **Acceptance** | AI filesystem tools resolve relative paths against the shell's virtual CWD, not `std::env::current_dir()`; after `cd features/shell`, AI `list_directory` shows contents of `features/shell` |
 
 The `SandboxedTool` decorator rewrites relative path arguments to absolute paths using the sandbox's tracked CWD before delegating to the inner tool. This ensures that AI operations respect the shell's `cd` commands even though the underlying tool implementations may use the process's current directory.
@@ -865,7 +866,7 @@ The `SandboxedTool` decorator rewrites relative path arguments to absolute paths
 | **Priority** | Should |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-09 → `ai/src/core/agents/config.rs` |
+| **Traces to** | STK-09 → `llm/src/core/agents/config.rs` |
 | **Acceptance** | Agents with `docs.strategy: preload` (default) have their `docs.sources` files loaded at engine creation time and injected into the system prompt within a `<documentation>` block, respecting the `docs.budget` token limit |
 
 #### FR-901: RAG document strategy
@@ -875,7 +876,7 @@ The `SandboxedTool` decorator rewrites relative path arguments to absolute paths
 | **Priority** | Could |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-09 → `ai/src/core/rag/` |
+| **Traces to** | STK-09 → `llm/src/core/rag/` |
 | **Acceptance** | Agents with `docs.strategy: rag` have their documents indexed into a vector store at engine creation; relevant chunks are retrieved per query via a `rag_search` tool; falls back to `preload` when RAG is unavailable |
 
 #### FR-902: RAG vector store backends
@@ -885,7 +886,7 @@ The `SandboxedTool` decorator rewrites relative path arguments to absolute paths
 | **Priority** | Could |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-09 → `ai/src/core/rag/`, `ai/Cargo.toml` |
+| **Traces to** | STK-09 → `llm/src/core/rag/`, `ai/Cargo.toml` |
 | **Acceptance** | RAG supports 4 backends controlled by `SWEBASH_AI_RAG_STORE`: `memory` (default), `file`, `sqlite`, `swevecdb`; each is feature-gated |
 
 ### 4.10 LLM Providers
@@ -897,7 +898,7 @@ The `SandboxedTool` decorator rewrites relative path arguments to absolute paths
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-05 → `ai/src/spi/chat_provider.rs` |
+| **Traces to** | STK-05 → `llm/src/spi/chat_provider.rs` |
 | **Acceptance** | Setting `LLM_PROVIDER=anthropic` uses the Anthropic API; `openai` uses OpenAI; `gemini` uses Google Gemini; API keys are read from `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` respectively |
 
 #### FR-1001: Streaming responses
@@ -907,7 +908,7 @@ The `SandboxedTool` decorator rewrites relative path arguments to absolute paths
 | **Priority** | Should |
 | **State** | Implemented |
 | **Verification** | Demonstration |
-| **Traces to** | STK-02 → `ai/src/core/chat.rs` |
+| **Traces to** | STK-02 → `llm/src/core/chat.rs` |
 | **Acceptance** | Chat responses stream token-by-token to the terminal as they are received from the LLM |
 
 ### 4.11 CLI Launcher
@@ -939,7 +940,7 @@ The `SandboxedTool` decorator rewrites relative path arguments to absolute paths
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Inspection |
-| **Traces to** | STK-05 → `ai/src/spi/config.rs` |
+| **Traces to** | STK-05 → `llm/src/spi/config.rs` |
 | **Acceptance** | All environment variables listed below are read and applied |
 
 | Variable | Default | Description |
@@ -1030,6 +1031,73 @@ Authentication precedence for Anthropic provider:
 
 This enables seamless authentication via `gh auth` or Claude CLI without manual API key management.
 
+### 4.13 Logging and Observability
+
+#### FR-1300: Structured JSON logging
+
+| Attribute | Value |
+|-----------|-------|
+| **Priority** | Should |
+| **State** | Implemented |
+| **Verification** | Test |
+| **Traces to** | STK-02 → `llm/src/spi/logging.rs` |
+| **Acceptance** | When `SWEBASH_AI_LOG_DIR` is set, all AI operations are logged as JSON entries with timestamp, level, message, and optional context fields |
+
+The logging system shall output structured JSON entries containing:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `timestamp` | ISO 8601 | UTC timestamp of the log event |
+| `level` | string | Log level: debug, info, warn, error |
+| `message` | string | Human-readable log message |
+| `context` | object | Optional MDC fields (when present) |
+
+#### FR-1301: Request-scoped logging
+
+| Attribute | Value |
+|-----------|-------|
+| **Priority** | Must |
+| **State** | Implemented |
+| **Verification** | Test |
+| **Traces to** | STK-02 → `llm/src/spi/logging.rs` |
+| **Acceptance** | Each AI request generates log entries with unique request identifiers; log decorators wrap LLM provider calls |
+
+Request-scoped logging decorators capture:
+
+| Decorator | Purpose |
+|-----------|---------|
+| `LoggingChatProvider` | Wraps chat completion calls with request/response logging |
+| `LoggingEmbeddingProvider` | Wraps embedding calls with input/output logging |
+
+#### FR-1302: Mapped Diagnostic Context (MDC)
+
+| Attribute | Value |
+|-----------|-------|
+| **Priority** | Should |
+| **State** | Implemented |
+| **Verification** | Test |
+| **Traces to** | STK-02 → `llm/src/spi/logging.rs` |
+| **Acceptance** | Context fields propagate through async call chains via tokio task-local storage; `LogContext` builder pattern supports session_id, agent_id, conversation_turn, correlation_id, user_id, and arbitrary extra fields |
+
+MDC enables context-scoped logging where contextual fields are automatically included in all log entries within an async scope:
+
+| Function | Purpose |
+|----------|---------|
+| `with_log_context(ctx, future)` | Execute future with MDC context |
+| `current_log_context()` | Retrieve current context (or default) |
+| `update_log_context(fn)` | Mutate context within scope |
+
+`LogContext` fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | Option<String> | Shell session identifier |
+| `agent_id` | Option<String> | Active agent ID |
+| `conversation_turn` | Option<u32> | Turn number in conversation |
+| `correlation_id` | Option<String> | Cross-request correlation |
+| `user_id` | Option<String> | User identifier |
+| `extra` | Option<Value> | Arbitrary JSON metadata |
+
 ---
 
 ## 5. Non-Functional Requirements
@@ -1053,7 +1121,7 @@ This enables seamless authentication via `gh auth` or Claude CLI without manual 
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Inspection |
-| **Traces to** | STK-02 → `ai/src/` |
+| **Traces to** | STK-02 → `llm/src/` |
 | **Acceptance** | AI crate follows SEA layering: L1 Common (`api/types.rs`, `api/error.rs`), L2 SPI (`spi/`), L3 API (`api/`), L4 Core (`core/`), L5 Facade (`lib.rs`) |
 
 #### NFR-102: Composition over inheritance
@@ -1063,7 +1131,7 @@ This enables seamless authentication via `gh auth` or Claude CLI without manual 
 | **Priority** | Should |
 | **State** | Implemented |
 | **Verification** | Inspection |
-| **Traces to** | STK-06 → `ai/src/core/agents/config.rs` |
+| **Traces to** | STK-06 → `llm/src/core/agents/config.rs` |
 | **Acceptance** | `ConfigAgent` wraps `YamlAgentDescriptor` via composition, not inheritance; trait delegation is explicit |
 
 ### 5.2 Security
@@ -1085,7 +1153,7 @@ This enables seamless authentication via `gh auth` or Claude CLI without manual 
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-04 → `ai/src/core/tools/` |
+| **Traces to** | STK-04 → `llm/src/core/tools/` |
 | **Acceptance** | `SWEBASH_AI_TOOLS_CONFIRM` defaults to `true`; tool calls prompt the user before execution |
 
 #### NFR-202: Per-agent tool filtering
@@ -1095,7 +1163,7 @@ This enables seamless authentication via `gh auth` or Claude CLI without manual 
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-04, STK-06 → `ai/src/core/agents/config.rs` |
+| **Traces to** | STK-04, STK-06 → `llm/src/core/agents/config.rs` |
 | **Acceptance** | Agents only access tools in their `ToolFilter`; the review agent (fs-only) cannot execute commands |
 
 ### 5.3 Performance
@@ -1129,7 +1197,7 @@ This enables seamless authentication via `gh auth` or Claude CLI without manual 
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-01, STK-02 → `host/src/main.rs`, `ai/src/lib.rs` |
+| **Traces to** | STK-01, STK-02 → `host/src/main.rs`, `llm/src/lib.rs` |
 | **Acceptance** | AI failures, WASM traps, I/O errors, and sandbox denials print error messages and return to the prompt; the shell never panics on user input |
 
 #### NFR-401: Graceful AI degradation
@@ -1139,7 +1207,7 @@ This enables seamless authentication via `gh auth` or Claude CLI without manual 
 | **Priority** | Must |
 | **State** | Implemented |
 | **Verification** | Test |
-| **Traces to** | STK-05 → `ai/src/lib.rs` |
+| **Traces to** | STK-05 → `llm/src/lib.rs` |
 | **Acceptance** | When AI is not configured (no API key), all shell features work normally; AI commands print a clear message |
 
 ### 5.5 Portability
@@ -1249,18 +1317,19 @@ This enables seamless authentication via `gh auth` or Claude CLI without manual 
 | FR-300-303 | `host/src/spi/sandbox.rs`, `host/src/spi/config.rs`, `host/src/spi/imports/workspace.rs` |
 | FR-400-407 | `host/src/spi/tab.rs`, `host/src/spi/tab_bar.rs`, `host/src/main.rs` |
 | FR-500-505 | `readline/src/core/` |
-| FR-600-606 | `ai/src/api/commands.rs`, `ai/src/core/chat.rs`, `ai/src/core/explain.rs`, `ai/src/core/translate.rs`, `ai/src/core/complete.rs`, `host/src/ai/` |
-| FR-700-706 | `ai/src/core/agents/config.rs`, `ai/src/core/agents/builtins.rs`, `ai/src/core/agents/mod.rs` |
-| FR-800-806 | `ai/src/core/tools/`, `ai/src/core/tools/sandboxed.rs` |
-| FR-900-902 | `ai/src/core/rag/` |
-| FR-1000-1001 | `ai/src/spi/chat_provider.rs` |
+| FR-600-606 | `llm/src/api/commands.rs`, `llm/src/core/chat.rs`, `llm/src/core/explain.rs`, `llm/src/core/translate.rs`, `llm/src/core/complete.rs`, `host/src/ai/` |
+| FR-700-706 | `llm/src/core/agents/config.rs`, `llm/src/core/agents/builtins.rs`, `llm/src/core/agents/mod.rs` |
+| FR-800-806 | `llm/src/core/tools/`, `llm/src/core/tools/sandboxed.rs` |
+| FR-900-902 | `llm/src/core/rag/` |
+| FR-1000-1001 | `llm/src/spi/chat_provider.rs` |
 | FR-1100 | `sbh`, `bin/` |
-| FR-1200-1203 | `ai/src/spi/config.rs`, `host/src/spi/config.rs`, rustratify `llm-provider` |
+| FR-1200-1203 | `llm/src/spi/config.rs`, `host/src/spi/config.rs`, rustratify `llm-provider` |
+| FR-1300-1302 | `llm/src/spi/logging.rs` |
 | NFR-100 | `engine/Cargo.toml` |
-| NFR-101-102 | `ai/src/` module structure |
-| NFR-200-202 | `host/src/spi/sandbox.rs`, `ai/src/core/tools/` |
+| NFR-101-102 | `llm/src/` module structure |
+| NFR-200-202 | `host/src/spi/sandbox.rs`, `llm/src/core/tools/` |
 | NFR-300-301 | `host/src/main.rs`, root `Cargo.toml` |
-| NFR-400-401 | `host/src/main.rs`, `ai/src/lib.rs` |
+| NFR-400-401 | `host/src/main.rs`, `llm/src/lib.rs` |
 | NFR-500 | Build system |
 
 ---
@@ -1273,9 +1342,9 @@ This enables seamless authentication via `gh auth` or Claude CLI without manual 
 | Readline unit tests | `features/shell/readline/src/` | 54 |
 | Host integration | `features/shell/host/tests/integration.rs` | 60 |
 | Host readline tests | `features/shell/host/tests/readline_tests.rs` | 19 |
-| AI unit tests | `features/ai/src/` | 123 |
-| AI integration | `features/ai/tests/integration.rs` | 189 |
-| **Total automated** | | **465** |
+| LLM unit tests | `features/llm/src/` | 152 |
+| LLM integration | `features/llm/tests/integration.rs` | 217 |
+| **Total automated** | | **522** |
 
 | Manual test suite | Location | Scenarios |
 |-------------------|----------|-----------|
