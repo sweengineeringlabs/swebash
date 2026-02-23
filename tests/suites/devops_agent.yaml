@@ -1,0 +1,381 @@
+version: 1
+suite: devops_agent
+
+config:
+  timeout_ms: 60000
+  tags: [ai, devops]
+  parallel: false
+  env:
+    SWEBASH_AI_ENABLED: "true"
+
+tests:
+  # ---------------------------------------------------------------------------
+  # Layer 1: Agent Detection Tests
+  # Verify devops agent is triggered by appropriate keywords
+  # ---------------------------------------------------------------------------
+  - id: devops_detection_docker
+    name: "Docker keyword triggers devops agent"
+    tags: [mock, detection]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_AI_AGENT_AUTO_DETECT: "true"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "docker ps"
+        expect:
+          any:
+            - contains: "[AI:devops]"
+            - contains: "Switched to devops"
+      - command: "exit"
+
+  - id: devops_detection_apt
+    name: "apt keyword triggers devops agent"
+    tags: [mock, detection]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_AI_AGENT_AUTO_DETECT: "true"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "apt install nginx"
+        expect:
+          any:
+            - contains: "[AI:devops]"
+            - contains: "Switched to devops"
+      - command: "exit"
+
+  - id: devops_detection_yum
+    name: "yum keyword triggers devops agent"
+    tags: [mock, detection]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_AI_AGENT_AUTO_DETECT: "true"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "yum install httpd"
+        expect:
+          any:
+            - contains: "[AI:devops]"
+            - contains: "Switched to devops"
+      - command: "exit"
+
+  - id: devops_detection_install
+    name: "install keyword triggers devops agent"
+    tags: [mock, detection]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_AI_AGENT_AUTO_DETECT: "true"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "install the nginx package"
+        expect:
+          any:
+            - contains: "[AI:devops]"
+            - contains: "Switched to devops"
+      - command: "exit"
+
+  - id: devops_detection_download
+    name: "download keyword triggers devops agent"
+    tags: [mock, detection]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_AI_AGENT_AUTO_DETECT: "true"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "download https://example.com/file.tar.gz"
+        expect:
+          any:
+            - contains: "[AI:devops]"
+            - contains: "Switched to devops"
+      - command: "exit"
+
+  - id: devops_detection_curl
+    name: "curl keyword triggers devops agent"
+    tags: [mock, detection]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_AI_AGENT_AUTO_DETECT: "true"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "curl the release tarball"
+        expect:
+          any:
+            - contains: "[AI:devops]"
+            - contains: "Switched to devops"
+      - command: "exit"
+
+  - id: devops_detection_wget
+    name: "wget keyword triggers devops agent"
+    tags: [mock, detection]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_AI_AGENT_AUTO_DETECT: "true"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "wget the binary"
+        expect:
+          any:
+            - contains: "[AI:devops]"
+            - contains: "Switched to devops"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # Layer 2: Tool Filter Tests
+  # Verify devops agent has correct tools available
+  # ---------------------------------------------------------------------------
+  - id: devops_has_all_tools
+    name: "DevOps agent has fs, exec, web, devops tools"
+    tags: [mock, tools]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+      - command: "@devops"
+        expect:
+          contains: "[AI:devops]"
+      - command: "test message"
+        expect:
+          all:
+            - contains: "[AGENT:devops]"
+      - command: "exit"
+
+  - id: devops_agent_identity_preserved
+    name: "DevOps agent identity is preserved in reflect mode"
+    tags: [mock, tools]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+      - command: "@devops"
+      - command: "help with packages"
+        expect:
+          contains: "[AGENT:devops]"
+      - command: "another message"
+        expect:
+          contains: "[AGENT:devops]"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # Layer 3: System Prompt Tests
+  # Verify system prompt contains expected content
+  # ---------------------------------------------------------------------------
+  - id: devops_system_prompt_content
+    name: "DevOps system prompt mentions specialties"
+    tags: [mock, prompt]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+      - command: "@devops"
+      - command: "test"
+        expect:
+          all:
+            - contains: "[SYSTEM_PROMPT:"
+      - command: "exit"
+
+  - id: devops_agent_switch_works
+    name: "Can switch to and from DevOps agent"
+    tags: [mock, prompt]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+        expect:
+          contains: "[AI:shell]"
+      - command: "@devops"
+        expect:
+          contains: "[AI:devops]"
+      - command: "@shell"
+        expect:
+          contains: "[AI:shell]"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # Layer 4: Agent Behavior Tests
+  # Verify devops agent behavior with mock responses
+  # ---------------------------------------------------------------------------
+  - id: devops_responds_to_package_queries
+    name: "DevOps agent responds to package queries"
+    tags: [mock, behavior]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_RESPONSE: "I'll help you install the nginx package using the package_manager tool."
+    steps:
+      - command: "ai"
+      - command: "@devops"
+      - command: "install nginx"
+        expect:
+          contains: "nginx"
+      - command: "exit"
+
+  - id: devops_responds_to_download_queries
+    name: "DevOps agent responds to download queries"
+    tags: [mock, behavior]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_RESPONSE: "I'll download the file using the download tool with checksum verification."
+    steps:
+      - command: "ai"
+      - command: "@devops"
+      - command: "download https://example.com/file.tar.gz"
+        expect:
+          any:
+            - contains: "download"
+            - contains: "file"
+      - command: "exit"
+
+  - id: devops_warns_about_destructive_ops
+    name: "DevOps agent mentions destructive operations"
+    tags: [mock, behavior]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_RESPONSE: "Warning: Uninstalling packages may break dependencies. Proceed with caution."
+    steps:
+      - command: "ai"
+      - command: "@devops"
+      - command: "uninstall nginx"
+        expect:
+          any:
+            - contains: "Warning"
+            - contains: "Uninstall"
+            - contains: "caution"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # Layer 5: Direct Agent Access Tests
+  # Verify @devops shortcut works from shell mode
+  # ---------------------------------------------------------------------------
+  - id: devops_at_shortcut_works
+    name: "@devops shortcut enters AI mode with devops agent"
+    tags: [mock]
+    config:
+      env:
+        LLM_PROVIDER: mock
+    steps:
+      - command: "@devops"
+        expect:
+          all:
+            - contains: "Entered AI mode"
+            - contains: "[AI:devops]"
+      - command: "exit"
+
+  - id: devops_at_shortcut_with_query
+    name: "@devops with query enters AI mode and sends query"
+    tags: [mock]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_RESPONSE: "I can help with Docker containers."
+    steps:
+      - command: "@devops help with docker"
+        expect:
+          any:
+            - contains: "Docker"
+            - contains: "container"
+      - command: "exit"
+
+  # ---------------------------------------------------------------------------
+  # Layer 6: Agent Listing Tests
+  # Verify devops agent appears in agent list with updated description
+  # ---------------------------------------------------------------------------
+  - id: devops_appears_in_agent_list
+    name: "DevOps agent appears in agent list"
+    tags: [mock]
+    config:
+      env:
+        LLM_PROVIDER: mock
+    steps:
+      - command: "ai agents"
+        expect:
+          any:
+            - contains: "devops"
+            - contains: "DevOps"
+
+  - id: devops_description_mentions_packages
+    name: "DevOps agent description mentions package management"
+    tags: [mock]
+    config:
+      env:
+        LLM_PROVIDER: mock
+    steps:
+      - command: "ai agents"
+        expect:
+          any:
+            - contains: "package"
+            - contains: "download"
+
+  # ---------------------------------------------------------------------------
+  # Layer 7: History Isolation Tests
+  # Verify devops agent has isolated conversation history
+  # ---------------------------------------------------------------------------
+  - id: devops_history_isolated
+    name: "DevOps agent has isolated history from shell agent"
+    tags: [mock, history]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+      - command: "shell message 1"
+      - command: "shell message 2"
+        expect:
+          contains: "[HISTORY:user=2"
+      - command: "@devops"
+      - command: "devops message"
+        expect:
+          # DevOps agent should have fresh history
+          contains: "[HISTORY:user=1,assistant=0]"
+      - command: "exit"
+
+  - id: devops_history_persists_in_agent
+    name: "DevOps agent maintains its own history across messages"
+    tags: [mock, history]
+    config:
+      env:
+        LLM_PROVIDER: mock
+        SWEBASH_MOCK_REFLECT: "1"
+    steps:
+      - command: "ai"
+      - command: "@devops"
+      - command: "first devops message"
+        expect:
+          contains: "[HISTORY:user=1,assistant=0]"
+      - command: "second devops message"
+        expect:
+          contains: "[HISTORY:user=2,assistant=1]"
+      - command: "third devops message"
+        expect:
+          contains: "[HISTORY:user=3,assistant=2]"
+      - command: "exit"

@@ -69,7 +69,14 @@ impl SwebashEngineFactory {
     fn effective_tool_config(&self, filter: &ToolFilter) -> ToolConfig {
         let global = &self.config.tools;
         match filter {
-            ToolFilter::All => global.clone(),
+            ToolFilter::All => {
+                // ToolFilter::All means the agent wants all available tools.
+                // Enable devops tools since the agent didn't restrict them.
+                ToolConfig {
+                    enable_devops: true,
+                    ..global.clone()
+                }
+            }
             ToolFilter::Categories(cats) => {
                 let has = |c: &str| cats.iter().any(|cat| cat == c);
                 ToolConfig {
@@ -77,6 +84,7 @@ impl SwebashEngineFactory {
                     enable_exec: global.enable_exec && has("exec"),
                     enable_web: global.enable_web && has("web"),
                     enable_rag: has("rag"),
+                    enable_devops: has("devops"),
                     ..global.clone()
                 }
             }
@@ -107,6 +115,17 @@ impl EngineFactory<ConfigAgent> for SwebashEngineFactory {
 
         let tool_filter = descriptor.tool_filter();
         let effective_tools = self.effective_tool_config(&tool_filter);
+
+        tracing::debug!(
+            agent = %descriptor.id(),
+            filter = ?tool_filter,
+            enable_fs = effective_tools.enable_fs,
+            enable_exec = effective_tools.enable_exec,
+            enable_web = effective_tools.enable_web,
+            enable_rag = effective_tools.enable_rag,
+            enable_devops = effective_tools.enable_devops,
+            "Computed effective tool config for agent"
+        );
 
         if effective_tools.enabled() {
             let rustratify_config = tool::ToolConfig {
@@ -221,6 +240,26 @@ impl EngineFactory<ConfigAgent> for SwebashEngineFactory {
                         )));
                     }
                 }
+            }
+
+            // Register DevOps tools for agents that enable the devops category.
+            if effective_tools.enable_devops {
+                tracing::debug!(
+                    agent = %descriptor.id(),
+                    "Registering DevOps tools: package_manager, download"
+                );
+                registry.register(Box::new(tools::devops::PackageManagerTool::new(
+                    Duration::from_secs(300), // 5 minutes for package operations
+                )));
+                registry.register(Box::new(tools::devops::DownloadTool::new(
+                    1_073_741_824, // 1GB max download size
+                    Duration::from_secs(600), // 10 minutes timeout
+                )));
+            } else {
+                tracing::debug!(
+                    agent = %descriptor.id(),
+                    "DevOps tools disabled for this agent"
+                );
             }
 
             Some(Arc::new(ToolAwareChatEngine::new(
@@ -922,6 +961,39 @@ mod tests {
         assert_eq!(effective.fs_max_size, 999);
         assert_eq!(effective.exec_timeout, 42);
         assert_eq!(effective.max_iterations, 7);
+    }
+
+    #[test]
+    fn test_effective_tool_config_all_enables_devops() {
+        let config = AiConfig {
+            enabled: true,
+            provider: "openai".into(),
+            model: "gpt-4o".into(),
+            history_size: 20,
+            default_agent: "shell".into(),
+            agent_auto_detect: true,
+            tools: ToolConfig::default(), // enable_devops is false by default
+            log_dir: None,
+            docs_base_dir: None,
+            rag: crate::spi::config::RagConfig::default(),
+            tool_sandbox: None,
+        };
+
+        let factory = SwebashEngineFactory {
+            llm: Arc::new(MockLlmService::new()),
+            config,
+            rag_index_manager: None,
+            rag_embedder: None,
+            rag_store: None,
+            rag_chunker_config: ChunkerConfig::default(),
+        };
+
+        // ToolFilter::All should enable devops even if global config has it disabled
+        let effective = factory.effective_tool_config(&ToolFilter::All);
+        assert!(effective.enable_devops, "ToolFilter::All should enable devops");
+        assert!(effective.enable_fs);
+        assert!(effective.enable_exec);
+        assert!(effective.enable_web);
     }
 
     // ── SwebashEngineFactory::create ────────────────────────────────

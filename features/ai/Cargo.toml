@@ -34,7 +34,7 @@ serde_yaml = "0.9"
 # Async
 async-trait = "0.1"
 futures = "0.3"
-tokio = { version = "1.0", features = ["sync", "rt", "time", "macros"] }
+tokio = { version = "1.0", features = ["sync", "rt", "time", "macros", "process", "fs", "io-util"] }
 
 # Error handling
 thiserror = "2.0"
@@ -60,6 +60,10 @@ llmrag = { version = "0.1.0", registry = "local", default-features = false }
 
 # SHA-256 fingerprinting for PreprocessingRagIndexService
 sha2 = "0.10"
+
+# HTTP client for download tool
+reqwest = { version = "0.12", features = ["stream"] }
+url = "2.5"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }

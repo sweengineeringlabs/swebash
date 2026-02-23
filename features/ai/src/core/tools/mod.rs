@@ -3,6 +3,7 @@
 /// This module re-exports tool types from rustratify's tool crate
 /// for use in swebash-ai.
 pub mod cached;
+pub mod devops;
 pub mod sandboxed;
 
 pub use sandboxed::{SandboxedTool, ToolSandbox, SandboxAccessMode, SandboxRule};

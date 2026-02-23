@@ -1339,6 +1339,7 @@ fn tool_config_enabled_no_tools() {
         enable_exec: false,
         enable_web: false,
         enable_rag: false,
+        enable_devops: false,
         require_confirmation: false,
         max_tool_calls_per_turn: 10,
         max_iterations: 10,
@@ -1356,6 +1357,7 @@ fn tool_config_enabled_partial() {
         enable_exec: false,
         enable_web: false,
         enable_rag: false,
+        enable_devops: false,
         require_confirmation: true,
         max_tool_calls_per_turn: 10,
         max_iterations: 10,
@@ -1627,6 +1629,7 @@ fn config_fs_only() -> AiConfig {
             enable_exec: false,
             enable_web: false,
             enable_rag: false,
+            enable_devops: false,
             require_confirmation: false,
             max_tool_calls_per_turn: 10,
             max_iterations: 10,
@@ -1656,6 +1659,7 @@ fn config_exec_only() -> AiConfig {
             enable_exec: true,
             enable_web: false,
             enable_rag: false,
+            enable_devops: false,
             require_confirmation: false,
             max_tool_calls_per_turn: 10,
             max_iterations: 10,
@@ -2135,9 +2139,13 @@ fn yaml_parse_tool_overrides() {
     let shell = parsed.agents.iter().find(|a| a.id == "shell").unwrap();
     assert!(shell.tools.is_none());
 
-    // devops: no tools override (inherits defaults)
+    // devops: fs=true, exec=true, web=true, devops=true
     let devops = parsed.agents.iter().find(|a| a.id == "devops").unwrap();
-    assert!(devops.tools.is_none());
+    let devops_tools = devops.tools.as_ref().expect("devops should have tools override");
+    assert_eq!(devops_tools.0.get("fs"), Some(&true));
+    assert_eq!(devops_tools.0.get("exec"), Some(&true));
+    assert_eq!(devops_tools.0.get("web"), Some(&true));
+    assert_eq!(devops_tools.0.get("devops"), Some(&true));
 }
 
 #[test]
