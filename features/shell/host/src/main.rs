@@ -4,6 +4,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
+use mdc_logging::{LogContext, set_agent_id, set_conversation_turn, with_log_context};
+use tracing::{debug, error, info_span, instrument, warn};
+use tracing_subscriber::prelude::*;
 use swebash_llm::{commands, handle_ai_command, output, AiCommand, AiService, DefaultAiService};
 use swebash_readline::{
     Completer, EditorAction, Hinter, History, LineEditor, ReadlineConfig, ValidationResult,
@@ -14,6 +17,143 @@ use spi::tab::{TabInner, TabKind, TabManager};
 
 /// Maximum number of recent commands kept per tab for AI context.
 const MAX_RECENT: usize = 10;
+
+/// Context for the main REPL loop, grouping all required state.
+struct MainLoopContext {
+    // Session identity
+    session_id: String,
+    user_id: String,
+
+    // Shell state
+    tab_mgr: TabManager,
+    editor: LineEditor,
+    history: Arc<Mutex<History>>,
+    completer: Completer,
+
+    // Configuration
+    config: spi::config::SwebashConfig,
+    policy: spi::state::SandboxPolicy,
+    rl_config: ReadlineConfig,
+
+    // Services
+    ai_service: Option<DefaultAiService>,
+    git_enforcer: Option<Arc<spi::git_gates::GitGateEnforcer>>,
+
+    // Environment
+    home_dir: Option<PathBuf>,
+}
+
+/// Builder for MainLoopContext.
+struct MainLoopContextBuilder {
+    session_id: Option<String>,
+    user_id: Option<String>,
+    tab_mgr: Option<TabManager>,
+    editor: Option<LineEditor>,
+    history: Option<Arc<Mutex<History>>>,
+    completer: Option<Completer>,
+    config: Option<spi::config::SwebashConfig>,
+    policy: Option<spi::state::SandboxPolicy>,
+    rl_config: Option<ReadlineConfig>,
+    ai_service: Option<DefaultAiService>,
+    git_enforcer: Option<Arc<spi::git_gates::GitGateEnforcer>>,
+    home_dir: Option<PathBuf>,
+}
+
+impl MainLoopContextBuilder {
+    fn new() -> Self {
+        Self {
+            session_id: None,
+            user_id: None,
+            tab_mgr: None,
+            editor: None,
+            history: None,
+            completer: None,
+            config: None,
+            policy: None,
+            rl_config: None,
+            ai_service: None,
+            git_enforcer: None,
+            home_dir: None,
+        }
+    }
+
+    fn session_id(mut self, id: String) -> Self {
+        self.session_id = Some(id);
+        self
+    }
+
+    fn user_id(mut self, id: String) -> Self {
+        self.user_id = Some(id);
+        self
+    }
+
+    fn tab_mgr(mut self, mgr: TabManager) -> Self {
+        self.tab_mgr = Some(mgr);
+        self
+    }
+
+    fn editor(mut self, editor: LineEditor) -> Self {
+        self.editor = Some(editor);
+        self
+    }
+
+    fn history(mut self, history: Arc<Mutex<History>>) -> Self {
+        self.history = Some(history);
+        self
+    }
+
+    fn completer(mut self, completer: Completer) -> Self {
+        self.completer = Some(completer);
+        self
+    }
+
+    fn config(mut self, config: spi::config::SwebashConfig) -> Self {
+        self.config = Some(config);
+        self
+    }
+
+    fn policy(mut self, policy: spi::state::SandboxPolicy) -> Self {
+        self.policy = Some(policy);
+        self
+    }
+
+    fn rl_config(mut self, rl_config: ReadlineConfig) -> Self {
+        self.rl_config = Some(rl_config);
+        self
+    }
+
+    fn ai_service(mut self, service: Option<DefaultAiService>) -> Self {
+        self.ai_service = service;
+        self
+    }
+
+    fn git_enforcer(mut self, enforcer: Option<Arc<spi::git_gates::GitGateEnforcer>>) -> Self {
+        self.git_enforcer = enforcer;
+        self
+    }
+
+    fn home_dir(mut self, dir: Option<PathBuf>) -> Self {
+        self.home_dir = dir;
+        self
+    }
+
+    fn build(self) -> Result<MainLoopContext> {
+        Ok(MainLoopContext {
+            session_id: self.session_id.ok_or_else(|| anyhow::anyhow!("session_id required"))?,
+            user_id: self.user_id.ok_or_else(|| anyhow::anyhow!("user_id required"))?,
+            tab_mgr: self.tab_mgr.ok_or_else(|| anyhow::anyhow!("tab_mgr required"))?,
+            editor: self.editor.ok_or_else(|| anyhow::anyhow!("editor required"))?,
+            history: self.history.ok_or_else(|| anyhow::anyhow!("history required"))?,
+            completer: self.completer.ok_or_else(|| anyhow::anyhow!("completer required"))?,
+            config: self.config.ok_or_else(|| anyhow::anyhow!("config required"))?,
+            policy: self.policy.ok_or_else(|| anyhow::anyhow!("policy required"))?,
+            rl_config: self.rl_config.ok_or_else(|| anyhow::anyhow!("rl_config required"))?,
+            ai_service: self.ai_service,
+            git_enforcer: self.git_enforcer,
+            home_dir: self.home_dir,
+        })
+    }
+}
 
 /// Shorten a CWD path by replacing the home directory prefix with `~`.
 /// Also normalizes backslashes to forward slashes for copy-paste compatibility.
@@ -57,15 +197,26 @@ async fn main() -> Result<()> {
     let _ = dotenvy::dotenv();
 
     // Initialize tracing subscriber. Honors RUST_LOG env var for filtering.
-    // Default: warnings only. Example: RUST_LOG=swebash_llm=debug
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
-        )
-        .with_target(true)
-        .with_writer(std::io::stderr)
-        .init();
+    // Default: warnings only. Example: RUST_LOG=swebash=debug
+    // Set SWEBASH_LOG_FORMAT=json for JSON output (useful for log aggregation).
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+
+    let use_json = std::env::var("SWEBASH_LOG_FORMAT")
+        .map(|v| v.eq_ignore_ascii_case("json"))
+        .unwrap_or(false);
+
+    if use_json {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(tracing_subscriber::fmt::layer().json().with_writer(std::io::stderr))
+            .init();
+    } else {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
+            .init();
+    }
 
     // Load workspace config from ~/.config/swebash/config.toml
     let mut config = spi::config::load_config();
@@ -103,9 +254,10 @@ async fn main() -> Result<()> {
     // Auto-create workspace directory if it doesn't exist
     if !workspace_root.exists() {
         if let Err(e) = std::fs::create_dir_all(&workspace_root) {
-            eprintln!(
-                "warning: could not create workspace directory {}: {e}",
-                workspace_root.display()
+            warn!(
+                path = %workspace_root.display(),
+                error = %e,
+                "could not create workspace directory"
             );
         }
     }
@@ -134,9 +286,9 @@ async fn main() -> Result<()> {
             .canonicalize()
             .unwrap_or_else(|_| workspace_root.clone())
     } else {
-        eprintln!(
-            "warning: SWEBASH_WORKSPACE path does not exist: {}",
-            workspace_root.display()
+        warn!(
+            path = %workspace_root.display(),
+            "SWEBASH_WORKSPACE path does not exist, using home directory"
         );
         dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
     };
@@ -144,6 +296,25 @@ async fn main() -> Result<()> {
     // Build git safety gate enforcer from merged config
     let git_enforcer = Arc::new(spi::git_gates::load_gates(&initial_cwd));
     let git_enforcer_opt = Some(git_enforcer.clone());
+
+    // Verify workspace-repository binding if configured
+    // This prevents accidentally working in a workspace bound to a different repo
+    if let Some(remote) = spi::git_gates::current_remote(&initial_cwd, "origin") {
+        let cwd_str = initial_cwd.to_string_lossy();
+        if let Err(msg) = config.verify_repo_binding(&cwd_str, &remote) {
+            error!(
+                workspace = %cwd_str,
+                remote = %remote,
+                "workspace-repository binding mismatch"
+            );
+            // Also print user-friendly message since this is fatal
+            eprintln!("\x1b[1;31merror:\x1b[0m {msg}");
+            eprintln!(
+                "\x1b[90mTo unbind, remove entry from ~/.config/swebash/config.toml\x1b[0m"
+            );
+            std::process::exit(1);
+        }
+    }
 
     // Initialize AI service (None if disabled or unconfigured — shell continues without AI)
     // XDG config file provides fallback values; env vars always take precedence
@@ -180,6 +351,22 @@ async fn main() -> Result<()> {
     let ai_enabled = std::env::var("SWEBASH_AI_ENABLED")
         .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
         .unwrap_or(config.ai.enabled);
+
+    // Warn if AI is enabled but no API key is configured
+    if ai_enabled && !config.ai.has_api_key() {
+        let provider = config.ai.effective_provider();
+        let env_var = match provider.as_str() {
+            "anthropic" => "ANTHROPIC_API_KEY",
+            "gemini" => "GEMINI_API_KEY",
+            _ => "OPENAI_API_KEY",
+        };
+        warn!(
+            provider = %provider,
+            env_var = %env_var,
+            "AI mode enabled but no API key configured"
+        );
+    }
+
     let ai_service = if ai_enabled {
         // Create AI sandbox from workspace policy
         let ai_sandbox = if policy.enabled {
@@ -218,26 +405,10 @@ async fn main() -> Result<()> {
         .or_else(dirs::home_dir)
         .map(|h| {
             let xdg_state_dir = h.join(".local").join("state").join("swebash");
-            let xdg_history_path = xdg_state_dir.join("history");
-            let legacy_path = h.join(".swebash_history");
-
-            // Ensure XDG state directory exists
             if let Err(e) = std::fs::create_dir_all(&xdg_state_dir) {
-                eprintln!("warning: could not create {}: {e}", xdg_state_dir.display());
+                warn!(path = %xdg_state_dir.display(), error = %e, "could not create XDG state directory");
             }
-
-            // Migrate legacy history file to XDG location if needed
-            if legacy_path.exists() && !xdg_history_path.exists() {
-                if let Err(e) = std::fs::rename(&legacy_path, &xdg_history_path) {
-                    eprintln!(
-                        "warning: could not migrate {} to {}: {e}",
-                        legacy_path.display(),
-                        xdg_history_path.display()
-                    );
-                }
-            }
-
-            xdg_history_path
+            xdg_state_dir.join("history")
         })
         .unwrap_or_else(|| PathBuf::from(".swebash_history"));
     let history = Arc::new(Mutex::new(History::with_file(
@@ -248,7 +419,7 @@ async fn main() -> Result<()> {
     // Initialize readline features
     let completer = Completer::new();
     let hinter = Hinter::new(rl_config.colors.clone());
-    let mut editor = LineEditor::new(rl_config.clone(), hinter);
+    let editor = LineEditor::new(rl_config.clone(), hinter);
 
     // Create tab manager with one initial shell tab
     let mut tab_mgr = TabManager::new(history.clone());
@@ -256,11 +427,57 @@ async fn main() -> Result<()> {
     tab_mgr.switch_to(0);
 
     let home_dir = dirs::home_dir();
+
+    // MDC context fields (per logging-strategies.md)
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let user_id = config
+        .git
+        .as_ref()
+        .map(|g| g.user_id.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // Create LogContext for MDC propagation across async task boundaries
+    let log_ctx = LogContext::builder()
+        .session_id(&session_id)
+        .user_id(&user_id)
+        .build();
+
+    // Build main loop context
+    let ctx = MainLoopContextBuilder::new()
+        .session_id(session_id.clone())
+        .user_id(user_id.clone())
+        .tab_mgr(tab_mgr)
+        .editor(editor)
+        .history(history)
+        .completer(completer)
+        .config(config)
+        .policy(policy)
+        .rl_config(rl_config)
+        .ai_service(ai_service)
+        .git_enforcer(git_enforcer_opt)
+        .home_dir(home_dir)
+        .build()?;
+
+    // Run main loop with MDC context
+    with_log_context(log_ctx, run_main_loop(ctx)).await
+}
+
+/// Main REPL loop, wrapped with MDC context for async propagation.
+async fn run_main_loop(mut ctx: MainLoopContext) -> Result<()> {
+    let session_span = info_span!(
+        "session",
+        session_id = %ctx.session_id,
+        user_id = %ctx.user_id,
+        workspace = %ctx.policy.workspace_root.display(),
+    );
+    let _session_guard = session_span.enter();
+
     let mut tab_bar_active = false;
+    let mut cmd_count: u64 = 0;
 
     loop {
         // Manage tab bar visibility: show when 2+ tabs exist
-        let should_show_bar = tab_mgr.tabs.len() > 1;
+        let should_show_bar = ctx.tab_mgr.tabs.len() > 1;
         if should_show_bar && !tab_bar_active {
             spi::tab_bar::setup_scroll_region();
             tab_bar_active = true;
@@ -269,13 +486,13 @@ async fn main() -> Result<()> {
             tab_bar_active = false;
         }
         if tab_bar_active {
-            spi::tab_bar::render_tab_bar(&tab_mgr, home_dir.as_ref());
+            spi::tab_bar::render_tab_bar(&ctx.tab_mgr, ctx.home_dir.as_ref());
         }
 
-        let tab = tab_mgr.active_tab();
+        let tab = ctx.tab_mgr.active_tab();
         let cwd = tab.virtual_cwd();
         let cwd_str = cwd.to_string_lossy().into_owned();
-        let dcwd = display_cwd(&cwd_str, home_dir.as_ref());
+        let dcwd = display_cwd(&cwd_str, ctx.home_dir.as_ref());
         let ai_mode = tab.ai_mode;
         let ai_agent_id = tab.ai_agent_id.clone();
         let multiline_empty = tab.multiline_buffer.is_empty();
@@ -307,43 +524,46 @@ async fn main() -> Result<()> {
         };
 
         // Read line with editor
-        let history_guard = history.lock().unwrap();
-        let action = editor.read_line(&prompt, &history_guard)?;
-        drop(history_guard);
+        // TODO(backlog): Review lock scope - using block instead of explicit drop()
+        // to satisfy clippy::await_holding_lock. Consider async-aware mutex if needed.
+        let action = {
+            let history_guard = ctx.history.lock().unwrap();
+            ctx.editor.read_line(&prompt, &history_guard)?
+        };
 
         // Handle tab-related editor actions
         match action {
             EditorAction::TabNew => {
-                let cwd = tab_mgr.active_tab().virtual_cwd();
-                match tab_mgr.create_shell_tab(cwd, policy.clone(), git_enforcer_opt.clone()) {
+                let cwd = ctx.tab_mgr.active_tab().virtual_cwd();
+                match ctx.tab_mgr.create_shell_tab(cwd, ctx.policy.clone(), ctx.git_enforcer.clone()) {
                     Ok(idx) => {
-                        tab_mgr.switch_to(idx);
+                        ctx.tab_mgr.switch_to(idx);
                         println!("Switched to tab {}.", idx + 1);
                     }
-                    Err(e) => eprintln!("tab new: failed to create tab: {e}"),
+                    Err(e) => error!(error = %e, "tab new: failed to create tab"),
                 }
                 continue;
             }
             EditorAction::TabClose => {
-                if tab_mgr.close_active() {
+                if ctx.tab_mgr.close_active() {
                     break;
                 }
-                println!("Tab closed. Now on tab {}.", tab_mgr.active + 1);
+                println!("Tab closed. Now on tab {}.", ctx.tab_mgr.active + 1);
                 continue;
             }
             EditorAction::TabNext => {
-                tab_mgr.switch_next();
-                println!("Switched to tab {}.", tab_mgr.active + 1);
+                ctx.tab_mgr.switch_next();
+                println!("Switched to tab {}.", ctx.tab_mgr.active + 1);
                 continue;
             }
             EditorAction::TabPrev => {
-                tab_mgr.switch_prev();
-                println!("Switched to tab {}.", tab_mgr.active + 1);
+                ctx.tab_mgr.switch_prev();
+                println!("Switched to tab {}.", ctx.tab_mgr.active + 1);
                 continue;
             }
             EditorAction::TabGoto(n) => {
-                if n < tab_mgr.tabs.len() {
-                    tab_mgr.switch_to(n);
+                if n < ctx.tab_mgr.tabs.len() {
+                    ctx.tab_mgr.switch_to(n);
                     println!("Switched to tab {}.", n + 1);
                 } else {
                     println!("tab: no tab {}", n + 1);
@@ -351,13 +571,13 @@ async fn main() -> Result<()> {
                 continue;
             }
             EditorAction::Eof => {
-                let tab = tab_mgr.active_tab_mut();
+                let tab = ctx.tab_mgr.active_tab_mut();
                 if !tab.multiline_buffer.is_empty() {
                     tab.multiline_buffer.clear();
                     continue;
                 }
                 // Close current tab; exit if it was the last
-                if tab_mgr.close_active() {
+                if ctx.tab_mgr.close_active() {
                     break;
                 }
                 continue;
@@ -371,14 +591,14 @@ async fn main() -> Result<()> {
             }
         }
 
-        let line = editor.line().to_string();
+        let line = ctx.editor.line().to_string();
 
         let input = line.trim_end();
 
         // Check for tab completion request
-        if rl_config.enable_completion && (input.ends_with("  ") || input.ends_with('\t')) {
+        if ctx.rl_config.enable_completion && (input.ends_with("  ") || input.ends_with('\t')) {
             let completion_line = input.trim_end();
-            let completions = completer.complete(completion_line, completion_line.len());
+            let completions = ctx.completer.complete(completion_line, completion_line.len());
 
             if !completions.is_empty() {
                 println!("\nCompletions:");
@@ -386,14 +606,14 @@ async fn main() -> Result<()> {
                     println!("  {}", comp.display);
                 }
                 println!();
-                tab_mgr.active_tab_mut().multiline_buffer = completion_line.to_string();
+                ctx.tab_mgr.active_tab_mut().multiline_buffer = completion_line.to_string();
                 continue;
             }
         }
 
         // Add to multi-line buffer
         {
-            let tab = tab_mgr.active_tab_mut();
+            let tab = ctx.tab_mgr.active_tab_mut();
             if !tab.multiline_buffer.is_empty() {
                 tab.multiline_buffer.push('\n');
             }
@@ -402,11 +622,11 @@ async fn main() -> Result<()> {
 
         // Check if command is complete
         // Skip validation for AI mode - natural language doesn't need shell quote validation
-        let tab = tab_mgr.active_tab();
+        let tab = ctx.tab_mgr.active_tab();
         let skip_validation = tab.ai_mode || matches!(tab.kind(), TabKind::Ai);
         if !skip_validation {
             let validator = Validator::new();
-            if validator.validate(&tab_mgr.active_tab().multiline_buffer) == ValidationResult::Incomplete
+            if validator.validate(&ctx.tab_mgr.active_tab().multiline_buffer) == ValidationResult::Incomplete
             {
                 continue;
             }
@@ -416,7 +636,7 @@ async fn main() -> Result<()> {
         let cmd_with_leading_space;
         let cmd;
         {
-            let tab = tab_mgr.active_tab_mut();
+            let tab = ctx.tab_mgr.active_tab_mut();
             cmd_with_leading_space = tab.multiline_buffer.trim_end().to_string();
             cmd = tab.multiline_buffer.trim().to_string();
             tab.multiline_buffer.clear();
@@ -426,28 +646,55 @@ async fn main() -> Result<()> {
             continue;
         }
 
+        // Create span for this command execution (MDC context)
+        cmd_count += 1;
+        // Update MDC context with current turn (propagates to spawned async tasks)
+        set_conversation_turn(cmd_count as u32);
+
+        let (current_agent_id, tab_kind) = {
+            let tab = ctx.tab_mgr.active_tab();
+            let agent = if tab.ai_mode || matches!(tab.kind(), TabKind::Ai) {
+                tab.ai_agent_id.clone()
+            } else {
+                "shell".to_string()
+            };
+            (agent, tab.kind())
+        };
+        // Update MDC agent_id (propagates to spawned async tasks)
+        set_agent_id(&current_agent_id);
+
+        let cmd_span = info_span!(
+            "cmd",
+            conversation_turn = cmd_count,
+            tab = ctx.tab_mgr.active + 1,
+            kind = ?tab_kind,
+            agent_id = %current_agent_id,
+        );
+        let _cmd_guard = cmd_span.enter();
+        debug!(cmd = %cmd, "executing");
+
         // Handle exit/quit: close mode tabs, exit AI mode, or close shell tab
         if cmd == "exit" || cmd == "quit" {
-            let tab = tab_mgr.active_tab();
+            let tab = ctx.tab_mgr.active_tab();
             let kind = tab.kind();
             match kind {
                 TabKind::Ai | TabKind::HistoryView => {
                     // Mode tabs: close the tab on exit/quit
-                    if tab_mgr.close_active() {
+                    if ctx.tab_mgr.close_active() {
                         break;
                     }
-                    println!("Tab closed. Now on tab {}.", tab_mgr.active + 1);
+                    println!("Tab closed. Now on tab {}.", ctx.tab_mgr.active + 1);
                     continue;
                 }
                 TabKind::Shell => {
-                    let tab = tab_mgr.active_tab_mut();
+                    let tab = ctx.tab_mgr.active_tab_mut();
                     if tab.ai_mode {
                         tab.ai_mode = false;
                         println!("Exited AI mode.");
                         continue;
                     }
                     // Close shell tab; exit if it was the last
-                    if tab_mgr.close_active() {
+                    if ctx.tab_mgr.close_active() {
                         break;
                     }
                     continue;
@@ -457,42 +704,42 @@ async fn main() -> Result<()> {
 
         // Re-run setup wizard on demand
         if cmd == "setup" {
-            let _ = spi::setup::run_setup_wizard(&mut config);
+            let _ = spi::setup::run_setup_wizard(&mut ctx.config);
             continue;
         }
 
         // For HistoryView tabs: 'q' also closes the tab
-        if cmd == "q" && tab_mgr.active_tab().kind() == TabKind::HistoryView {
-            if tab_mgr.close_active() {
+        if cmd == "q" && ctx.tab_mgr.active_tab().kind() == TabKind::HistoryView {
+            if ctx.tab_mgr.close_active() {
                 break;
             }
-            println!("Tab closed. Now on tab {}.", tab_mgr.active + 1);
+            println!("Tab closed. Now on tab {}.", ctx.tab_mgr.active + 1);
             continue;
         }
 
         // Add to shared history after checking for exit
         {
-            let mut h = history.lock().unwrap();
+            let mut h = ctx.history.lock().unwrap();
             h.add(cmd_with_leading_space);
         }
 
         // --- Tab commands (intercepted before AI/WASM dispatch) ---
         if let Some(action) = parse_tab_command(&cmd) {
-            handle_tab_command(&mut tab_mgr, action, &policy, &ai_service, &git_enforcer_opt).await;
+            handle_tab_command(&mut ctx.tab_mgr, action, &ctx.policy, &ctx.ai_service, &ctx.git_enforcer).await;
             continue;
         }
 
         // --- Dispatch based on tab kind ---
-        let kind = tab_mgr.active_tab().kind();
+        let kind = ctx.tab_mgr.active_tab().kind();
         match kind {
             TabKind::HistoryView => {
                 // In history tab: typed text searches history, Enter copies to clipboard
-                process_history_view(&tab_mgr, &cmd);
+                process_history_view(&ctx.tab_mgr, &cmd);
                 continue;
             }
             TabKind::Ai => {
                 // AI tabs are always in AI mode
-                process_ai_mode(&mut tab_mgr, &ai_service, &cmd).await;
+                process_ai_mode(&mut ctx.tab_mgr, &ctx.ai_service, &cmd).await;
                 continue;
             }
             TabKind::Shell => {
@@ -501,12 +748,12 @@ async fn main() -> Result<()> {
         }
 
         // Handle commands based on current mode (shell tabs only)
-        let tab_ai_mode = tab_mgr.active_tab().ai_mode;
+        let tab_ai_mode = ctx.tab_mgr.active_tab().ai_mode;
 
         if tab_ai_mode {
             process_ai_mode(
-                &mut tab_mgr,
-                &ai_service,
+                &mut ctx.tab_mgr,
+                &ctx.ai_service,
                 &cmd,
             )
             .await;
@@ -515,18 +762,21 @@ async fn main() -> Result<()> {
 
         // In shell mode: check for AI command triggers
         {
-            let tab = tab_mgr.active_tab();
+            let tab = ctx.tab_mgr.active_tab();
             if let Some(ai_cmd) = commands::parse_ai_command(&cmd) {
                 let recent = tab.recent_commands.clone();
                 let enter_ai_mode =
-                    handle_ai_command(&ai_service, ai_cmd, &recent).await;
+                    handle_ai_command(&ctx.ai_service, ai_cmd, &recent).await;
                 if enter_ai_mode {
-                    let tab = tab_mgr.active_tab_mut();
+                    let tab = ctx.tab_mgr.active_tab_mut();
                     tab.ai_mode = true;
-                    if let Some(svc) = &ai_service {
+                    if let Some(svc) = &ctx.ai_service {
                         tab.ai_agent_id = svc.active_agent_id().await;
                     }
-                    println!("Entered AI mode. Type 'exit' or 'quit' to return to shell.");
+                    let model_info = ctx.config.ai.effective_model()
+                        .map(|m| format!(" (model: {})", m))
+                        .unwrap_or_default();
+                    println!("Entered AI mode{model_info}. Type 'exit' or 'quit' to return to shell.");
                 }
                 continue;
             }
@@ -534,7 +784,7 @@ async fn main() -> Result<()> {
 
         // Track recent commands for AI context
         {
-            let tab = tab_mgr.active_tab_mut();
+            let tab = ctx.tab_mgr.active_tab_mut();
             tab.recent_commands.push(cmd.clone());
             if tab.recent_commands.len() > MAX_RECENT {
                 tab.recent_commands.remove(0);
@@ -543,16 +793,19 @@ async fn main() -> Result<()> {
 
         // Dispatch to WASM engine (shell tabs only — type-level guarantee)
         {
-            let tab = tab_mgr.active_tab_mut();
+            let wasm_span = info_span!("wasm_eval");
+            let _wasm_guard = wasm_span.enter();
+
+            let tab = ctx.tab_mgr.active_tab_mut();
             let TabInner::Shell(ref mut wasm) = tab.inner else {
                 unreachable!("only Shell tabs reach WASM dispatch");
             };
             let cmd_bytes = cmd.as_bytes();
             if cmd_bytes.len() > wasm.buf_cap {
-                eprintln!(
-                    "[host] command too long ({} bytes, max {})",
-                    cmd_bytes.len(),
-                    wasm.buf_cap
+                warn!(
+                    size = cmd_bytes.len(),
+                    max = wasm.buf_cap,
+                    "command too long, ignoring"
                 );
                 continue;
             }
@@ -573,6 +826,7 @@ async fn main() -> Result<()> {
 }
 
 /// Process a command while in AI mode for the active tab.
+#[instrument(skip(tab_mgr, ai_service), fields(cmd_len = cmd.len()))]
 async fn process_ai_mode(
     tab_mgr: &mut TabManager,
     ai_service: &Option<DefaultAiService>,
@@ -653,6 +907,7 @@ fn process_history_view(tab_mgr: &TabManager, query: &str) {
 // ---------------------------------------------------------------------------
 
 /// Parsed tab command.
+#[derive(Debug)]
 enum TabAction {
     List,
     New { path: Option<PathBuf> },
@@ -678,7 +933,7 @@ fn parse_tab_command(cmd: &str) -> Option<TabAction> {
     match args.first().copied() {
         None | Some("list") => Some(TabAction::List),
         Some("new") => {
-            let path = args.get(1).map(|s| PathBuf::from(s));
+            let path = args.get(1).map(PathBuf::from);
             Some(TabAction::New { path })
         }
         Some("ai") => {
@@ -713,6 +968,7 @@ fn parse_tab_command(cmd: &str) -> Option<TabAction> {
 }
 
 /// Execute a parsed tab command.
+#[instrument(skip_all, fields(action = ?action))]
 async fn handle_tab_command(
     tab_mgr: &mut TabManager,
     action: TabAction,
@@ -739,7 +995,7 @@ async fn handle_tab_command(
                     };
                     let canonical = resolved.canonicalize().unwrap_or(resolved);
                     if !canonical.is_dir() {
-                        eprintln!("tab new: not a directory: {}", canonical.display());
+                        error!(path = %canonical.display(), "tab new: path is not a directory");
                         return;
                     }
                     canonical
@@ -751,7 +1007,7 @@ async fn handle_tab_command(
                     tab_mgr.switch_to(idx);
                     println!("Switched to tab {}.", idx + 1);
                 }
-                Err(e) => eprintln!("tab new: failed to create tab: {e}"),
+                Err(e) => error!(error = %e, "tab new: failed to create tab"),
             }
         }
         TabAction::Ai { agent } => {

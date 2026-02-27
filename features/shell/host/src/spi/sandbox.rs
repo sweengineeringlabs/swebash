@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use tracing::warn;
+
 use super::path::display_path;
 use super::state::{AccessMode, SandboxPolicy};
 
@@ -102,6 +104,7 @@ pub fn check_path(policy: &SandboxPolicy, raw: &str, kind: AccessKind) -> Result
     match check_access(policy, &resolved, kind) {
         Ok(()) => Ok(()),
         Err(msg) => {
+            warn!(path = %resolved.display(), kind = ?kind, "sandbox access denied");
             eprintln!("{msg}");
             Err(())
         }
@@ -119,6 +122,7 @@ pub fn check_path_with_cwd(
     match check_access(policy, &resolved, kind) {
         Ok(()) => Ok(()),
         Err(msg) => {
+            warn!(path = %resolved.display(), kind = ?kind, "sandbox access denied");
             eprintln!("{msg}");
             Err(())
         }

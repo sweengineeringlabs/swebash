@@ -402,7 +402,8 @@ fn step_git_repo(config: &SwebashConfig) -> Result<RepoInfo, ()> {
         .unwrap_or_default();
 
     // Check if this workspace is already bound
-    if let Some(bound) = config.find_workspace_for_path(&cwd) {
+    if config.is_workspace_bound(&cwd) {
+        let bound = config.find_workspace_for_path(&cwd).unwrap();
         println!("  \x1b[33m!\x1b[0m This workspace is already bound to a repository:");
         println!("    Workspace: {}", bound.workspace_path);
         println!("    Repo:      {}", bound.repo_remote);
@@ -456,6 +457,20 @@ fn step_git_repo(config: &SwebashConfig) -> Result<RepoInfo, ()> {
                 println!("  \x1b[33m!\x1b[0m No remote configured. Workspace binding requires a remote URL.");
                 println!("  \x1b[90mAdd a remote with: git remote add origin <url>\x1b[0m");
                 return Err(());
+            }
+
+            // Check if this remote is already bound to another workspace
+            if let Some(ref remote) = info.remote_url {
+                if let Some(existing) = config.find_workspace_for_remote(remote) {
+                    println!("  \x1b[33m!\x1b[0m This repository is already bound to another workspace:");
+                    println!("    Existing workspace: {}", existing.workspace_path);
+                    println!("    Bound at:           {}", existing.bound_at);
+                    println!();
+                    println!("  \x1b[90mEach repository should typically have only one workspace binding.");
+                    println!("  If you want to bind this workspace too, remove the existing binding from");
+                    println!("  ~/.config/swebash/config.toml first.\x1b[0m");
+                    return Err(());
+                }
             }
 
             // Warn if repo owner doesn't match active account

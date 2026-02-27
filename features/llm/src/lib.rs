@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 /// L5 Facade: swebash-llm crate entry point.
 ///
 /// Re-exports the public API and provides the `create_ai_service()` factory.

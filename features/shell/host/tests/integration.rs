@@ -1298,6 +1298,12 @@ fn git_gate_blocks_commit_on_protected_branch() {
         .current_dir(dir.path())
         .output()
         .unwrap();
+    // Ensure branch is named "main" (some systems default to "master")
+    Command::new("git")
+        .args(["branch", "-M", "main"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
 
     // Write a .swebash/git.toml that denies commits on main
     let swebash_dir = dir.path().join(".swebash");
@@ -1438,6 +1444,12 @@ fn git_gate_denies_force_push_on_protected_branch() {
         .unwrap();
     Command::new("git")
         .args(["commit", "-m", "initial"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    // Ensure branch is named "main" (some systems default to "master")
+    Command::new("git")
+        .args(["branch", "-M", "main"])
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -2162,8 +2174,10 @@ fn workspace_binding_remote_normalization() {
 fn ls_empty_directory_shows_message() {
     let dir = TestDir::new("ls_empty");
     // dir is empty by default
+    // Note: Remove any cache directories that may be created during shell startup
+    let _ = std::fs::remove_dir_all(dir.path().join(".fastembed_cache"));
 
-    let (out, _) = run_in(dir.path(), &["ls"]);
+    let (out, _) = run_in(dir.path(), &["rm -rf .fastembed_cache", "ls"]);
     assert!(
         out.contains("(empty)"),
         "ls in empty directory should show '(empty)'. stdout: {out}"
@@ -2174,8 +2188,10 @@ fn ls_empty_directory_shows_message() {
 fn ls_long_empty_directory_shows_message() {
     let dir = TestDir::new("ls_long_empty");
     // dir is empty by default
+    // Note: Remove any cache directories that may be created during shell startup
+    let _ = std::fs::remove_dir_all(dir.path().join(".fastembed_cache"));
 
-    let (out, _) = run_in(dir.path(), &["ls -l"]);
+    let (out, _) = run_in(dir.path(), &["rm -rf .fastembed_cache", "ls -l"]);
     // Should show header and (empty) message
     assert!(
         out.contains("TYPE") && out.contains("NAME"),

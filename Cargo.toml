@@ -19,6 +19,18 @@ opt-level = "s"
 lto = true
 strip = true
 
+[workspace.lints.rust]
+unsafe_code = "warn"
+missing_docs = "warn"
+rust_2018_idioms = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+
 # Patch llm-provider from the local registry with our vendored version that
 # adds the `oauth` feature while preserving API compatibility with `react`.
 [patch."file:///C:/Users/elvis/.cargo/registry.local/index"]

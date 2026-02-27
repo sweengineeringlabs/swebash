@@ -1,11 +1,11 @@
 #![forbid(unsafe_code)]
 
-/// swebash-readline: Shell-specific readline wrapper around swe-readline.
+/// swe-readline: Shared line editing, history, and completion library.
 ///
 /// # Architecture (SEA Pattern)
 ///
 /// - `api/` — public types re-exported at crate root
-/// - `core/` — shell-specific implementations (ShellCompleter, ShellHighlighter)
+/// - `core/` — implementations (editor, completer, hinter, highlighter, history, validator, config)
 /// - `spi/` — external provider integration (empty for now)
 pub mod api;
 pub mod core;

@@ -69,7 +69,7 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
             };
 
             let parts: Vec<&str> = cmd.split_whitespace().collect();
-            let subcmd = parts.first().map(|s| *s).unwrap_or("");
+            let subcmd = parts.first().copied().unwrap_or("");
 
             match subcmd {
                 "" | "status" => {

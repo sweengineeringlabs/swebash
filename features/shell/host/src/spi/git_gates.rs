@@ -89,6 +89,28 @@ fn load_repo_git_config(workspace_root: &Path) -> Option<GitConfig> {
     toml::from_str::<GitConfig>(&contents).ok()
 }
 
+/// Get the remote URL for the given remote name (default: "origin").
+///
+/// Returns `None` if not in a git repo or remote doesn't exist.
+pub fn current_remote(cwd: &Path, remote: &str) -> Option<String> {
+    let output = Command::new("git")
+        .args(["remote", "get-url", remote])
+        .current_dir(cwd)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let url = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    if url.is_empty() {
+        None
+    } else {
+        Some(url)
+    }
+}
+
 /// Get the current branch name by running `git rev-parse --abbrev-ref HEAD`.
 ///
 /// Returns `None` if not in a git repo or in detached HEAD state.

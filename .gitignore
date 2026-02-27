@@ -1,2 +1,23 @@
-/target
+target/
 .env
+
+# Build artifacts
+*.wasm
+dist/
+
+# Cache directories
+.fastembed_cache/
+.swebash/
+
+# Test outputs
+full_test_output.txt
+runner_err.txt
+runner_out.txt
+violations.json
+
+# Windows artifacts
+NUL
+
+# Misc generated files
+echo
+data/

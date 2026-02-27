@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use super::git_config::GitConfig;
 use super::state::{AccessMode, PathRule, SandboxPolicy};
@@ -335,9 +336,10 @@ pub fn load_config() -> SwebashConfig {
         Ok(contents) => match toml::from_str::<SwebashConfig>(&contents) {
             Ok(cfg) => cfg,
             Err(e) => {
-                eprintln!(
-                    "warning: failed to parse {}: {e}",
-                    config_path.display()
+                warn!(
+                    path = %config_path.display(),
+                    error = %e,
+                    "failed to parse config file, using defaults"
                 );
                 SwebashConfig::default()
             }

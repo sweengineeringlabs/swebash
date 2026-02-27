@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Automated interactive test runner for swebash.
 //!
 //! This crate provides a framework for running structured YAML test specifications

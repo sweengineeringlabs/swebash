@@ -1,4 +1,5 @@
 use anyhow::Result;
+use tracing::warn;
 use wasmtime::*;
 
 use crate::spi::state::HostState;
@@ -85,9 +86,9 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
             };
 
             if key == "SWEBASH_WORKSPACE" {
-                eprintln!(
-                    "warning: setting SWEBASH_WORKSPACE at runtime has no effect on the \
-                     sandbox policy. Use the `workspace` command instead."
+                warn!(
+                    "setting SWEBASH_WORKSPACE at runtime has no effect on sandbox policy; \
+                     use the `workspace` command instead"
                 );
             }
 

@@ -14,11 +14,16 @@ rag-swevecdb = ["swebash-llm/rag-swevecdb"]
 wasmtime = "29"
 anyhow = "1"
 dirs = "5"
-tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "sync"] }
 swebash-llm = { path = "../../llm", default-features = false }
 swebash-readline = { path = "../readline" }
 dotenvy = "0.15"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 toml = "0.8"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 crossterm = "0.29"
+uuid = { version = "1", features = ["v4"] }
+# MDC (Mapped Diagnostic Context) from rustratify
+mdc-logging = { path = "../../../../langboot/rustratify/crates/mdc-logging" }

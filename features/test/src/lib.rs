@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 /// Reusable test framework for the swebash workspace.
 ///
 /// Provides shared mock objects, RAII fixtures, streaming assertions,

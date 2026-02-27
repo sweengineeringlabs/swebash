@@ -130,12 +130,10 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
             };
 
             let mut result = String::new();
-            for entry in entries {
-                if let Ok(e) = entry {
-                    if let Some(name) = e.file_name().to_str() {
-                        result.push_str(name);
-                        result.push('\n');
-                    }
+            for e in entries.flatten() {
+                if let Some(name) = e.file_name().to_str() {
+                    result.push_str(name);
+                    result.push('\n');
                 }
             }
 
@@ -247,9 +245,13 @@ pub fn register(linker: &mut Linker<HostState>) -> Result<()> {
                 // Create if not exists, or truncate if content provided
                 if content.is_empty() {
                     // touch: create empty file
+                    // TODO(backlog): Review truncate(true) - added to satisfy clippy.
+                    // The file doesn't exist when this code runs (early return above),
+                    // so truncate has no effect. Consider if logic should change.
                     std::fs::OpenOptions::new()
                         .create(true)
                         .write(true)
+                        .truncate(true)
                         .open(&resolved)
                         .map(|_| ())
                 } else {
