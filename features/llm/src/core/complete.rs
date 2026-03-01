@@ -1,18 +1,20 @@
 /// Autocomplete suggestion logic.
 use crate::api::error::AiResult;
-use crate::api::types::{
-    AiMessage, AutocompleteRequest, AutocompleteResponse, CompletionOptions,
-};
-use crate::core::prompt;
-use crate::spi::AiClient;
+use crate::api::types::{AutocompleteRequest, AutocompleteResponse};
+use crate::spi::GatewayClient;
 
-/// Generate autocomplete suggestions based on context.
-pub async fn autocomplete(
-    client: &dyn AiClient,
+/// Generate autocomplete suggestions via gateway.
+pub async fn autocomplete_via_gateway(
+    gateway: &GatewayClient,
     request: AutocompleteRequest,
 ) -> AiResult<AutocompleteResponse> {
-    let context = format!(
-        "Current directory: {}\nFiles in directory: {}\nRecent commands: {}\nPartial input: {}",
+    let prompt = format!(
+        "Suggest shell command completions for this context.\n\
+         Current directory: {}\n\
+         Files in directory: {}\n\
+         Recent commands: {}\n\
+         Partial input: {}\n\n\
+         Provide up to 5 completion suggestions, one per line.",
         request.cwd,
         if request.cwd_entries.is_empty() {
             "(empty)".to_string()
@@ -31,17 +33,7 @@ pub async fn autocomplete(
         }
     );
 
-    let messages = vec![
-        AiMessage::system(prompt::autocomplete_system_prompt()),
-        AiMessage::user(context),
-    ];
-
-    let options = CompletionOptions {
-        temperature: Some(0.3),
-        max_tokens: Some(256),
-    };
-
-    let response = client.complete(messages, options).await?;
+    let response = gateway.execute("shell", &prompt).await?;
 
     let suggestions: Vec<String> = response
         .content

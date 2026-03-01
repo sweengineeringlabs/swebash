@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde_json::Value;
-use tool::{RiskLevel, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use llmboot_orchestration::{RiskLevel, Tool, ToolCapability, ToolDefinition, ToolError, ToolOutput, ToolExecResult as ToolResult};
 
 use llmrag::RagIndexService;
 
@@ -155,6 +155,8 @@ impl Tool for SwebashRagTool {
             name: self.name().to_string(),
             description: self.description().to_string(),
             parameters: self.parameters_schema(),
+            // RAG search is read-only - no system capabilities required
+            capabilities: ToolCapability::empty().bits(),
         }
     }
 

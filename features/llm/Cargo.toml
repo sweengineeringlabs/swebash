@@ -12,20 +12,15 @@ rag-sqlite = ["llmrag/rag-sqlite"]     # Persistent SQLite vector store
 rag-swevecdb = ["llmrag/rag-swevecdb"] # Remote SweVecDB vector store
 
 [dependencies]
-# Chat engine (from rustratify) — provides SimpleChatEngine with memory management
-chat-engine = { package = "chat", version = "0.1.0", registry = "local" }
-
-# LLM provider (from rustratify) — used for CompletionBuilder and service creation
-llm-provider = { version = "0.1.0", registry = "local", features = ["oauth", "testing"] }
-
-# OAuth credentials (from rustratify) — Claude Code ~/.claude/.credentials.json support
-llm-oauth = { version = "0.1.0", registry = "local" }
-
-# React (from rustratify) — provides AgentEventSender for chat engine
-react = { version = "0.1.0", registry = "local" }
-
-# Tool support (from rustratify) — provides Tool trait, ToolRegistry, and standard providers
-tool = { version = "0.1.0", registry = "local", features = ["providers"] }
+# ============================================================================
+# llmboot - L1 Gateway API (the only LLM integration)
+# ============================================================================
+# All LLM functionality is accessed through llmboot's gateway and orchestration layers.
+# This replaces all legacy rustratify dependencies.
+llmboot-input = { workspace = true }
+llmboot-providers = { workspace = true }
+llmboot-tools = { workspace = true }
+llmboot-orchestration = { workspace = true }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -48,14 +43,10 @@ glob = "0.3"
 # Utility crates still needed
 uuid = { version = "1.0", features = ["v4"] }
 parking_lot = "0.12"
+dirs = "5"
 
-# Agent controller (from rustratify) — provides EngineState and Engine trait
-agent-controller = { version = "0.1.0", registry = "local", features = ["yaml"] }
-
-# Agent cache (from rustratify) — tool result caching for ReadOnly tools
-agent-cache = { version = "0.1.0", registry = "local" }
-
-# RAG (from rustratify) — provides RAG pipeline (chunking, vector storage, index management)
+# RAG — provides RAG pipeline (chunking, vector storage, index management)
+# Note: Uses llmboot's rag module re-exported from llmboot-orchestration
 llmrag = { version = "0.1.0", registry = "local", default-features = false }
 
 # SHA-256 fingerprinting for PreprocessingRagIndexService
@@ -69,8 +60,6 @@ url = "2.5"
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
 async-trait = "0.1"
 futures = "0.3"
-agent-controller = { version = "0.1.0", registry = "local", features = ["testing", "yaml"] }
-llm-provider = { version = "0.1.0", registry = "local" }
 serial_test = "3"
 tempfile = "3"
 filetime = "0.2"

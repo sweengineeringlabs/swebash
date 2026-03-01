@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use llmrag::VectorStoreConfig;
+use llmboot_providers::from_claude_credentials;
 
 use crate::core::tools::ToolSandbox;
 
@@ -164,7 +165,7 @@ impl AiConfig {
     /// | Variable | Default | Purpose |
     /// |----------|---------|---------|
     /// | `SWEBASH_AI_ENABLED` | `true` | Enable/disable AI features |
-    /// | `LLM_PROVIDER` | `openai` | Provider: openai, anthropic, gemini |
+    /// | `LLM_PROVIDER` | _(auto-detect)_ | Provider: openai, anthropic, gemini. Auto-detects from OAuth/API keys. |
     /// | `LLM_DEFAULT_MODEL` | `gpt-4o` | Default model |
     /// | `SWEBASH_AI_HISTORY_SIZE` | `20` | Max chat history messages |
     /// | `SWEBASH_AI_TOOLS_FS` | `true` | Enable file system tools |
@@ -196,7 +197,9 @@ impl AiConfig {
             .map(|v| v != "false" && v != "0")
             .unwrap_or(true);
 
-        let provider = std::env::var("LLM_PROVIDER").unwrap_or_else(|_| "openai".to_string());
+        let provider = std::env::var("LLM_PROVIDER").unwrap_or_else(|_| {
+            detect_default_provider()
+        });
 
         let model = std::env::var("LLM_DEFAULT_MODEL").unwrap_or_else(|_| {
             default_model_for_provider(&provider)
@@ -348,7 +351,7 @@ impl AiConfig {
     /// Check if Claude Code OAuth credentials are available (`~/.claude/.credentials.json`).
     /// Only meaningful when `provider == "anthropic"`.
     pub fn has_oauth_credentials(&self) -> bool {
-        self.provider == "anthropic" && llm_oauth::from_claude_credentials().is_ok()
+        self.provider == "anthropic" && from_claude_credentials().is_ok()
     }
 }
 
@@ -358,6 +361,97 @@ fn default_model_for_provider(provider: &str) -> String {
         "anthropic" => "claude-sonnet-4-20250514".to_string(),
         "gemini" => "gemini-2.0-flash".to_string(),
         _ => "gpt-4o".to_string(),
+    }
+}
+
+/// Detect the default provider by scanning for available credentials.
+///
+/// Priority order:
+/// 1. OAuth credentials (Claude Code `~/.claude/.credentials.json` → anthropic)
+/// 2. Google Application Default Credentials (`~/.config/gcloud/...` or `GOOGLE_APPLICATION_CREDENTIALS` → gemini)
+/// 3. API key environment variables (checked in order: anthropic, openai, gemini)
+/// 4. Fallback to "openai" (legacy default)
+///
+/// This allows users with Claude Code or gcloud installed to use `ai` commands
+/// without any additional configuration.
+fn detect_default_provider() -> String {
+    // 1. Check for Claude Code OAuth credentials (anthropic)
+    if from_claude_credentials().is_ok() {
+        tracing::debug!("Auto-detected Claude Code OAuth credentials, using anthropic provider");
+        return "anthropic".to_string();
+    }
+
+    // 2. Check for Google Application Default Credentials (gemini)
+    if has_google_adc() {
+        tracing::debug!("Auto-detected Google ADC credentials, using gemini provider");
+        return "gemini".to_string();
+    }
+
+    // 3. Check for API keys in environment (prefer anthropic, then openai, then gemini)
+    if std::env::var("ANTHROPIC_API_KEY").is_ok() {
+        tracing::debug!("Auto-detected ANTHROPIC_API_KEY, using anthropic provider");
+        return "anthropic".to_string();
+    }
+    if std::env::var("OPENAI_API_KEY").is_ok() {
+        tracing::debug!("Auto-detected OPENAI_API_KEY, using openai provider");
+        return "openai".to_string();
+    }
+    if std::env::var("GEMINI_API_KEY").is_ok() || std::env::var("GOOGLE_API_KEY").is_ok() {
+        tracing::debug!("Auto-detected GEMINI_API_KEY or GOOGLE_API_KEY, using gemini provider");
+        return "gemini".to_string();
+    }
+
+    // 4. Fallback to openai (legacy default)
+    tracing::debug!("No credentials detected, defaulting to openai provider");
+    "openai".to_string()
+}
+
+/// Check for Google Application Default Credentials (ADC).
+///
+/// ADC can be configured via:
+/// 1. `GOOGLE_APPLICATION_CREDENTIALS` env var pointing to a service account JSON
+/// 2. Default gcloud location (XDG-compliant):
+///    - Unix: `$XDG_CONFIG_HOME/gcloud/...` or `~/.config/gcloud/...`
+///    - Windows: `%APPDATA%\gcloud\...`
+///
+/// See: https://cloud.google.com/docs/authentication/application-default-credentials
+fn has_google_adc() -> bool {
+    const ADC_FILENAME: &str = "gcloud/application_default_credentials.json";
+
+    // Check for explicit credentials file via env var
+    if let Ok(path) = std::env::var("GOOGLE_APPLICATION_CREDENTIALS") {
+        if std::path::Path::new(&path).exists() {
+            return true;
+        }
+    }
+
+    // Check platform-specific default location
+    if let Some(config_dir) = gcloud_config_dir() {
+        if config_dir.join(ADC_FILENAME).exists() {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Get the gcloud config directory following XDG on Unix, APPDATA on Windows.
+///
+/// gcloud follows XDG Base Directory spec on Unix (including macOS), not native macOS paths.
+fn gcloud_config_dir() -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    {
+        dirs::config_dir()
+    }
+
+    #[cfg(not(windows))]
+    {
+        // XDG: use $XDG_CONFIG_HOME if set, otherwise ~/.config
+        if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+            Some(std::path::PathBuf::from(xdg))
+        } else {
+            dirs::home_dir().map(|h| h.join(".config"))
+        }
     }
 }
 

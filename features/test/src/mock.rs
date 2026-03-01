@@ -1,16 +1,18 @@
 /// AI mock infrastructure for tests.
 ///
-/// Extracted from `features/ai/tests/integration.rs` and made public for
-/// reuse across all workspace crates.
+/// Provides mock implementations of `AiService` and related types for testing
+/// without requiring real API keys or network access.
 
 use std::sync::Arc;
 
-use llm_provider::{LlmService, MockBehaviour, MockLlmService};
 use parking_lot::Mutex;
 use swebash_llm::api::error::{AiError, AiResult};
-use swebash_llm::api::types::{AiMessage, AiResponse, CompletionOptions};
-use swebash_llm::core::agents::builtins::create_default_registry;
-use swebash_llm::core::DefaultAiService;
+use swebash_llm::api::types::{
+    AiEvent, AiMessage, AiResponse, AgentInfo, AiStatus, AutocompleteRequest, AutocompleteResponse,
+    ChatRequest, ChatResponse, CompletionOptions, ExplainRequest, ExplainResponse,
+    TranslateRequest, TranslateResponse,
+};
+use swebash_llm::api::AiService;
 use swebash_llm::spi::rag::EmbeddingProvider;
 use swebash_llm::{AiConfig, ToolConfig};
 
@@ -20,7 +22,7 @@ use llmrag::RagResult;
 
 /// Mock `AiClient` that returns fixed "mock" responses.
 ///
-/// Use this when you need a `DefaultAiService` without a real API key.
+/// Use this when you need an `AiClient` without a real API key.
 pub struct MockAiClient;
 
 #[async_trait::async_trait]
@@ -79,6 +81,162 @@ impl swebash_llm::spi::AiClient for ErrorMockAiClient {
     }
     fn model_name(&self) -> String {
         "error-mock".into()
+    }
+}
+
+// ── MockAiService ────────────────────────────────────────────────────
+
+/// Mock implementation of `AiService` for testing.
+///
+/// Returns configurable responses without requiring a gateway or API key.
+pub struct MockAiService {
+    config: AiConfig,
+    behaviour: MockServiceBehaviour,
+    current_agent: Mutex<String>,
+}
+
+/// Behaviour configuration for MockAiService.
+#[derive(Clone)]
+pub enum MockServiceBehaviour {
+    /// Return a fixed response for all operations.
+    Fixed(String),
+    /// Return an error for all operations.
+    Error(String),
+    /// Echo back the input.
+    Echo,
+}
+
+impl Default for MockServiceBehaviour {
+    fn default() -> Self {
+        Self::Echo
+    }
+}
+
+impl MockAiService {
+    /// Create a new mock service with echo behaviour.
+    pub fn new(config: AiConfig) -> Self {
+        Self {
+            config,
+            behaviour: MockServiceBehaviour::Echo,
+            current_agent: Mutex::new("shell".to_string()),
+        }
+    }
+
+    /// Set the response behaviour.
+    pub fn with_behaviour(mut self, behaviour: MockServiceBehaviour) -> Self {
+        self.behaviour = behaviour;
+        self
+    }
+
+    fn response(&self, input: &str) -> AiResult<String> {
+        match &self.behaviour {
+            MockServiceBehaviour::Fixed(s) => Ok(s.clone()),
+            MockServiceBehaviour::Error(e) => Err(AiError::Provider(e.clone())),
+            MockServiceBehaviour::Echo => Ok(input.to_string()),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl AiService for MockAiService {
+    async fn translate(&self, request: TranslateRequest) -> AiResult<TranslateResponse> {
+        let command = self.response(&request.natural_language)?;
+        Ok(TranslateResponse {
+            command,
+            explanation: "Mock explanation".to_string(),
+        })
+    }
+
+    async fn explain(&self, request: ExplainRequest) -> AiResult<ExplainResponse> {
+        let explanation = self.response(&request.command)?;
+        Ok(ExplainResponse { explanation })
+    }
+
+    async fn chat(&self, request: ChatRequest) -> AiResult<ChatResponse> {
+        let reply = self.response(&request.message)?;
+        Ok(ChatResponse { reply })
+    }
+
+    async fn chat_streaming(
+        &self,
+        request: ChatRequest,
+    ) -> AiResult<tokio::sync::mpsc::Receiver<AiEvent>> {
+        let (tx, rx) = tokio::sync::mpsc::channel(16);
+        let result = self.response(&request.message);
+
+        tokio::spawn(async move {
+            match result {
+                Ok(content) => {
+                    let _ = tx.send(AiEvent::Done(content)).await;
+                }
+                Err(e) => {
+                    let _ = tx.send(AiEvent::Error(e.to_string())).await;
+                }
+            }
+        });
+
+        Ok(rx)
+    }
+
+    async fn autocomplete(&self, request: AutocompleteRequest) -> AiResult<AutocompleteResponse> {
+        let suggestion = self.response(&request.partial_input)?;
+        Ok(AutocompleteResponse {
+            suggestions: vec![suggestion],
+        })
+    }
+
+    async fn is_available(&self) -> bool {
+        self.config.enabled && !matches!(self.behaviour, MockServiceBehaviour::Error(_))
+    }
+
+    async fn status(&self) -> AiStatus {
+        AiStatus {
+            enabled: self.config.enabled,
+            provider: "mock".to_string(),
+            model: "mock".to_string(),
+            ready: self.is_available().await,
+            description: "Mock AI service for testing".to_string(),
+        }
+    }
+
+    async fn switch_agent(&self, agent_id: &str) -> AiResult<()> {
+        // Only allow known mock agents
+        if agent_id != "shell" && agent_id != "git" {
+            return Err(AiError::NotConfigured(format!(
+                "Unknown agent '{}'. Use 'agents' to list available agents.",
+                agent_id
+            )));
+        }
+        *self.current_agent.lock() = agent_id.to_string();
+        Ok(())
+    }
+
+    async fn current_agent(&self) -> AgentInfo {
+        let id = self.current_agent.lock().clone();
+        AgentInfo {
+            id: id.clone(),
+            display_name: id.clone(),
+            description: format!("Mock agent: {}", id),
+            active: true,
+        }
+    }
+
+    async fn list_agents(&self) -> Vec<AgentInfo> {
+        let active = self.current_agent.lock().clone();
+        vec![
+            AgentInfo {
+                id: "shell".to_string(),
+                display_name: "Shell".to_string(),
+                description: "Mock shell agent".to_string(),
+                active: active == "shell",
+            },
+            AgentInfo {
+                id: "git".to_string(),
+                display_name: "Git".to_string(),
+                description: "Mock git agent".to_string(),
+                active: active == "git",
+            },
+        ]
     }
 }
 
@@ -192,66 +350,35 @@ pub fn mock_config() -> AiConfig {
 
 // ── Service Builders ─────────────────────────────────────────────────
 
-/// Build a `DefaultAiService` backed by `MockLlmService` (no API key required).
+/// Build a mock `AiService` (no API key required).
 ///
-/// Uses the echo mock behaviour by default: the LLM echoes back the user message.
-pub fn create_mock_service() -> DefaultAiService {
-    let config = mock_config();
-    let llm: Arc<dyn LlmService> = Arc::new(MockLlmService::new());
-    let agents = create_default_registry(llm, config.clone());
-    DefaultAiService::new(Box::new(MockAiClient), agents, config)
+/// Uses the echo behaviour by default: operations echo back the input.
+pub fn create_mock_service() -> MockAiService {
+    MockAiService::new(mock_config())
 }
 
-/// Build a mock service with a fixed LLM response.
+/// Build a mock service with a fixed response.
 ///
-/// Every LLM call returns the given `response` string.
-pub fn create_mock_service_fixed(response: &str) -> DefaultAiService {
-    let config = mock_config();
-    let llm: Arc<dyn LlmService> = Arc::new(
-        MockLlmService::new().with_behaviour(MockBehaviour::Fixed(response.to_string())),
-    );
-    let agents = create_default_registry(llm, config.clone());
-    DefaultAiService::new(Box::new(MockAiClient), agents, config)
+/// Every operation returns the given `response` string.
+pub fn create_mock_service_fixed(response: &str) -> MockAiService {
+    MockAiService::new(mock_config()).with_behaviour(MockServiceBehaviour::Fixed(response.into()))
 }
 
-/// Build a mock service where every LLM call returns an error.
-///
-/// `chat`/`chat_streaming` flow through the LLM path and will fail.
-/// `translate`/`explain` flow through `MockAiClient::complete()` and will succeed.
-pub fn create_mock_service_error(error_msg: &str) -> DefaultAiService {
-    let config = mock_config();
-    let llm: Arc<dyn LlmService> = Arc::new(
-        MockLlmService::new().with_behaviour(MockBehaviour::Error(error_msg.to_string())),
-    );
-    let agents = create_default_registry(llm, config.clone());
-    DefaultAiService::new(Box::new(MockAiClient), agents, config)
+/// Build a mock service where every operation returns an error.
+pub fn create_mock_service_error(error_msg: &str) -> MockAiService {
+    MockAiService::new(mock_config()).with_behaviour(MockServiceBehaviour::Error(error_msg.into()))
 }
 
-/// Build a mock service where both the LLM and `AiClient` return errors.
+/// Build a mock service where all operations fail with the given error.
 ///
-/// `chat`/`chat_streaming` flow through the LLM → `ChatEngine` path,
-/// while `translate`/`explain` flow through the `AiClient` → `complete()` path.
-/// This ensures both paths fail with the given error.
-pub fn create_mock_service_full_error(error_msg: &str) -> DefaultAiService {
-    let config = mock_config();
-    let llm: Arc<dyn LlmService> = Arc::new(
-        MockLlmService::new().with_behaviour(MockBehaviour::Error(error_msg.to_string())),
-    );
-    let agents = create_default_registry(llm, config.clone());
-    DefaultAiService::new(
-        Box::new(ErrorMockAiClient {
-            error_msg: error_msg.to_string(),
-        }),
-        agents,
-        config,
-    )
+/// This is an alias for `create_mock_service_error` for compatibility.
+pub fn create_mock_service_full_error(error_msg: &str) -> MockAiService {
+    create_mock_service_error(error_msg)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swebash_llm::api::AiService;
-    use swebash_llm::spi::AiClient;
 
     #[test]
     fn mock_config_has_sensible_defaults() {
@@ -289,6 +416,7 @@ mod tests {
 
     #[tokio::test]
     async fn mock_ai_client_returns_mock_response() {
+        use swebash_llm::spi::AiClient;
         let client = MockAiClient;
         let resp = client
             .complete(vec![], CompletionOptions::default())
@@ -300,6 +428,7 @@ mod tests {
 
     #[tokio::test]
     async fn error_mock_ai_client_returns_error() {
+        use swebash_llm::spi::AiClient;
         let client = ErrorMockAiClient {
             error_msg: "test failure".into(),
         };
@@ -359,5 +488,63 @@ mod tests {
     async fn mock_service_is_available() {
         let service = create_mock_service();
         assert!(service.is_available().await);
+    }
+
+    #[tokio::test]
+    async fn mock_service_echo_behaviour() {
+        let service = create_mock_service();
+        let response = service
+            .chat(ChatRequest {
+                message: "Hello world".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.reply, "Hello world");
+    }
+
+    #[tokio::test]
+    async fn mock_service_fixed_behaviour() {
+        let service = create_mock_service_fixed("Fixed response");
+        let response = service
+            .chat(ChatRequest {
+                message: "Any message".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.reply, "Fixed response");
+    }
+
+    #[tokio::test]
+    async fn mock_service_error_behaviour() {
+        let service = create_mock_service_error("Test error");
+        let result = service
+            .chat(ChatRequest {
+                message: "Hello".into(),
+            })
+            .await;
+        match result {
+            Err(AiError::Provider(msg)) => assert_eq!(msg, "Test error"),
+            other => panic!("Expected Provider error, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn mock_service_switch_agent() {
+        let service = create_mock_service();
+        let initial = service.current_agent().await;
+        assert_eq!(initial.id, "shell");
+
+        service.switch_agent("git").await.unwrap();
+        let updated = service.current_agent().await;
+        assert_eq!(updated.id, "git");
+    }
+
+    #[tokio::test]
+    async fn mock_service_list_agents() {
+        let service = create_mock_service();
+        let agents = service.list_agents().await;
+        assert_eq!(agents.len(), 2);
+        assert!(agents.iter().any(|a| a.id == "shell"));
+        assert!(agents.iter().any(|a| a.id == "git"));
     }
 }

@@ -3,7 +3,7 @@
 //! Provides rich error context, actionable suggestions, and proper error chaining.
 
 use thiserror::Error;
-use tool::ToolError;
+use llmboot_orchestration::ToolError;
 
 use super::super::error::{ErrorCategory, IntoToolError};
 

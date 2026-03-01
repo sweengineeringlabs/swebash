@@ -8,10 +8,16 @@
 ///
 /// ```text
 /// L4 Facade   - lib.rs (this file): re-exports, factory
-/// L3 Core     - core/: DefaultAiService, feature modules, agent framework
+/// L3 Core     - core/: DefaultAiService, feature modules
 /// L2 API      - api/: AiService trait (consumer interface)
-/// L1 SPI      - spi/: AiClient trait, config, ChatProviderClient
+/// L1 SPI      - spi/: GatewayClient (llmboot integration)
 /// ```
+///
+/// All LLM operations are routed through llmboot's Gateway API, which provides:
+/// - Input validation and guardrails
+/// - Agent management and execution
+/// - Tool orchestration
+/// - Pattern execution (ReAct, CoT, etc.)
 pub mod api;
 pub mod core;
 pub mod spi;
@@ -29,6 +35,7 @@ pub use api::cli::handle_ai_command;
 pub use api::commands::{self, AiCommand};
 pub use api::output;
 pub use spi::config::{AiConfig, ToolCacheConfig, ToolConfig};
+pub use spi::GatewayClient;
 pub use core::DefaultAiService;
 pub use core::tools::{ToolSandbox, SandboxAccessMode, SandboxRule};
 
@@ -37,9 +44,8 @@ pub use core::tools::{ToolSandbox, SandboxAccessMode, SandboxRule};
 /// Returns `Ok(service)` if the provider initializes successfully,
 /// or `Err` if configuration is missing or invalid.
 ///
-/// Creates an `AgentRegistry` with built-in agents (shell, review, devops, git),
-/// each with its own `ChatEngine` (lazily created on first use).
-/// Stateless features (translate, explain, autocomplete) use the `AiClient` directly.
+/// Uses llmboot's GatewayClient for all agent operations.
+/// Agents are loaded from the default YAML file (`.swebash/agents.yaml`).
 ///
 /// The host should call this at startup and store the result as `Option`:
 /// ```ignore
@@ -51,19 +57,8 @@ pub async fn create_ai_service() -> AiResult<DefaultAiService> {
 
 /// Factory: create the AI service with optional sandbox restrictions.
 ///
-/// When `sandbox` is provided, filesystem and command executor tools are
-/// wrapped to enforce path restrictions, preventing AI tools from accessing
-/// files outside the allowed workspace.
-///
-/// ## Mock Provider
-///
-/// When `LLM_PROVIDER=mock`, creates a mock service that doesn't require
-/// API keys. This enables deterministic agent behavior testing in autotest.
-///
-/// Mock behaviour is configured via environment variables:
-/// - `SWEBASH_MOCK_RESPONSE`: Fixed response text
-/// - `SWEBASH_MOCK_RESPONSE_FILE`: Path to file containing response
-/// - `SWEBASH_MOCK_ERROR`: Force error mode
+/// When `sandbox` is provided, the sandbox configuration is stored for
+/// use by AI tools that need path restriction enforcement.
 pub async fn create_ai_service_with_sandbox(
     sandbox: Option<std::sync::Arc<ToolSandbox>>,
 ) -> AiResult<DefaultAiService> {
@@ -75,10 +70,89 @@ pub async fn create_ai_service_with_sandbox(
         ));
     }
 
-    // Mock provider path: no API key required
-    if config.provider == "mock" {
-        config.tool_sandbox = sandbox;
-        return create_mock_ai_service(config).await;
+    if !config.has_api_key() && !config.has_oauth_credentials() {
+        return Err(AiError::NotConfigured(format!(
+            "No credentials found for provider '{}'. Set the API key env var or configure Claude Code OAuth.",
+            config.provider
+        )));
+    }
+
+    // Store sandbox in config
+    config.tool_sandbox = sandbox;
+
+    // Try to find agents YAML file
+    let agents_path = find_agents_yaml();
+
+    // Create the gateway client
+    let gateway = spi::GatewayClient::new(&agents_path, &config.provider, &config.model).await?;
+
+    tracing::info!(
+        provider = %config.provider,
+        model = %config.model,
+        agents_path = %agents_path.display(),
+        "AI service initialized via llmboot gateway"
+    );
+
+    Ok(DefaultAiService::new(gateway, config))
+}
+
+/// Find the agents YAML file.
+///
+/// Searches in order:
+/// 1. `SWEBASH_AGENTS_YAML` environment variable
+/// 2. `.swebash/agents.yaml` in current directory
+/// 3. Built-in default agents
+fn find_agents_yaml() -> std::path::PathBuf {
+    // Check environment variable first
+    if let Ok(path) = std::env::var("SWEBASH_AGENTS_YAML") {
+        let p = std::path::PathBuf::from(&path);
+        if p.exists() {
+            return p;
+        }
+    }
+
+    // Check .swebash/agents.yaml in current directory
+    if let Ok(cwd) = std::env::current_dir() {
+        let local_path = cwd.join(".swebash/agents.yaml");
+        if local_path.exists() {
+            return local_path;
+        }
+    }
+
+    // Use crate's built-in agents
+    std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/agents/default.yaml"))
+}
+
+// ============================================================================
+// llmboot Gateway API Integration
+// ============================================================================
+
+/// Factory: create a GatewayClient from an agents YAML file.
+///
+/// This uses llmboot's L1 Gateway API, which provides:
+/// - Input validation and sanitization
+/// - Guardrails (injection detection, PII masking)
+/// - Agent runtime with pattern execution
+/// - Tool orchestration
+///
+/// # Arguments
+/// * `agents_path` - Path to the agents YAML configuration file (llmboot format)
+///
+/// # Example
+/// ```ignore
+/// let client = swebash_llm::create_gateway_client(".swebash/agents.yaml").await?;
+/// let response = client.execute("shell", "list files in current directory").await?;
+/// println!("{}", response.content);
+/// ```
+pub async fn create_gateway_client(
+    agents_path: impl AsRef<std::path::Path>,
+) -> AiResult<spi::GatewayClient> {
+    let config = AiConfig::from_env();
+
+    if !config.enabled {
+        return Err(AiError::NotConfigured(
+            "AI features disabled (SWEBASH_AI_ENABLED=false)".into(),
+        ));
     }
 
     if !config.has_api_key() && !config.has_oauth_credentials() {
@@ -88,46 +162,21 @@ pub async fn create_ai_service_with_sandbox(
         )));
     }
 
-    // Store sandbox in config for agent registry to use
-    config.tool_sandbox = sandbox;
-
-    // Create the SPI client (initializes the LLM provider)
-    let client = spi::chat_provider::ChatProviderClient::new(&config).await?;
-    let llm = client.llm_service();
-
-    // Wrap with AiClient-level logging when log_dir is configured.
-    // LoggingLlmService (inside ChatProviderClient) handles lower-level LLM
-    // request/response logging; LoggingAiClient logs the higher-level
-    // AiMessage / CompletionOptions / AiResponse boundary.
-    let client = spi::logging::LoggingAiClient::wrap(Box::new(client), config.log_dir.clone());
-
-    // Build the agent registry with built-in agents
-    let agents = core::agents::builtins::create_default_registry(llm, config.clone());
-
-    Ok(DefaultAiService::new(client, agents, config))
+    spi::GatewayClient::new(agents_path, &config.provider, &config.model).await
 }
 
-/// Create a mock AI service for testing.
+/// Factory: create a GatewayClient with explicit provider and model.
 ///
-/// Uses `MockAiClient` which delegates to `MockLlmService`. Behaviour
-/// is determined by environment variables (see `mock_client` module).
-async fn create_mock_ai_service(config: AiConfig) -> AiResult<DefaultAiService> {
-    use spi::mock_client::MockAiClient;
-
-    let mock_client = MockAiClient::new();
-    let llm = mock_client.llm_service();
-
-    // Wrap with logging if configured
-    let client = spi::logging::LoggingAiClient::wrap(Box::new(mock_client), config.log_dir.clone());
-
-    // Build the agent registry with built-in agents
-    let agents = core::agents::builtins::create_default_registry(llm, config.clone());
-
-    tracing::info!(
-        provider = "mock",
-        model = "mock-model",
-        "Mock AI service initialized for testing"
-    );
-
-    Ok(DefaultAiService::new(client, agents, config))
+/// This is useful when you want to override the environment configuration.
+///
+/// # Arguments
+/// * `agents_path` - Path to the agents YAML configuration file
+/// * `provider` - LLM provider name (e.g., "openai", "anthropic")
+/// * `model` - Model to use (e.g., "gpt-4o", "claude-sonnet-4-20250514")
+pub async fn create_gateway_client_with_config(
+    agents_path: impl AsRef<std::path::Path>,
+    provider: &str,
+    model: &str,
+) -> AiResult<spi::GatewayClient> {
+    spi::GatewayClient::new(agents_path, provider, model).await
 }

@@ -1,38 +1,27 @@
 /// NL -> shell command translation logic.
 use crate::api::error::{AiError, AiResult};
-use crate::api::types::{AiMessage, CompletionOptions, TranslateRequest, TranslateResponse};
-use crate::core::prompt;
-use crate::spi::AiClient;
+use crate::api::types::{TranslateRequest, TranslateResponse};
+use crate::spi::GatewayClient;
 
-/// Translate a natural language request into a shell command.
-pub async fn translate(
-    client: &dyn AiClient,
+/// Translate a natural language request into a shell command via gateway.
+pub async fn translate_via_gateway(
+    gateway: &GatewayClient,
     request: TranslateRequest,
 ) -> AiResult<TranslateResponse> {
-    let mut messages = vec![AiMessage::system(prompt::translate_system_prompt())];
-
-    // Add context about the environment
+    // Build the translation prompt
     let context = format!(
-        "Current directory: {}\nRecent commands: {}",
+        "Current directory: {}\nRecent commands: {}\n\nTranslate this request into a shell command: {}",
         request.cwd,
         if request.recent_commands.is_empty() {
             "(none)".to_string()
         } else {
             request.recent_commands.join(", ")
-        }
+        },
+        request.natural_language
     );
-    messages.push(AiMessage::user(context));
-    messages.push(AiMessage::assistant("Understood. I'll use this context for my translation."));
 
-    // The actual request
-    messages.push(AiMessage::user(&request.natural_language));
-
-    let options = CompletionOptions {
-        temperature: Some(0.1), // Low temperature for precise commands
-        max_tokens: Some(256),
-    };
-
-    let response = client.complete(messages, options).await?;
+    // Execute through the shell agent (or current agent)
+    let response = gateway.execute("shell", &context).await?;
     let command = response.content.trim().to_string();
 
     if command.is_empty() {

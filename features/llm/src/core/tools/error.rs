@@ -3,7 +3,7 @@
 //! Provides categorization and conversion traits that tool-specific
 //! error types can implement for consistent error handling.
 
-use tool::ToolError;
+use llmboot_orchestration::ToolError;
 
 /// Error categories for tool operations.
 ///

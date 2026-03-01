@@ -2,6 +2,8 @@
 ///
 /// This is the ONLY file in swebash-llm that depends on `chat-engine`, `llm-provider`,
 /// and `react`. All other modules program against the `AiClient` trait.
+///
+/// OAuth credentials are sourced from llmboot_providers for compatibility with Claude Code.
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -11,7 +13,10 @@ use crate::api::types::{AiMessage, AiResponse, AiRole, CompletionOptions};
 use super::config::AiConfig;
 use crate::spi::AiClient;
 
+// Use llm_provider for chat-engine compatibility (LlmService trait)
+// OAuth is provided via llmboot_providers
 use llm_provider::{CompletionBuilder, DefaultLlmService, LlmError, LlmService, LlmServiceBuilder, ProviderConfig};
+use llmboot_providers::from_claude_credentials;
 
 /// Wrapper around `llm_provider::DefaultLlmService` with `chat` crate integration.
 ///
@@ -70,7 +75,8 @@ impl ChatProviderClient {
 /// 3. `create_service()` env-driven defaults (openai / gemini)
 async fn build_llm_service(config: &AiConfig) -> AiResult<DefaultLlmService> {
     if config.provider == "anthropic" {
-        if let Ok(oauth) = llm_oauth::from_claude_credentials() {
+        // Use llmboot_providers for OAuth (Claude Code credentials)
+        if let Ok(oauth) = from_claude_credentials() {
             Ok(LlmServiceBuilder::new()
                 .with_anthropic_oauth(std::sync::Arc::new(oauth), None)
                 .build()

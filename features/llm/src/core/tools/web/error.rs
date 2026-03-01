@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use thiserror::Error;
-use tool::ToolError;
+use llmboot_orchestration::ToolError;
 
 use super::super::error::{ErrorCategory, IntoToolError};
 

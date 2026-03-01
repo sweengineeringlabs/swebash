@@ -15,8 +15,6 @@ live   = ["tokio/net"]
 [dependencies]
 swebash-llm = { path = "../llm", default-features = false }
 llmrag = { version = "0.1.0", registry = "local", default-features = false }
-llm-provider = { version = "0.1.0", registry = "local", features = ["testing"] }
-agent-controller = { version = "0.1.0", registry = "local", features = ["testing"] }
 tokio = { version = "1.0", features = ["sync", "rt", "time", "macros"] }
 async-trait = "0.1"
 tempfile = "3"

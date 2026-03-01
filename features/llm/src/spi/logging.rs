@@ -577,7 +577,7 @@ impl AiClient for LoggingAiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use llm_provider::MockLlmService;
+    use llm_provider::{StreamDelta, FinishReason, MockLlmService};
     use crate::api::error::AiError;
     use crate::api::types::CompletionOptions;
 
@@ -783,7 +783,7 @@ mod tests {
         let chunks = vec![
             StreamChunk {
                 id: "c1".into(),
-                delta: llm_provider::StreamDelta {
+                delta: StreamDelta {
                     content: Some("Hello".into()),
                     tool_calls: None,
                 },
@@ -791,11 +791,11 @@ mod tests {
             },
             StreamChunk {
                 id: "c2".into(),
-                delta: llm_provider::StreamDelta {
+                delta: StreamDelta {
                     content: Some(" world".into()),
                     tool_calls: None,
                 },
-                finish_reason: Some(llm_provider::FinishReason::Stop),
+                finish_reason: Some(FinishReason::Stop),
             },
         ];
 

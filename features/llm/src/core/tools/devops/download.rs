@@ -19,7 +19,7 @@ use tracing::{debug, info, instrument, warn};
 
 use super::super::error::IntoToolError;
 use super::error::DownloadError;
-use tool::{RiskLevel, Tool, ToolDefinition, ToolError, ToolOutput, ToolResult};
+use llmboot_orchestration::{RiskLevel, Tool, ToolCapability, ToolDefinition, ToolError, ToolOutput, ToolExecResult as ToolResult};
 
 /// Supported checksum algorithms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -525,6 +525,8 @@ impl Tool for DownloadTool {
             name: self.name().to_string(),
             description: self.description().to_string(),
             parameters: self.parameters_schema(),
+            // Download tool needs network access and file write
+            capabilities: (ToolCapability::NETWORK_EXTERNAL | ToolCapability::FILE_WRITE).bits(),
         }
     }
 

@@ -1,13 +1,17 @@
 /// L1 SPI: Provider plugin point.
 ///
 /// The `AiClient` trait abstracts over the underlying LLM provider.
-/// `chat_provider.rs` implements this trait, keeping the chat/llm-provider
-/// dependency isolated.
-pub mod chat_provider;
+///
+/// Implementation:
+/// - `gateway_client.rs`: Uses llmboot's L1 Gateway API for all LLM operations
+///
+/// The GatewayClient provides input guardrails, agent management, and
+/// pattern execution (ReAct, CoT, etc.) through llmboot's unified API.
 pub mod config;
-pub mod logging;
-pub mod mock_client;
+pub mod gateway_client;
 pub mod rag;
+
+pub use gateway_client::GatewayClient;
 
 use async_trait::async_trait;
 

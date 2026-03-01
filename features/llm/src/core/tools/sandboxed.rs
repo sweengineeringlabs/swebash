@@ -10,7 +10,7 @@ use std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use serde_json::Value;
 
-use tool::{RiskLevel, Tool, ToolDefinition, ToolOutput, ToolResult, ToolError};
+use llmboot_orchestration::{RiskLevel, Tool, ToolDefinition, ToolOutput, ToolExecResult as ToolResult, ToolError};
 
 /// Access mode for sandboxed paths.
 #[derive(Debug, Clone, Copy, PartialEq)]

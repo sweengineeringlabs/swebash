@@ -14,6 +14,12 @@ resolver = "2"
 [workspace.dependencies]
 swe-readline = { path = "swe-readline" }
 
+# llmboot - L1 Gateway API for LLM orchestration
+llmboot-input = { package = "input", path = "../llmboot/main/features/input", features = ["runtime"] }
+llmboot-providers = { package = "providers", path = "../llmboot/main/features/providers" }
+llmboot-tools = { package = "tools", path = "../llmboot/main/features/tools" }
+llmboot-orchestration = { package = "orchestration", path = "../llmboot/main/features/orchestration" }
+
 [profile.release]
 opt-level = "s"
 lto = true
@@ -30,11 +36,6 @@ pedantic = "warn"
 nursery = "warn"
 unwrap_used = "warn"
 expect_used = "warn"
-
-# Patch llm-provider from the local registry with our vendored version that
-# adds the `oauth` feature while preserving API compatibility with `react`.
-[patch."file:///C:/Users/elvis/.cargo/registry.local/index"]
-llm-provider = { path = "vendor/llm-provider" }
 
 # Redirect the optional `client-rust` dep in llmrag-core (rag-swevecdb feature)
 # to the local SweVecDB workspace instead of crates.io (where it is not published).
